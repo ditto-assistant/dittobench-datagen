@@ -191,6 +191,12 @@ type RunResponse struct {
 	PromptTokens int64              `json:"prompt_tokens"`
 	OutputTokens int64              `json:"output_tokens"`
 	LatencyMs    int64              `json:"latency_ms"`
+	// Confidence (Ideas #6) is the harness's OPTIONAL self-reported confidence in
+	// [0,1] that its answer is correct. When present the validator scores a
+	// Brier calibration metric (advisory telemetry): honest confidence minimizes
+	// it, always-100% does not. A pointer so "not reported" is distinct from 0.0;
+	// additive-optional, so a harness that omits it is unaffected.
+	Confidence *float64 `json:"confidence,omitempty"`
 }
 
 // Kind discriminates a CaseScore between the two case families.
@@ -219,7 +225,10 @@ type CaseScore struct {
 	// TwinGroup, when set, ties this case to its metamorphic invariance twin so the
 	// aggregate can compute a phrasing-consistency sub-score (Ideas #3).
 	TwinGroup string `json:"twin_group,omitempty"`
-	LatencyMs int64  `json:"latency_ms"`
+	// Confidence echoes the harness's self-reported confidence for this case (Ideas
+	// #6), when it reported one, so the aggregate can Brier-score calibration.
+	Confidence *float64 `json:"confidence,omitempty"`
+	LatencyMs  int64    `json:"latency_ms"`
 	// Observed is true when the harness routed this tool case's calls through the
 	// validator's mock endpoint, so Called is the authoritative observed
 	// trajectory (not self-report). Only observed cases feed the efficiency term.
@@ -332,6 +341,14 @@ type RunDetails struct {
 	// incorrect). A phrasing-brittle harness scores below 1.0. Advisory only,
 	// never folded into the composite. nil when no twin groups ran.
 	MetamorphicConsistency *float64 `json:"metamorphic_consistency,omitempty"`
+	// CalibrationBrier is the mean Brier score over cases where the harness
+	// reported a confidence (Ideas #6): mean((confidence - correct)^2), lower is
+	// better. Honest confidence minimizes it; always-100% does not. CalibrationN
+	// is how many cases carried a confidence. Advisory only, never folded into the
+	// composite (so a harness that omits confidence is unaffected). nil when no
+	// case reported a confidence.
+	CalibrationBrier *float64 `json:"calibration_brier,omitempty"`
+	CalibrationN     int      `json:"calibration_n,omitempty"`
 	// ObservedToolCases is how many tool cases were scored on the validator-
 	// observed trajectory (the harness routed its calls through tool_endpoint);
 	// CappedToolCases is how many observable cases were capped because the harness
