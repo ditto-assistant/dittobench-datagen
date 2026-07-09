@@ -72,11 +72,13 @@ func GenerateMemorySuite(r *rand.Rand, seed int64, n int, nWaves int, rawPairsFr
 	// Split into: the always-included canary integrity probe, the abstention
 	// share, and the main pool stratified by type. The canary is never sampled
 	// out — its whole point is a guaranteed per-run integrity check.
-	var absPool, mainPool, canaryPool []persona.Question
+	var absPool, mainPool, canaryPool, twinPool []persona.Question
 	for _, q := range questions {
 		switch {
 		case q.Type == persona.QTCanary:
 			canaryPool = append(canaryPool, q)
+		case q.TwinGroup != "":
+			twinPool = append(twinPool, q) // both invariance twins kept together
 		case q.Abstain:
 			absPool = append(absPool, q)
 		default:
@@ -87,13 +89,15 @@ func GenerateMemorySuite(r *rand.Rand, seed int64, n int, nWaves int, rawPairsFr
 	if nAbs > len(absPool) {
 		nAbs = len(absPool)
 	}
-	// Reserve room for the canary so the total case count stays at n.
-	mainQuota := n - nAbs - len(canaryPool)
+	// Reserve room for the always-included canary and twin cases so the total
+	// case count stays at n.
+	mainQuota := n - nAbs - len(canaryPool) - len(twinPool)
 	if mainQuota < 0 {
 		mainQuota = 0
 	}
 	selected := stratifyByType(r, mainPool, mainQuota)
 	selected = append(selected, canaryPool...)
+	selected = append(selected, twinPool...)
 	if nAbs > 0 {
 		perm := r.Perm(len(absPool))
 		for i := 0; i < nAbs; i++ {
@@ -194,6 +198,7 @@ func GenerateMemorySuite(r *rand.Rand, seed int64, n int, nWaves int, rawPairsFr
 				Question:        realizeQuestion(q),
 				ExpectedAnswer:  expected,
 				ForbiddenAnswer: q.Forbidden,
+				TwinGroup:       q.TwinGroup,
 			},
 			RunAfterWave: caseUnlockWave(q, fw),
 		})

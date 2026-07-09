@@ -168,6 +168,10 @@ type Question struct {
 	// to elicit. The gen layer copies it to MemoryCase.ForbiddenAnswer, where a
 	// containing response scores 0.
 	Forbidden string
+	// TwinGroup, when set, ties this question to its metamorphic invariance twin
+	// (the same fact asked a different way). The scorer reports a consistency
+	// sub-score over twin groups (Ideas #3).
+	TwinGroup string
 }
 
 // scalar recall question text, keyed by attribute. "current" wording disambiguates
@@ -489,6 +493,9 @@ func DeriveQuestions(p *Plan) []Question {
 	// --- DRM false-memory lure + computed-answer modalities ---
 	qs = append(qs, drmLureQuestions(p)...)
 	qs = append(qs, filteredAggQuestions(p)...)
+
+	// --- metamorphic invariance twin (Ideas #3) ---
+	qs = append(qs, invarianceTwins(p)...)
 
 	// --- canary integrity probe ---
 	// Ask for the per-seed verification nonce; the answer is the seeded value and
@@ -1028,4 +1035,39 @@ func filteredAggQuestions(p *Plan) []Question {
 		Numeric:  true,
 		Evidence: ev,
 	}}
+}
+
+// invarianceTwins emits a metamorphic invariance pair (Ideas #3): the same
+// current-scalar fact asked TWO different ways, sharing a TwinGroup. A robust
+// harness answers both identically; a phrasing-brittle one disagrees, which the
+// scorer surfaces as a consistency sub-score. One twin per run keeps the case
+// budget in check; the attribute is chosen deterministically from the plan.
+func invarianceTwins(p *Plan) []Question {
+	scalars := currentScalarFacts(p)
+	// Prefer a non-updated scalar so the twin tests phrasing invariance, not
+	// update handling (which knowledge-update already covers).
+	var pick *Fact
+	for i := range scalars {
+		if scalars[i].Supersedes == "" {
+			if variants := scalarAsk[scalars[i].Attribute]; len(variants) >= 2 {
+				pick = &scalars[i]
+				break
+			}
+		}
+	}
+	if pick == nil {
+		return nil
+	}
+	variants := scalarAsk[pick.Attribute]
+	// Two distinct phrasings, deterministically chosen and different.
+	a := variants[0]
+	b := variants[len(variants)-1]
+	if a == b {
+		return nil
+	}
+	group := "twin-" + pick.Attribute
+	return []Question{
+		{ID: "q-inv-a-" + pick.Attribute, Type: QTSingleSession, Tier: TierMedium, Text: a, Answer: pick.Value, Evidence: []string{pick.ID}, TwinGroup: group},
+		{ID: "q-inv-b-" + pick.Attribute, Type: QTSingleSession, Tier: TierMedium, Text: b, Answer: pick.Value, Evidence: []string{pick.ID}, TwinGroup: group},
+	}
 }

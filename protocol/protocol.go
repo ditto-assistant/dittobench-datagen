@@ -50,6 +50,12 @@ type MemoryCase struct {
 	// ExpectedAnswer it is validator-internal grading data and is never sent to
 	// the harness (only Question is).
 	ForbiddenAnswer string `json:"forbidden_answer,omitempty"`
+	// TwinGroup ties metamorphic twin cases together (Ideas #3, invariance): two
+	// cases that ask for the SAME fact in different phrasings share a TwinGroup id,
+	// so the scorer can report a consistency sub-score (a robust harness answers
+	// both the same way; a phrasing-brittle one disagrees). Validator-internal
+	// grouping, never sent to the harness. Empty for ungrouped cases.
+	TwinGroup string `json:"twin_group,omitempty"`
 }
 
 // Dataset is a (fresh, seeded) set of tool-calling + memory cases.
@@ -210,7 +216,10 @@ type CaseScore struct {
 	// returned. It replaces the LLM quality judge for those cases (deterministic).
 	ResultUsage float64 `json:"result_usage,omitempty"`
 	Correct     bool    `json:"correct,omitempty"` // memory judge verdict (memory cases)
-	LatencyMs   int64   `json:"latency_ms"`
+	// TwinGroup, when set, ties this case to its metamorphic invariance twin so the
+	// aggregate can compute a phrasing-consistency sub-score (Ideas #3).
+	TwinGroup string `json:"twin_group,omitempty"`
+	LatencyMs int64  `json:"latency_ms"`
 	// Observed is true when the harness routed this tool case's calls through the
 	// validator's mock endpoint, so Called is the authoritative observed
 	// trajectory (not self-report). Only observed cases feed the efficiency term.
@@ -318,6 +327,11 @@ type RunDetails struct {
 	// LexicalGap is the query↔needle overlap telemetry for the memory suite (the
 	// NoLiMa literal-match signal). Advisory only.
 	LexicalGap *LexicalGapStats `json:"lexical_gap,omitempty"`
+	// MetamorphicConsistency is the fraction of invariance twin groups (Ideas #3)
+	// whose members the harness answered consistently (all correct or all
+	// incorrect). A phrasing-brittle harness scores below 1.0. Advisory only,
+	// never folded into the composite. nil when no twin groups ran.
+	MetamorphicConsistency *float64 `json:"metamorphic_consistency,omitempty"`
 	// ObservedToolCases is how many tool cases were scored on the validator-
 	// observed trajectory (the harness routed its calls through tool_endpoint);
 	// CappedToolCases is how many observable cases were capped because the harness
