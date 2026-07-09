@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: Gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && echo "run gofmt -w" && exit 1)
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+      - name: Determinism (same seed, same hash across two separate runs)
+        run: |
+          go build -o /tmp/generate ./cmd/generate
+          a=$(/tmp/generate -seed 123456789 -run-size full -sha 2>/dev/null)
+          b=$(/tmp/generate -seed 123456789 -run-size full -sha 2>/dev/null)
+          echo "run1=$a"
+          echo "run2=$b"
+          if [ "$a" != "$b" ]; then echo "generator is not deterministic"; exit 1; fi
