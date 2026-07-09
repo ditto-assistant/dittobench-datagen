@@ -174,5 +174,75 @@ func Catalog() []protocol.ToolDefinition {
 			Description: "Enable or disable specific tools for chat.",
 			Parameters:  params(map[string]string{"preferences": "tool preference settings"}, "preferences"),
 		},
+		// --- scheduling / automations / recipes ---
+		{
+			Name:        "create_automation",
+			Description: "Schedule a recurring or one-shot automation that runs on a cron/time trigger (e.g. every morning, every Monday). Use for anything the user wants to happen on a schedule, not right now.",
+			Parameters:  params(map[string]string{"schedule": "when to run, e.g. 'every morning at 8am'", "task": "what the automation should do"}, "schedule", "task"),
+		},
+		{
+			Name:        "list_automations",
+			Description: "List the user's existing scheduled automations.",
+			Parameters:  params(map[string]string{}),
+		},
+		{
+			Name:        "create_recipe",
+			Description: "Save a reusable multi-step recipe the user can run later on demand.",
+			Parameters:  params(map[string]string{"name": "recipe name", "steps": "the ordered steps"}, "name", "steps"),
+		},
+		{
+			Name:        "apply_recipe",
+			Description: "Run a previously-saved recipe by name.",
+			Parameters:  params(map[string]string{"name": "recipe name"}, "name"),
+		},
+		// --- capability discovery ---
+		{
+			Name:        "discover_capabilities",
+			Description: "Look up what Ditto can do and how to use a feature. Call whenever the user asks what you or Ditto can do, where a setting lives, or how to accomplish something in the app.",
+			Parameters:  params(map[string]string{"query": "what the user is trying to do (leave empty for an overview)"}),
+		},
+		// --- memory writes / graph management ---
+		{
+			Name:        "save_memory",
+			Description: "Save a new fact the user states about themselves to long-term memory. Use when the user TELLS you something to remember, not when they ask a question.",
+			Parameters:  params(map[string]string{"content": "the fact to remember"}, "content"),
+		},
+		{
+			Name:        "update_memory",
+			Description: "Update an existing remembered fact to a new value.",
+			Parameters:  params(map[string]string{"pair_id": "memory to update", "content": "the new value"}, "pair_id", "content"),
+		},
+		{
+			Name:        "delete_memory",
+			Description: "Delete a remembered fact at the user's request.",
+			Parameters:  params(map[string]string{"pair_id": "memory to delete"}, "pair_id"),
+		},
+		// --- Google Workspace integrations ---
+		{
+			Name:        "calendar_create_event",
+			Description: "Create an event on the user's Google Calendar.",
+			Parameters:  params(map[string]string{"title": "event title", "when": "date/time"}, "title", "when"),
+		},
+		{
+			Name:        "calendar_search_events",
+			Description: "Search the user's Google Calendar for events.",
+			Parameters:  params(map[string]string{"query": "what to find"}, "query"),
+		},
+		{
+			Name:        "gmail_send",
+			Description: "Send an email from the user's Gmail account.",
+			Parameters:  params(map[string]string{"to": "recipient", "subject": "subject", "body": "message body"}, "to", "body"),
+		},
+		// --- additional appearance settings ---
+		{
+			Name:        "set_accent_color",
+			Description: "Change the app's accent color.",
+			Parameters:  params(map[string]string{"color": "accent color"}, "color"),
+		},
+		{
+			Name:        "set_chat_font",
+			Description: "Change the font used in the chat view.",
+			Parameters:  params(map[string]string{"font": "font name"}, "font"),
+		},
 	}
 }

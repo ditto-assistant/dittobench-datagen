@@ -101,7 +101,19 @@ var (
 	models    = []string{"gpt-5", "claude-sonnet-5", "gemini-3-pro", "llama-4-70b"}
 	efforts   = []string{"low", "medium", "high"}
 	toolPrefs = []string{"disable web search", "enable image tools", "turn off agent jobs", "allow only memory tools"}
-	feedback  = []string{
+	// Tier 2 coverage pools (production tools: scheduling, discovery, workspace,
+	// memory writes, appearance settings).
+	schedules       = []string{"every morning at 8am", "every Monday", "each weekday evening", "the first of every month", "every Friday at noon"}
+	automationTasks = []string{"email me a news digest", "summarize my unread messages", "post my standup notes", "back up my documents"}
+	recipeNames     = []string{"weekly-review", "trip-planner", "invoice-run", "content-pipeline"}
+	recipeSteps     = []string{"pull metrics, then draft a summary, then email it", "search flights, compare prices, book the cheapest", "gather receipts, total them, file the report"}
+	savableFacts    = []string{"I'm allergic to shellfish", "my anniversary is June 3rd", "I prefer window seats", "my daughter's name is Mia", "I take my coffee black"}
+	calendarTitles  = []string{"dentist appointment", "team offsite", "1:1 with Sam", "flight to Boston", "birthday dinner"}
+	calendarWhens   = []string{"next Tuesday at 3pm", "Friday morning", "March 14th", "tomorrow at noon"}
+	emailRecipients = []string{"sam@example.com", "the team", "my accountant", "jordan@example.com"}
+	accentColors    = []string{"teal", "crimson", "indigo", "amber", "emerald"}
+	chatFonts       = []string{"Inter", "JetBrains Mono", "Georgia", "system default"}
+	feedback        = []string{
 		"the image tool keeps timing out", "love the new memory search",
 		"the export button is broken on mobile", "please add dark mode to artifacts",
 	}
@@ -344,6 +356,118 @@ var categories = []category{
 			"Adjust which tools you use — %s.",
 		},
 	},
+	// --- Tier 2 coverage: production tools + routing/restraint traps ---
+	{
+		// Scheduling trap: a task phrased with a recurring TIME cue is an
+		// automation, not a one-off agent job. The %s is the schedule (pinned).
+		name: "automation_not_job", tool: "create_automation", argKey: "schedule",
+		templates: []string{
+			"Every morning, %s my news digest.",
+			"On a schedule — %s — send me my summary.",
+			"Set this to run %s: post my standup.",
+		},
+	},
+	{
+		name: "automation_list", tool: "list_automations",
+		templates: []string{
+			"What automations do I have set up?",
+			"Show me my scheduled automations.",
+			"List the recurring tasks I've created.",
+		},
+	},
+	{
+		name: "recipe_create", tool: "create_recipe", argKey: "name",
+		templates: []string{
+			"Save a recipe called %s for later.",
+			"Make a reusable recipe named %s.",
+			"Create a %s recipe I can run again.",
+		},
+	},
+	{
+		name: "recipe_apply", tool: "apply_recipe", argKey: "name",
+		templates: []string{
+			"Run my %s recipe.",
+			"Apply the %s recipe now.",
+			"Execute my saved %s recipe.",
+		},
+	},
+	{
+		// Capability discovery: "what can you do / where is X" routes to
+		// discover_capabilities, not a guess from memory or the web.
+		name: "capability_discovery", tool: "discover_capabilities",
+		templates: []string{
+			"What can you actually do?",
+			"How do I turn on dark mode in this app?",
+			"Where do I find the setting to connect my calendar?",
+		},
+	},
+	{
+		// Save-vs-search trap: a STATEMENT of a new fact is a memory WRITE, not a
+		// search. The %s is the fact (freely rephrasable, no pinned arg token).
+		name: "memory_save_not_search", tool: "save_memory",
+		templates: []string{
+			"Remember that %s.",
+			"Note for later: %s.",
+			"Please keep in mind that %s.",
+		},
+	},
+	{
+		name: "memory_update", tool: "update_memory", argKey: "pair_id",
+		templates: []string{
+			"Update memory %s with my new address.",
+			"Change what you saved in memory %s.",
+			"Correct memory %s to the new value.",
+		},
+	},
+	{
+		name: "memory_delete", tool: "delete_memory", argKey: "pair_id",
+		templates: []string{
+			"Delete memory %s.",
+			"Forget what's in memory %s.",
+			"Remove memory %s from my history.",
+		},
+	},
+	{
+		name: "calendar_create", tool: "calendar_create_event", argKey: "title",
+		templates: []string{
+			"Put %s on my calendar.",
+			"Add %s to my calendar.",
+			"Schedule %s on my calendar.",
+		},
+	},
+	{
+		name: "calendar_search", tool: "calendar_search_events", argKey: "query",
+		templates: []string{
+			"What's on my calendar about %s?",
+			"Find the %s event on my calendar.",
+			"Search my calendar for %s.",
+		},
+	},
+	{
+		name: "email_send", tool: "gmail_send", argKey: "to",
+		templates: []string{
+			"Email %s to let them know I'll be late.",
+			"Send an email to %s with the update.",
+			"Shoot %s a quick note about the meeting.",
+		},
+	},
+	{
+		name: "set_accent", tool: "set_accent_color", argKey: "color",
+		templates: []string{
+			"Set my accent color to %s.",
+			"Make the accent color %s.",
+			"Change the app accent to %s.",
+		},
+	},
+	{
+		name: "set_font", tool: "set_chat_font", argKey: "font",
+		templates: []string{
+			"Change my chat font to %s.",
+			"Use %s as the chat font.",
+			"Set the chat typeface to %s.",
+		},
+	},
+
 	// Multi-hop trajectories: the correct answer is a tool SEQUENCE, scored
 	// with order credit. These exercise the previously-dormant multi-call path.
 	{
@@ -491,6 +615,28 @@ func fillerFor(r *rand.Rand, cat string) string {
 		return efforts[r.Intn(len(efforts))]
 	case "set_tool_prefs":
 		return toolPrefs[r.Intn(len(toolPrefs))]
+	case "automation_not_job":
+		return schedules[r.Intn(len(schedules))]
+	case "automation_list":
+		return "" // template has no placeholder
+	case "recipe_create", "recipe_apply":
+		return recipeNames[r.Intn(len(recipeNames))]
+	case "capability_discovery":
+		return "" // template has no placeholder
+	case "memory_save_not_search":
+		return savableFacts[r.Intn(len(savableFacts))]
+	case "memory_update", "memory_delete":
+		return memoryIDs[r.Intn(len(memoryIDs))]
+	case "calendar_create":
+		return calendarTitles[r.Intn(len(calendarTitles))]
+	case "calendar_search":
+		return topics[r.Intn(len(topics))]
+	case "email_send":
+		return emailRecipients[r.Intn(len(emailRecipients))]
+	case "set_accent":
+		return accentColors[r.Intn(len(accentColors))]
+	case "set_font":
+		return chatFonts[r.Intn(len(chatFonts))]
 	case "multi_web_read", "parallel_web_image":
 		return topics[r.Intn(len(topics))]
 	case "multi_subject_scope":
