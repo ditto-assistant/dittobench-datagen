@@ -536,7 +536,7 @@ func GenerateCasesWithFillers(r *rand.Rand, seed int64, n int) ([]protocol.ToolC
 	for i := 0; i < n; i++ {
 		cat := categories[order[i]]
 		tmpl := cat.templates[r.Intn(len(cat.templates))]
-		caseID := fmt.Sprintf("%s-%d-%04d", cat.name, seed, i)
+		caseID := protocol.OpaqueCaseID(seed, "tool", i)
 		// Result-usage cases: the filler is the fixture needle's Subject, derived
 		// from the SAME (seed, caseID) the mock server uses to serve the answer — so
 		// the question ("...figure on the Veltrix index...") and the served fact

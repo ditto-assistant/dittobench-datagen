@@ -1,7 +1,6 @@
 package gen
 
 import (
-	"fmt"
 	"sort"
 
 	"github.com/ditto-assistant/dittobench-datagen/persona"
@@ -97,7 +96,7 @@ func GenerateIsolation(seed int64, primaryN, nWaves, isoCases int) IsolationSuit
 			}
 			cases = append(cases, StagedCase{
 				Case: protocol.MemoryCase{
-					ID:              fmt.Sprintf("iso-a-%04d-%s", i, a),
+					ID:              protocol.OpaqueCaseID(seed, "iso-a", i),
 					QuestionID:      "iso-a-" + a,
 					QuestionType:    "isolation",
 					Question:        q.Text,
@@ -114,7 +113,7 @@ func GenerateIsolation(seed int64, primaryN, nWaves, isoCases int) IsolationSuit
 			}
 			cases = append(cases, StagedCase{
 				Case: protocol.MemoryCase{
-					ID:              fmt.Sprintf("iso-b-%04d-%s", i, a),
+					ID:              protocol.OpaqueCaseID(seed, "iso-b", i),
 					QuestionID:      "iso-b-" + a,
 					QuestionType:    "isolation",
 					Question:        q.Text,

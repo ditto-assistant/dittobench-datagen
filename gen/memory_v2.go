@@ -1,7 +1,6 @@
 package gen
 
 import (
-	"fmt"
 	"math/rand"
 	"sort"
 	"strconv"
@@ -178,7 +177,7 @@ func GenerateMemorySuite(r *rand.Rand, seed int64, n int, nWaves int, rawPairsFr
 		}
 		staged = append(staged, StagedCase{
 			Case: protocol.MemoryCase{
-				ID:              fmt.Sprintf("mem-%04d-%s", i, q.ID),
+				ID:              protocol.OpaqueCaseID(seed, "mem", i),
 				QuestionID:      q.ID,
 				QuestionType:    q.Type,
 				Question:        realizeQuestion(q),

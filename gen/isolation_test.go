@@ -53,9 +53,11 @@ func TestIsolationCasesHaveConflictingValue(t *testing.T) {
 	sCur := currentScalars(persona.BuildPlan(seed^isolationSalt, isolationOpts()))
 
 	for _, sc := range iso.Cases {
-		attr := attrFromISOID(sc.Case.ID)
+		// The wire ID is opaque (no attribute); the validator-internal QuestionID
+		// still names the conflict axis ("iso-a-<attr>").
+		attr := attrFromISOQID(sc.Case.QuestionID)
 		if attr == "" {
-			t.Fatalf("could not parse attr from %s", sc.Case.ID)
+			t.Fatalf("could not parse attr from question id %s", sc.Case.QuestionID)
 		}
 		pv, sv := pCur[attr], sCur[attr]
 		if pv == "" || sv == "" || pv == sv {
@@ -94,11 +96,11 @@ func TestGenerateIsolationDisabled(t *testing.T) {
 	}
 }
 
-// attrFromISOID pulls the attribute suffix out of an "iso-a-0001-<attr>" ID.
-func attrFromISOID(id string) string {
-	parts := strings.SplitN(id, "-", 4)
-	if len(parts) < 4 {
+// attrFromISOQID pulls the attribute suffix out of an "iso-a-<attr>" QuestionID.
+func attrFromISOQID(qid string) string {
+	parts := strings.SplitN(qid, "-", 3)
+	if len(parts) < 3 {
 		return ""
 	}
-	return parts[3]
+	return parts[2]
 }
