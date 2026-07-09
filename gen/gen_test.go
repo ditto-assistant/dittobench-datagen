@@ -10,7 +10,7 @@ func TestProfiles(t *testing.T) {
 		if !ok {
 			t.Fatalf("profile %q should exist", size)
 		}
-		if p.Tools <= 0 || p.Mem <= 0 || p.Distractors <= 0 {
+		if p.Tools <= 0 || p.Mem <= 0 {
 			t.Fatalf("profile %q has non-positive counts: %+v", size, p)
 		}
 	}
@@ -52,13 +52,3 @@ func TestGenerateToolsNilLLM(t *testing.T) {
 		}
 	}
 }
-
-// GenerateTools no longer paraphrases (it is deterministic and LLM-free), so the
-// former ground-truth-preservation-across-paraphrase and paraphrase-sanitizing
-// tests were dropped. The prompt surface variation now comes from datagen's
-// template variants, and the ground truth is templated in the same pass, so
-// there is no separate rewrite step that could drift from it.
-
-// The legacy LongMemEval oracle path (GenerateMemory + the embedded seed
-// bundle) was removed: the v2 pipeline generates memory from the procedural
-// persona plan (GenerateMemorySuite), covered in memory_v2_test.go.

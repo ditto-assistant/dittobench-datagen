@@ -30,7 +30,7 @@ type category struct {
 	allowExtra bool
 	// argKey, when set on a single-tool category whose filler is an exact token
 	// (a URL, a theme), pins RequiredArgs[argKey]=filler so the argument value is
-	// deterministically scored: right tool + wrong arg no longer gets full credit.
+	// deterministically scored: right tool + wrong arg does not get full credit.
 	argKey    string
 	templates []string
 	// intents are prompts that imply the arg VALUE (or name a near-miss) instead of
@@ -101,8 +101,8 @@ var (
 	models    = []string{"gpt-5", "claude-sonnet-5", "gemini-3-pro", "llama-4-70b"}
 	efforts   = []string{"low", "medium", "high"}
 	toolPrefs = []string{"disable web search", "enable image tools", "turn off agent jobs", "allow only memory tools"}
-	// Tier 2 coverage pools (production tools: scheduling, discovery, workspace,
-	// memory writes, appearance settings).
+	// Production-tool coverage pools: scheduling, discovery, workspace, memory
+	// writes, appearance settings.
 	schedules       = []string{"every morning at 8am", "every Monday", "each weekday evening", "the first of every month", "every Friday at noon"}
 	automationTasks = []string{"email me a news digest", "summarize my unread messages", "post my standup notes", "back up my documents"}
 	recipeNames     = []string{"weekly-review", "trip-planner", "invoice-run", "content-pipeline"}
@@ -293,8 +293,8 @@ var categories = []category{
 			"Spin up a parallel agent workflow for me.",
 		},
 	},
-	// Full-catalog coverage: single-hop categories so every remaining
-	// catalog tool is the correct answer for some case (10/18 were dead in v1).
+	// Full-catalog coverage: single-hop categories so every catalog tool is the
+	// correct answer for some case.
 	{
 		name: "memory_fetch", tool: "fetch_memories", argKey: "pairIds",
 		templates: []string{
@@ -356,7 +356,7 @@ var categories = []category{
 			"Adjust which tools you use — %s.",
 		},
 	},
-	// --- Tier 2 coverage: production tools + routing/restraint traps ---
+	// --- Production-tool coverage: routing/restraint traps ---
 	{
 		// Scheduling trap: a task phrased with a recurring TIME cue is an
 		// automation, not a one-off agent job. The %s is the schedule (pinned).
@@ -469,7 +469,7 @@ var categories = []category{
 	},
 
 	// Multi-hop trajectories: the correct answer is a tool SEQUENCE, scored
-	// with order credit. These exercise the previously-dormant multi-call path.
+	// with order credit. These exercise the multi-call path.
 	{
 		name: "multi_web_read", tools: []string{"search_web", "read_links"},
 		templates: []string{
@@ -513,7 +513,7 @@ var categories = []category{
 			"Create a picture of %s and tweak the colors.",
 		},
 	},
-	// Result-usage (Phase C): the answer requires a value
+	// Result-usage: the answer requires a value
 	// that exists ONLY in the tool's returned content (a fabricated per-seed
 	// needle, toolexec), so the case cannot be answered by self-report or base-
 	// model knowledge; the harness must actually execute the tool and USE the
@@ -701,11 +701,11 @@ func stratifiedCategoryOrder(r *rand.Rand, n int) []int {
 	return order
 }
 
-// GenerateCases emits n raw tool cases from an existing RNG. Exported so the
-// anti-cheat generator (internal/gen) can reuse the same templated ground-truth
-// and then LLM-paraphrase the prompts. seed drives both the stable case IDs and
-// each result-usage prompt's fabricated needle subject (via toolexec.NeedleFor),
-// which must match the needle the mock endpoint serves.
+// GenerateCases emits n raw tool cases from an existing RNG. Exported so the gen
+// package can build tool cases from the same templated ground truth. seed drives
+// both the stable case IDs and each result-usage prompt's fabricated needle
+// subject (via toolexec.NeedleFor), which must match the needle the mock endpoint
+// serves.
 func GenerateCases(r *rand.Rand, seed int64, n int) []protocol.ToolCase {
 	cases, _ := GenerateCasesWithFillers(r, seed, n)
 	return cases
@@ -713,10 +713,8 @@ func GenerateCases(r *rand.Rand, seed int64, n int) []protocol.ToolCase {
 
 // GenerateCasesWithFillers is GenerateCases plus, for each case, the concrete
 // entity ("filler") substituted into its template (empty for templates with no
-// %s slot). The paraphrase verifier (internal/gen) checks that this entity
-// survives realization, so a rewrite that drops it falls back to the template
-// rather than silently shipping a case whose ground truth no longer matches the
-// prompt.
+// %s slot). The filler is the ground-truth entity the prompt is about, exposed so
+// a caller can assert the prompt and the scored ground truth stay coupled.
 func GenerateCasesWithFillers(r *rand.Rand, seed int64, n int) ([]protocol.ToolCase, []string) {
 	if n < 1 {
 		n = 1
@@ -747,8 +745,8 @@ func GenerateCasesWithFillers(r *rand.Rand, seed int64, n int) ([]protocol.ToolC
 		}
 
 		// argValue is the value pinned into RequiredArgs (defaults to the filler; an
-		// intent variant overrides it). usedFiller is the token paraphrase must
-		// preserve ("" = freely rephrasable).
+		// intent variant overrides it). usedFiller is the load-bearing entity the
+		// prompt is about ("" = the prompt has no such entity).
 		argValue := filler
 		usedFiller := ""
 		useIntent := len(cat.intents) > 0 && r.Intn(2) == 0
@@ -757,15 +755,15 @@ func GenerateCasesWithFillers(r *rand.Rand, seed int64, n int) ([]protocol.ToolC
 			it := cat.intents[r.Intn(len(cat.intents))]
 			prompt = it.prompt
 			argValue = it.value
-			// Only a near-miss intent (value appears literally) needs the token kept
-			// through paraphrase; a pure-intent prompt is meaning-preservingly rephrasable.
+			// Only a near-miss intent (value appears literally) records the token; a
+			// pure-intent prompt has no load-bearing entity to track.
 			if strings.Contains(it.prompt, it.value) {
 				usedFiller = it.value
 			}
 		case strings.Contains(tmpl, "%s"):
 			prompt = fmt.Sprintf(tmpl, filler)
-			// A real tool case has an entity worth preserving through paraphrase;
-			// no_tool / abstention fillers ARE the whole (freely rephrasable) message.
+			// A real tool case has a load-bearing entity; no_tool / abstention fillers
+			// ARE the whole message.
 			if len(seq) > 0 {
 				usedFiller = filler
 			}

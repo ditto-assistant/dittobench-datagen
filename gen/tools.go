@@ -12,9 +12,8 @@ import (
 // category's hand-written phrasing variants, chosen by the seeded rng inside
 // datagen (`cat.templates[r.Intn(len(...))]`), and expected_tools /
 // expected_behavior are templated. The surface anti-memorization variation is
-// the template-variant selection itself, not a post-hoc paraphrase pass, so a
-// given seed always yields the identical dataset. The zero ParaphraseStats is
-// kept so callers that aggregate stats need no change.
+// the template-variant selection itself, so a given seed always yields the
+// identical dataset. It returns a zero ParaphraseStats, a retained wire field.
 func GenerateTools(r *rand.Rand, seed int64, n int) ([]protocol.ToolCase, protocol.ParaphraseStats) {
 	// Pass the run's master seed (not a fresh draw): the case IDs and each
 	// result-usage prompt's needle subject derive from it, and the mock endpoint

@@ -43,7 +43,7 @@ func TestAskVariantDeterministicAndSeedVarying(t *testing.T) {
 
 // TestQuestionPhrasingVariesAcrossSeeds: two different submission seeds should
 // produce at least some differently-worded questions for the same attribute
-// (the LLM paraphrase's anti-memorization role is now carried by the templates).
+// (surface variation comes from seeded template selection).
 func TestQuestionPhrasingVariesAcrossSeeds(t *testing.T) {
 	textByID := func(seed int64) map[string]string {
 		m := map[string]string{}

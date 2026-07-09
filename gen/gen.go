@@ -1,7 +1,6 @@
-// Package gen produces FRESH, ANTI-CHEAT benchmark datasets for a single
-// submission. It is the centerpiece of the validator: the permutation space is
-// made astronomically large so a miner cannot precompute a lookup table or
-// overfit to a fixed dataset.
+// Package gen produces fresh, anti-overfit benchmark datasets for a single
+// submission. The permutation space is large enough that a miner cannot
+// precompute a lookup table or overfit to a fixed dataset.
 //
 // # Anti-cheat combinatorics
 //
@@ -27,7 +26,7 @@
 // the anti-cheat entropy is the seed-driven combinatorics (persona facts,
 // template-variant selection, timestamps, sampling) plus a fresh per-submission
 // crypto-random seed, not a post-hoc paraphrase. Even the small profile is far
-// beyond any feasible lookup table; medium/full are astronomically larger.
+// beyond any feasible lookup table; medium and full are far larger.
 package gen
 
 import (
@@ -39,9 +38,8 @@ import (
 
 // Profile is the size knobs for a run_size.
 type Profile struct {
-	Tools       int // number of tool cases
-	Mem         int // number of memory cases
-	Distractors int // (legacy LongMemEval knob; unused by the v2 persona engine)
+	Tools int // number of tool cases
+	Mem   int // number of memory cases
 	// Waves is the number of staged Tier-C seeding waves (1 = single seed).
 	// RawPairsFrac is the fraction of memory questions seeded pairs-only (Tier B).
 	// small stays a single Tier-A wave so the smoke path is cheap + simple.
@@ -56,9 +54,9 @@ type Profile struct {
 
 // Profiles maps run_size → counts.
 var Profiles = map[string]Profile{
-	"small":  {Tools: 6, Mem: 6, Distractors: 20, Waves: 1, RawPairsFrac: 0, IsoCases: 0},
-	"medium": {Tools: 20, Mem: 20, Distractors: 100, Waves: 2, RawPairsFrac: 0.3, IsoCases: 2},
-	"full":   {Tools: 60, Mem: 50, Distractors: 300, Waves: 2, RawPairsFrac: 0.35, IsoCases: 4},
+	"small":  {Tools: 6, Mem: 6, Waves: 1, RawPairsFrac: 0, IsoCases: 0},
+	"medium": {Tools: 20, Mem: 20, Waves: 2, RawPairsFrac: 0.3, IsoCases: 2},
+	"full":   {Tools: 60, Mem: 50, Waves: 2, RawPairsFrac: 0.35, IsoCases: 4},
 }
 
 // ProfileFor returns the Profile for a run_size, defaulting to small.

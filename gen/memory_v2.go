@@ -23,7 +23,8 @@ type StagedCase struct {
 }
 
 // MemorySuite is the full v2 memory dataset: the ordered seeding waves (Tier C),
-// the cases with their unlock wave, paraphrase telemetry, and the Tier-B count.
+// the cases with their unlock wave, the retained paraphrase-stats field, and the
+// Tier-B count.
 type MemorySuite struct {
 	Waves        []protocol.SeedRequest
 	Cases        []StagedCase

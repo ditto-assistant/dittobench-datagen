@@ -8,8 +8,8 @@ import (
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
-// Package note (surface realization, Layer 2):
-// the persona plan (internal/persona) is pure ground truth; this file renders
+// Package note (surface realization):
+// the persona plan (the persona package) is pure ground truth; this file renders
 // its session beats into natural user/assistant MemoryPairs from each beat's
 // deterministic template surface. Generation is fully non-LLM: the anti-
 // memorization surface variation comes from the plan's per-beat template

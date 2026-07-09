@@ -32,7 +32,7 @@ type ToolCase struct {
 	ExpectedBehavior string     `json:"expected_behavior,omitempty"`
 }
 
-// MemoryCase is one memory-recall (LongMemEval) benchmark case. The harness is
+// MemoryCase is one memory-recall benchmark case. The harness is
 // first seeded with a fresh haystack (see SeedRequest); then for each case the
 // validator POSTs a normal RunRequest whose user_input is Question, and the
 // agent must answer from its seeded memory. ExpectedAnswer is the oracle answer
@@ -126,7 +126,7 @@ type ToolDefinition struct {
 
 // RunRequest is what the validator POSTs to the harness /run endpoint per case.
 //
-// ToolEndpoint (Phase C) is an OPTIONAL validator-served mock
+// ToolEndpoint is an OPTIONAL validator-served mock
 // tool-execution URL. When present, a harness that supports observed execution
 // should EXECUTE its non-memory catalog tool calls by POSTing a ToolExecRequest
 // to this URL (instead of stubbing them locally) and use the returned
@@ -156,7 +156,7 @@ type RunRequest struct {
 // (RunRequest.ToolEndpoint) to actually EXECUTE one non-memory catalog tool
 // during a case. The validator returns a deterministic, seed-derived mock result
 // (ToolExecResponse) and records the call as the authoritative observed
-// trajectory for that case (Phase C). CaseID ties the call to the
+// trajectory for that case. CaseID ties the call to the
 // running case; UserID echoes RunRequest.UserID; Hop is the 0-based position in
 // the harness's tool sequence (for order scoring).
 type ToolExecRequest struct {
@@ -208,7 +208,7 @@ const (
 // CaseScore is the score for one case (tool OR memory).
 //
 // For a tool case: Score = 0.5*ToolAccuracy + 0.5*Quality (the LLM judge half).
-// For a memory case: Score is 1.0 or 0.0 from the LongMemEval yes/no judge, and
+// For a memory case: Score is 1.0 or 0.0 from the yes/no memory judge, and
 // ToolAccuracy/Quality are unused.
 type CaseScore struct {
 	CaseID    string  `json:"case_id"`
@@ -217,9 +217,9 @@ type CaseScore struct {
 	Score     float64 `json:"score"`             // 0..1 composite for this case
 	ToolScore float64 `json:"tool_score"`        // 0..1 deterministic tool accuracy (tool cases)
 	Quality   float64 `json:"quality,omitempty"` // 0..1 LLM response-quality judge (tool cases)
-	// ResultUsage is 0..1 for a result-usage tool case (Phase C): whether
-	// the final answer incorporated the distinctive value the executed tool
-	// returned. It replaces the LLM quality judge for those cases (deterministic).
+	// ResultUsage is 0..1 for a result-usage tool case: whether the final answer
+	// incorporated the distinctive value the executed tool returned. For those
+	// cases it is the deterministic substitute for the LLM quality judge.
 	ResultUsage float64 `json:"result_usage,omitempty"`
 	Correct     bool    `json:"correct,omitempty"` // memory judge verdict (memory cases)
 	// TwinGroup, when set, ties this case to its metamorphic invariance twin so the
@@ -267,19 +267,19 @@ type CodeFingerprint struct {
 	M    []string `json:"m"`
 }
 
-// ParaphraseStats counts the outcomes of the surface-realization (LLM
-// paraphrase) pass for one generation. It exists so a spike in template
-// fallbacks (an LLM outage or an over-strict verifier silently collapsing the
-// dataset back to verbatim templates) is visible in the report.
-// Purely advisory telemetry; never affects the score.
+// ParaphraseStats is a retained wire field. Generation is fully non-LLM, so the
+// surface variation comes from seeded template selection rather than a paraphrase
+// pass, and every counter here is always zero. It is kept for wire compatibility
+// with consumers that read the field. Purely advisory telemetry; never affects
+// the score.
 type ParaphraseStats struct {
-	Attempted int `json:"attempted"` // paraphrase was attempted (frac roll hit, LLM present)
-	Applied   int `json:"applied"`   // paraphrase verified (fact/entity preserved) and used
-	Retried   int `json:"retried"`   // first LLM call failed; a second was made
-	Fallback  int `json:"fallback"`  // kept the template/verbatim original (LLM error or failed verify)
+	Attempted int `json:"attempted"`
+	Applied   int `json:"applied"`
+	Retried   int `json:"retried"`
+	Fallback  int `json:"fallback"`
 }
 
-// Add folds another ParaphraseStats into the receiver (tool + memory passes).
+// Add folds another ParaphraseStats into the receiver.
 func (p *ParaphraseStats) Add(o ParaphraseStats) {
 	p.Attempted += o.Attempted
 	p.Applied += o.Applied
@@ -301,7 +301,7 @@ type LexicalGapStats struct {
 
 // RunDetails is the opaque, additive telemetry blob for a run.
 // It is NOT part of the platform's DB/signature contract, so new fields may be
-// added freely (later work adds bench_version, judge-audit stats, token totals).
+// added freely (for example bench_version, judge-audit stats, token totals).
 // Serialized under ScoreReport.details.
 type RunDetails struct {
 	// BenchVersion is the scoring benchmark version (see protocol.BenchVersion).
@@ -319,8 +319,8 @@ type RunDetails struct {
 	// attempts (each scored 0). A non-zero value is moderation-relevant evidence,
 	// the same policy channel as plagiarism.
 	InjectionAttempts int `json:"injection_attempts,omitempty"`
-	// Tokens is the total OpenRouter tokens (generator + judge) the run spent:
-	// budget telemetry (kept out of the composite).
+	// Tokens is the total OpenRouter tokens the judge spent: budget telemetry
+	// (kept out of the composite). Generation is non-LLM and spends none.
 	Tokens int64 `json:"tokens,omitempty"`
 	// SeedingWaves is how many staged /seed waves the memory haystack was split
 	// into (Tier C; 1 = single seed). RawPairsCases is how many memory cases were
@@ -382,7 +382,8 @@ type RunDetails struct {
 // ModelInfo is the set of LLM model ids a run was produced with (RunDetails.models).
 // All fields are advisory transparency metadata, never scored or signed.
 type ModelInfo struct {
-	// Generator is the datagen model (paraphrase + haystack surface realization).
+	// Generator is the model id used in generation, if any. Generation is non-LLM,
+	// so this is normally empty.
 	Generator string `json:"generator,omitempty"`
 	// Judge is the primary scoring/judge model.
 	Judge string `json:"judge,omitempty"`
@@ -406,7 +407,7 @@ type ScoreReport struct {
 	// It lets the KOTH weight fold gate a challenger on measurement uncertainty (a
 	// challenger dethrones only when its lead exceeds z*sqrt(se_c^2 + se_champ^2))
 	// instead of a flat margin. Additive-optional (omitempty): a consumer that
-	// ignores it sees the earlier flat-margin behavior.
+	// ignores it uses flat-margin gating.
 	// Caveat: this is the WITHIN-run SE over per-case scores; memory cases share one
 	// persona (a single cluster), so it understates run-to-run variance. The subnet
 	// combines it with CRN paired scoring and multi-seed aggregation for the
@@ -418,8 +419,8 @@ type ScoreReport struct {
 	N               int            `json:"n"`
 	PerCase         []CaseScore    `json:"per_case"`
 	PerCategory     []CategoryStat `json:"per_category,omitempty"`
-	// Details is opaque, additive run telemetry (paraphrase fallback counts and,
-	// in later bench versions, more). Advisory only, never scored or signed.
+	// Details is opaque, additive run telemetry. Advisory only, never scored or
+	// signed.
 	Details *RunDetails `json:"details,omitempty"`
 	// StructuralFingerprint is an AST-level shingle sketch of the built crate
 	// (nil when unavailable), forwarded to the platform's anti-copy gate as

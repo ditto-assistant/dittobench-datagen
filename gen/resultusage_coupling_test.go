@@ -12,8 +12,8 @@ import (
 // GenerateTools must derive result-usage prompts from the SAME master seed the
 // mock endpoint serves from (BuildFixture), so the entity a prompt asks about is
 // exactly the one the tool returns. Regenerating tool cases from a fresh sub-seed
-// (the earlier bug) makes the prompt ask about a different fabricated entity than
-// the served needle, penalizing a harness that reconciles the two.
+// would make the prompt ask about a different fabricated entity than the served
+// needle, penalizing a harness that reconciles the two.
 func TestResultUsagePromptCoupledToServedNeedle(t *testing.T) {
 	const seed = int64(123456789)
 	cases, _ := GenerateTools(NewRNG(seed), seed, 60)

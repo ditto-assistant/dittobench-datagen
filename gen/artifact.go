@@ -25,11 +25,11 @@ type DatasetArtifact struct {
 	ToolCases    []protocol.ToolCase    `json:"tool_cases"`
 	MemoryWaves  []protocol.SeedRequest `json:"memory_waves"`
 	MemoryCases  []ArtifactCase         `json:"memory_cases"`
-	// ToolFixtures pins the Phase C mock-tool content the validator served per
-	// case. The content is a pure function of (seed, case), but recording the
-	// coined "needle" facts makes the served world explicit in the dispute
-	// artifact so a re-score sees identical tool results. Sorted by CaseID (no Go
-	// map) so the JSON stays byte-stable. Omitted before Phase C.
+	// ToolFixtures pins the mock-tool content the validator served per case. The
+	// content is a pure function of (seed, case), but recording the coined
+	// "needle" facts makes the served world explicit in the dispute artifact so a
+	// re-score sees identical tool results. Sorted by CaseID (no Go map) so the
+	// JSON stays byte-stable. Omitted when no tool endpoint was served.
 	ToolFixtures []FixtureDigest `json:"tool_fixtures,omitempty"`
 }
 

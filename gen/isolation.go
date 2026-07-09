@@ -7,8 +7,8 @@ import (
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
-// User graph identifiers for multi-graph isolation (Phase C). The
-// primary persona is seeded under PrimaryUser (the historical default "miner");
+// User graph identifiers for multi-graph isolation. The
+// primary persona is seeded under PrimaryUser (default "miner");
 // a second persona is seeded under SecondaryUser. Isolation cases then query one
 // user while the OTHER user's graph holds a conflicting value for the same
 // attribute. A harness that respects the user_id scoping answers correctly; one

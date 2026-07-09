@@ -1,13 +1,13 @@
 // Package toolexec implements the validator-served MOCK tool-execution endpoint
-// for Phase C observed execution. A harness that supports
-// observed execution POSTs each of its non-memory catalog tool calls to this
+// for observed execution. A harness that supports observed execution POSTs each
+// of its non-memory catalog tool calls to this
 // endpoint (RunRequest.ToolEndpoint) instead of stubbing them locally; the server
 //
 //  1. returns a deterministic, seed-derived MOCK result for the tool (so the
 //     harness has real content to reason over: a web snippet, a page's text, a
 //     job status), and
 //  2. RECORDS the call as the authoritative observed tool trajectory for that
-//     case, so the validator no longer has to trust the harness's self-reported
+//     case, so the validator does not have to trust the harness's self-reported
 //     tool_calls.
 //
 // Memory tools (search_memories, search_subjects, fetch_memories,
