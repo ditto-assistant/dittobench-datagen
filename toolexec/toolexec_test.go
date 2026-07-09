@@ -201,3 +201,40 @@ func TestJobChainDependency(t *testing.T) {
 		t.Fatalf("status with a wrong id must NOT reveal the needle, got %q", bad)
 	}
 }
+
+// TestErrorRecoveryGate verifies the first content-tool call flakes and the
+// needle is served only on the retry.
+func TestErrorRecoveryGate(t *testing.T) {
+	c := protocol.ToolCase{
+		ID:            "crec001",
+		Category:      "web_recovery_result_usage",
+		ExpectedTools: []protocol.ToolSpec{{Name: "search_web"}},
+	}
+	s := NewServer()
+	s.Register(c.ID, BuildFixture(99, c))
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	call := func() protocol.ToolExecResponse {
+		body, _ := json.Marshal(protocol.ToolExecRequest{CaseID: c.ID, Name: "search_web", Args: json.RawMessage(`{"queries":["x"]}`)})
+		resp, err := http.Post(ts.URL, "application/json", bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("post: %v", err)
+		}
+		defer resp.Body.Close()
+		var out protocol.ToolExecResponse
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return out
+	}
+	first := call()
+	if first.Error == "" || first.Result != "" {
+		t.Fatalf("first content-tool call should return a transient error, got %+v", first)
+	}
+	second := call()
+	nv := BuildFixture(99, c).NeedleValue()
+	if !strings.Contains(second.Result, nv) {
+		t.Fatalf("retry should serve the needle %q, got %q", nv, second.Result)
+	}
+}

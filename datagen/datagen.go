@@ -24,6 +24,10 @@ type category struct {
 	// unordered marks a tools set as INDEPENDENT parallel calls: name/arg set is
 	// scored but relative call order is not (ToolCase.Unordered).
 	unordered bool
+	// allowExtra sets ToolCase.AllowExtraTools: an extra call to the expected tool
+	// is not penalized. Used by error-recovery cases where a legitimate RETRY after
+	// a transient tool error would otherwise read as an over-budget extra call.
+	allowExtra bool
 	// argKey, when set on a single-tool category whose filler is an exact token
 	// (a URL, a theme), pins RequiredArgs[argKey]=filler so the argument value is
 	// deterministically scored — right tool + wrong arg no longer gets full credit.
@@ -422,6 +426,20 @@ var categories = []category{
 			"Start a job to work out %s, then read the finished job's status and report its exact figure.",
 		},
 	},
+	// Error recovery (result-usage): the FIRST call to the served tool returns a
+	// transient error; the needle is delivered only on a RETRY. A harness that
+	// gives up after one error cannot produce the answer value, so recovery is
+	// enforced by the serving layer (no scorer change). allowExtra so the retry is
+	// not charged as an over-budget extra call. The "recovery" marker selects the
+	// transient-first serving behavior in toolexec.
+	{
+		name: "web_recovery_result_usage", tool: "search_web", allowExtra: true,
+		templates: []string{
+			"Search the web for the latest figure on %s and tell me the exact number (retry if the search flakes).",
+			"Look up %s online and report the precise figure; if the first attempt errors, try again.",
+			"Get the current number for %s from the web, retrying past any transient hiccup.",
+		},
+	},
 }
 
 // resultUsageSuffix marks the categories whose correct answer must incorporate a
@@ -611,7 +629,7 @@ func GenerateCasesWithFillers(r *rand.Rand, seed int64, n int) ([]protocol.ToolC
 			ID:              caseID,
 			Category:        cat.name,
 			Prompt:          prompt,
-			AllowExtraTools: false,
+			AllowExtraTools: cat.allowExtra,
 		}
 
 		switch {

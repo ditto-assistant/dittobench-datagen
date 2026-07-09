@@ -102,6 +102,7 @@ type Fixture struct {
 	has       bool
 	jobID     string // the stable job id execute_agent_job serves for this case
 	dependent bool   // a dependent-arg chain: get_agent_job_status gates the needle on jobID
+	recovery  bool   // an error-recovery case: the first content-tool call returns a transient error
 }
 
 // jobChainMarker tags a dependent-arg result-usage category: execute_agent_job
@@ -114,11 +115,20 @@ const jobChainMarker = "job_chain"
 // served by call 1 must be passed to call 2).
 func IsJobChain(category string) bool { return strings.Contains(category, jobChainMarker) }
 
+// recoveryMarker tags an error-recovery result-usage category: the first call to
+// the served content tool returns a transient error, and the answer needle is
+// delivered only on a retry — so a harness must recover from the error to score.
+const recoveryMarker = "recovery"
+
+// IsErrorRecovery reports whether a category is an error-recovery case.
+func IsErrorRecovery(category string) bool { return strings.Contains(category, recoveryMarker) }
+
 // BuildFixture derives the deterministic mock environment for one tool case.
 func BuildFixture(masterSeed int64, c protocol.ToolCase) Fixture {
 	f := Fixture{seed: caseSeed(masterSeed, c.ID)}
 	f.jobID = jobIDForSeed(f.seed)
 	f.dependent = IsJobChain(c.Category)
+	f.recovery = IsErrorRecovery(c.Category)
 	if caseCarriesNeedle(c) {
 		f.needle = NeedleFor(masterSeed, c.ID)
 		f.has = true
@@ -442,7 +452,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	cs.mu.Lock()
 	cs.observed = append(cs.observed, protocol.ObservedToolCall{Name: req.Name, Args: req.Args, Hop: req.Hop})
 	fixture := cs.fixture
+	// Prior calls to this same tool (excludes the one just appended), for the
+	// error-recovery gate: the first content-tool call flakes, a retry succeeds.
+	priorSameTool := 0
+	for i := 0; i < len(cs.observed)-1; i++ {
+		if cs.observed[i].Name == req.Name {
+			priorSameTool++
+		}
+	}
 	cs.mu.Unlock()
+
+	// Error-recovery: the FIRST call to a content tool returns a transient error
+	// (recorded, so the trajectory shows the attempt). The needle is served only
+	// on the retry, so a harness that does not recover cannot answer.
+	if fixture.recovery && contentTools[req.Name] && priorSameTool == 0 {
+		writeJSON(w, http.StatusOK, protocol.ToolExecResponse{Error: "transient upstream error (503); retry"})
+		return
+	}
 
 	result, ok := fixture.Result(req.Name, req.Args)
 	if !ok {
