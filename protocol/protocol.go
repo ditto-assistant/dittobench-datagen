@@ -366,16 +366,27 @@ type ModelInfo struct {
 
 // ScoreReport is the full result of scoring a run.
 type ScoreReport struct {
-	RunID       string         `json:"run_id"`
-	Seed        int64          `json:"seed"` // dataset seed (anti-overfit reproducibility)
-	GeneratedAt string         `json:"generated_at"`
-	Composite   float64        `json:"composite"`   // 0..1 weighted composite: 0.5*tool_mean + 0.5*memory_mean (v2)
-	ToolMean    float64        `json:"tool_mean"`   // 0..1 mean tool-case composite
-	MemoryMean  float64        `json:"memory_mean"` // 0..1 fraction of memory cases correct
-	MedianMs    int64          `json:"median_ms"`
-	N           int            `json:"n"`
-	PerCase     []CaseScore    `json:"per_case"`
-	PerCategory []CategoryStat `json:"per_category,omitempty"`
+	RunID       string  `json:"run_id"`
+	Seed        int64   `json:"seed"` // dataset seed (anti-overfit reproducibility)
+	GeneratedAt string  `json:"generated_at"`
+	Composite   float64 `json:"composite"` // 0..1 weighted composite: 0.5*tool_mean + 0.5*memory_mean (v2)
+	// CompositeStderr is the standard error of the composite for THIS run, combining
+	// the tool-half and memory-half standard errors: 0.5*sqrt(se_tool^2 + se_mem^2).
+	// It lets the KOTH weight fold gate a challenger on measurement uncertainty (a
+	// challenger dethrones only when its lead exceeds z*sqrt(se_c^2 + se_champ^2))
+	// instead of a flat margin (BENCHMARK-V3-IDEAS #2). Additive-optional
+	// (omitempty): a consumer that ignores it sees the pre-v3 flat-margin behavior.
+	// Caveat: this is the WITHIN-run SE over per-case scores; memory cases share one
+	// persona (a single cluster), so it understates run-to-run variance. The subnet
+	// combines it with CRN paired scoring and multi-seed aggregation for the
+	// cross-run picture.
+	CompositeStderr float64        `json:"composite_stderr,omitempty"`
+	ToolMean        float64        `json:"tool_mean"`   // 0..1 mean tool-case composite
+	MemoryMean      float64        `json:"memory_mean"` // 0..1 fraction of memory cases correct
+	MedianMs        int64          `json:"median_ms"`
+	N               int            `json:"n"`
+	PerCase         []CaseScore    `json:"per_case"`
+	PerCategory     []CategoryStat `json:"per_category,omitempty"`
 	// Details is opaque, additive run telemetry (paraphrase fallback counts and,
 	// in later bench versions, more). Advisory only — never scored or signed.
 	Details *RunDetails `json:"details,omitempty"`
