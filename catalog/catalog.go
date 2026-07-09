@@ -6,7 +6,7 @@ package catalog
 import (
 	"encoding/json"
 
-	"github.com/ditto-assistant/dittobench-datagen/pkg/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // params is a tiny helper to build a JSON-schema object for parameters.

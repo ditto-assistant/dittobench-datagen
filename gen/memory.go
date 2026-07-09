@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ditto-assistant/dittobench-datagen/pkg/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // timestamp-space knobs (documented in package doc combinatorics).

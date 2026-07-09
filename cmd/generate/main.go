@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ditto-assistant/dittobench-datagen/internal/gen"
+	"github.com/ditto-assistant/dittobench-datagen/gen"
 )
 
 func main() {

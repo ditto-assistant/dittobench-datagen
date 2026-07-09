@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ditto-assistant/dittobench-datagen/pkg/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // marshal renders a value to canonical JSON for byte-level comparison.

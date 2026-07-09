@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ditto-assistant/dittobench-datagen/internal/persona"
-	"github.com/ditto-assistant/dittobench-datagen/pkg/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/persona"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // evidenceCarriesValue is the reproducibility invariant (plan level): for every

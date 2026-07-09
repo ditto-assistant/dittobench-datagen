@@ -3,7 +3,7 @@ package datagen
 import (
 	"testing"
 
-	"github.com/ditto-assistant/dittobench-datagen/pkg/catalog"
+	"github.com/ditto-assistant/dittobench-datagen/catalog"
 )
 
 // TestFullCatalogCoverage checks the property: every tool in the catalog is

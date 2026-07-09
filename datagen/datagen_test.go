@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ditto-assistant/dittobench-datagen/pkg/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // TestDeterministicPerSeed: same seed yields byte-identical datasets. With

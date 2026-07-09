@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ditto-assistant/dittobench-datagen/internal/persona"
+	"github.com/ditto-assistant/dittobench-datagen/persona"
 )
 
 func TestGenerateIsolationStructure(t *testing.T) {

@@ -72,13 +72,18 @@ reproduces the validators' bytes exactly.
 
 ## Layout
 
+Every package is importable, so this module is the single source of truth for the
+generator. The private scoring service and generate service depend on it rather
+than keeping their own copies.
+
 - `cmd/generate`: the CLI entry point.
-- `internal/gen`: the generation pipeline (tool cases, memory suite, isolation
-  graphs, artifact assembly and hashing).
-- `internal/persona`, `internal/datagen`: case content builders.
-- `pkg/protocol`: the wire shapes, including the `DatasetArtifact` schema
-  validators score.
-- `pkg/toolexec`, `pkg/catalog`: the tool fixtures and tool catalog.
+- `gen`: the generation pipeline (tool cases, memory suite, isolation graphs,
+  artifact assembly and hashing). `gen.GenerateDataset(seed, profile)` is the one
+  entry point.
+- `persona`, `datagen`: case content builders.
+- `protocol`: the wire shapes, including the `DatasetArtifact` schema validators
+  score.
+- `toolexec`, `catalog`: the tool fixtures and tool catalog.
 
 ## License
 

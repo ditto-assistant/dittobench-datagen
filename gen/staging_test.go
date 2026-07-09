@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ditto-assistant/dittobench-datagen/pkg/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // TestStagedSuiteEvidenceSeededByUnlockWave is the core Tier-C correctness

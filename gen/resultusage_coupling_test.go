@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ditto-assistant/dittobench-datagen/internal/datagen"
-	"github.com/ditto-assistant/dittobench-datagen/pkg/toolexec"
+	"github.com/ditto-assistant/dittobench-datagen/datagen"
+	"github.com/ditto-assistant/dittobench-datagen/toolexec"
 )
 
 // TestResultUsagePromptCoupledToServedNeedle pins the prompt/needle coupling:

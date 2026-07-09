@@ -3,8 +3,8 @@ package gen
 import (
 	"math/rand"
 
-	"github.com/ditto-assistant/dittobench-datagen/internal/datagen"
-	"github.com/ditto-assistant/dittobench-datagen/pkg/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/datagen"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // GenerateTools builds n fresh tool-calling cases from datagen's templated

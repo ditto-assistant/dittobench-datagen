@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ditto-assistant/dittobench-datagen/internal/persona"
-	"github.com/ditto-assistant/dittobench-datagen/pkg/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/persona"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // StagedCase pairs a memory case with the seeding wave after which it becomes

@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"sort"
 
-	"github.com/ditto-assistant/dittobench-datagen/pkg/protocol"
-	"github.com/ditto-assistant/dittobench-datagen/pkg/toolexec"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/toolexec"
 )
 
 // DatasetArtifact is the canonical, hashable snapshot of a fully-rendered run

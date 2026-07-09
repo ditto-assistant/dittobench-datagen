@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/ditto-assistant/dittobench-datagen/internal/persona"
-	"github.com/ditto-assistant/dittobench-datagen/pkg/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/persona"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // User graph identifiers for multi-graph isolation (Phase C). The

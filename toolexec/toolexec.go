@@ -32,7 +32,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ditto-assistant/dittobench-datagen/pkg/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // memoryTools are the catalog tools the mock endpoint does NOT execute: the

@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ditto-assistant/dittobench-datagen/internal/persona"
-	"github.com/ditto-assistant/dittobench-datagen/pkg/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/persona"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // Package note (surface realization, Layer 2):

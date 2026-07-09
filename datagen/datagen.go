@@ -10,8 +10,8 @@ import (
 	"math/rand"
 	"strings"
 
-	"github.com/ditto-assistant/dittobench-datagen/pkg/protocol"
-	"github.com/ditto-assistant/dittobench-datagen/pkg/toolexec"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/toolexec"
 )
 
 // category describes one kind of tool-calling case and how to render it.

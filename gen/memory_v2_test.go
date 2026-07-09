@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ditto-assistant/dittobench-datagen/internal/persona"
+	"github.com/ditto-assistant/dittobench-datagen/persona"
 )
 
 func TestGenerateMemoryV2Deterministic(t *testing.T) {
