@@ -498,6 +498,12 @@ func DeriveQuestions(p *Plan) []Question {
 	return qs
 }
 
+// dated pairs a self-fact with its display label for temporal listing/ordering.
+type dated struct {
+	f     Fact
+	label string
+}
+
 // temporalQuestions derives genuine temporal-reasoning questions from dated
 // self-facts (not just binary "which came first"): N-way ordering of three
 // events, and elapsed-duration between two events computed from the session day
@@ -510,10 +516,6 @@ func temporalQuestions(p *Plan) []Question {
 	dayOf := make(map[int]int, len(p.Sessions))
 	for _, s := range p.Sessions {
 		dayOf[s.Index] = s.DayOffset
-	}
-	type dated struct {
-		f     Fact
-		label string
 	}
 	// One representative event per session, timeline order — each event is in a
 	// distinct session, so their order is a total order the harness can recover.
@@ -537,10 +539,12 @@ func temporalQuestions(p *Plan) []Question {
 	i := 0
 	for ; i+2 < len(evs); i += 3 {
 		a, b, c := evs[i], evs[i+1], evs[i+2] // a<b<c in time
-		// Present the three in a non-timeline order (sorted by label) so the listing
-		// itself leaks nothing about the sequence.
+		// Present the three in a non-timeline order so the listing itself leaks
+		// nothing about the sequence. A seed-derived permutation (not a fixed
+		// alphabetical sort) removes the "listing is always alphabetical" tell a
+		// matcher could rely on, while staying deterministic per seed.
 		shown := []dated{a, b, c}
-		sort.Slice(shown, func(x, y int) bool { return shown[x].label < shown[y].label })
+		permuteDated(p.Seed, a.f.ID, shown)
 		qs = append(qs, Question{
 			ID:   "q-order3-" + a.f.ID,
 			Type: QTTemporal,
@@ -875,4 +879,16 @@ func joinComma(xs []string) string {
 		out += x
 	}
 	return out
+}
+
+// permuteDated reorders a 3-element listing by a seed-derived permutation keyed
+// on the question's anchor fact id, so the presented order is deterministic per
+// seed but not a fixed alphabetical rule a matcher could exploit.
+func permuteDated(seed int64, key string, xs []dated) {
+	h := uint64(factHash("order:"+key)) ^ uint64(seed)
+	for i := len(xs) - 1; i > 0; i-- {
+		h = h*6364136223846793005 + 1442695040888963407
+		j := int(h % uint64(i+1))
+		xs[i], xs[j] = xs[j], xs[i]
+	}
 }

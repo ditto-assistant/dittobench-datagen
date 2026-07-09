@@ -601,9 +601,9 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 						Current:    j == len(vals)-1,
 					}
 					if j == 0 {
-						f.UserText, f.AsstText = fill(pickStr(r, s.stmt), v), fill(pickStr(r, s.ack), v)
+						f.UserText, f.AsstText = varySurface(r, fill(pickStr(r, s.stmt), v)), fill(pickStr(r, s.ack), v)
 					} else {
-						f.UserText, f.AsstText = fill(pickStr(r, s.updateStmt), v), fill(pickStr(r, s.updateAck), v)
+						f.UserText, f.AsstText = varySurface(r, fill(pickStr(r, s.updateStmt), v)), fill(pickStr(r, s.updateAck), v)
 					}
 					p.Facts = append(p.Facts, f)
 					prevID = id
@@ -641,11 +641,11 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 				Supersedes: f1.ID,
 				Current:    true,
 			}
-			f1.UserText, f1.AsstText = fill(stmt, v1), fill(ack, v1)
-			f2.UserText, f2.AsstText = fill(pickStr(r, s.updateStmt), v2), fill(pickStr(r, s.updateAck), v2)
+			f1.UserText, f1.AsstText = varySurface(r, fill(stmt, v1)), fill(ack, v1)
+			f2.UserText, f2.AsstText = varySurface(r, fill(pickStr(r, s.updateStmt), v2)), fill(pickStr(r, s.updateAck), v2)
 			p.Facts = append(p.Facts, f1, f2)
 		} else {
-			f1.UserText, f1.AsstText = fill(stmt, v1), fill(ack, v1)
+			f1.UserText, f1.AsstText = varySurface(r, fill(stmt, v1)), fill(ack, v1)
 			p.Facts = append(p.Facts, f1)
 		}
 	}
@@ -655,12 +655,12 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 		vals := pickN(r, spec.pool, count)
 		for j, v := range vals {
 			display, value := v, v
-			userText := fill(pickStr(r, spec.stmt), display)
+			userText := varySurface(r, fill(pickStr(r, spec.stmt), display))
 			if spec.isPet {
 				t := pick(r, petTypes)
 				display = fmt.Sprintf("a %s named %s", t, v)
 				value = v // the pet's name is the canonical answer token
-				userText = fill(pickStr(r, spec.stmt), display)
+				userText = varySurface(r, fill(pickStr(r, spec.stmt), display))
 			}
 			p.Facts = append(p.Facts, Fact{
 				ID:        fmt.Sprintf("f-%s-%d", spec.attr, j),
@@ -698,7 +698,7 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 			Session:   spread(0, opts.Sessions),
 			Seq:       nextSeq(),
 			Current:   true,
-			UserText:  fill(pickStr(r, s.stmt), v),
+			UserText:  varySurface(r, fill(pickStr(r, s.stmt), v)),
 			AsstText:  fill(pickStr(r, s.ack), v),
 		})
 	}
@@ -717,7 +717,7 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 			Session:   spread(0, half),
 			Seq:       nextSeq(),
 			Current:   false, // the reversal supersedes the original stance
-			UserText:  fill(pickStr(r, []string{"I absolutely love %s.", "I've really gotten into %s lately.", "%s is my favorite way to spend a weekend."}), h),
+			UserText:  varySurface(r, fill(pickStr(r, []string{"I absolutely love %s.", "I've really gotten into %s lately.", "%s is my favorite way to spend a weekend."}), h)),
 			AsstText:  fill(pickStr(r, []string{"%s sounds like a joy.", "Great that you enjoy %s."}), h),
 		}
 		rev := Fact{
@@ -732,7 +732,7 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 			Supersedes: orig.ID,
 			Reversal:   true,
 			Current:    true,
-			UserText:   fill(pickStr(r, []string{"Honestly, I can't stand %s anymore — I've given it up.", "I've completely gone off %s; I don't do it now.", "I used to love %s but I've quit it entirely."}), h),
+			UserText:   varySurface(r, fill(pickStr(r, []string{"Honestly, I can't stand %s anymore — I've given it up.", "I've completely gone off %s; I don't do it now.", "I used to love %s but I've quit it entirely."}), h)),
 			AsstText:   fill(pickStr(r, []string{"Understood — you no longer do %s.", "Noted that you've given up %s."}), h),
 		}
 		p.Facts = append(p.Facts, orig, rev)
@@ -759,8 +759,8 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 			Display:   v,
 			Session:   spread(0, opts.Sessions),
 			Seq:       nextSeq(),
-			UserText:  fmt.Sprintf("By the way, %s %s's %s is %s.", rel, who, s.label, v),
-			AsstText:  fmt.Sprintf("Noted — that %s is about %s, not you.", s.label, who),
+			UserText:  fmt.Sprintf(pickStr(r, notYouFrames), rel, who, s.label, v),
+			AsstText:  fmt.Sprintf(pickStr(r, notYouAcks), s.label, who),
 		})
 	}
 
@@ -784,7 +784,7 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 				Session:   spread(0, opts.Sessions),
 				Seq:       nextSeq(),
 				Current:   true,
-				UserText:  fill(pickStr(r, s.stmt), v),
+				UserText:  varySurface(r, fill(pickStr(r, s.stmt), v)),
 				AsstText:  fill(pickStr(r, s.ack), v),
 			})
 		case roll < pSometimesDecoy:
@@ -800,8 +800,8 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 				Display:   v,
 				Session:   spread(0, opts.Sessions),
 				Seq:       nextSeq(),
-				UserText:  fmt.Sprintf("Oh, %s %s's %s is %s.", rel, who, s.label, v),
-				AsstText:  fmt.Sprintf("Noted — that %s is %s's, not yours.", s.label, who),
+				UserText:  fmt.Sprintf(pickStr(r, notYouFrames), rel, who, s.label, v),
+				AsstText:  fmt.Sprintf(pickStr(r, notYouAcks), s.label, who),
 			})
 		}
 	}
@@ -848,7 +848,7 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 			Session:   sess,
 			Seq:       nextSeq(),
 			Current:   true,
-			UserText:  fill(recurringMentionTmpls[j%len(recurringMentionTmpls)], rec.label),
+			UserText:  varySurface(r, fill(recurringMentionTmpls[j%len(recurringMentionTmpls)], rec.label)),
 			AsstText:  fill(pickStr(r, []string{"Noted — %s has come up before.", "Understood, thanks for the update on %s.", "Got it, %s again."}), rec.label),
 		})
 	}
