@@ -405,8 +405,8 @@ type ScoreReport struct {
 	// the tool-half and memory-half standard errors: 0.5*sqrt(se_tool^2 + se_mem^2).
 	// It lets the KOTH weight fold gate a challenger on measurement uncertainty (a
 	// challenger dethrones only when its lead exceeds z*sqrt(se_c^2 + se_champ^2))
-	// instead of a flat margin (BENCHMARK-V3-IDEAS #2). Additive-optional
-	// (omitempty): a consumer that ignores it sees the pre-v3 flat-margin behavior.
+	// instead of a flat margin. Additive-optional (omitempty): a consumer that
+	// ignores it sees the earlier flat-margin behavior.
 	// Caveat: this is the WITHIN-run SE over per-case scores; memory cases share one
 	// persona (a single cluster), so it understates run-to-run variance. The subnet
 	// combines it with CRN paired scoring and multi-seed aggregation for the

@@ -513,7 +513,7 @@ var categories = []category{
 			"Create a picture of %s and tweak the colors.",
 		},
 	},
-	// Result-usage (Phase C, capability 13): the answer requires a value
+	// Result-usage (Phase C): the answer requires a value
 	// that exists ONLY in the tool's returned content (a fabricated per-seed
 	// needle, toolexec), so the case cannot be answered by self-report or base-
 	// model knowledge; the harness must actually execute the tool and USE the

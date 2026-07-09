@@ -1,5 +1,5 @@
-// Command gstudy is an offline reliability analyzer for DittoBench scored runs
-// (BENCHMARK-V3-IDEAS #4/#5). It reads a JSONL of scored runs and reports:
+// Command gstudy is an offline reliability analyzer for DittoBench scored runs.
+// It reads a JSONL of scored runs and reports:
 //
 //   - a crossed generalizability (G-study) variance decomposition of per-case
 //     scores into seed, item (category), and residual components, so you can see
