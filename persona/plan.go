@@ -431,6 +431,89 @@ var domains = []domainSpec{
 	},
 }
 
+// sometimesSpecs are the sometimes-present attributes: per seed each one is
+// self-stated (a normal recall answer), stated only about a decoy person (a
+// false-premise abstention), or entirely absent (a pure abstention). The old
+// fixed absent-question list was a static decline rule a pattern-matching
+// harness could hard-code; rolling presence per seed makes decline-vs-answer
+// decidable only by reading the seeded haystack. Never updatable: they exist
+// to randomize the abstention boundary, not to carry update chains.
+var sometimesSpecs = []scalarSpec{
+	{
+		attr: "shoe_size", label: "shoe size", pool: shoeSizes,
+		stmt: []string{"My shoe size is %s, for the record.", "I wear a %s shoe.", "For sizing, I'm a %s."},
+		ack:  []string{"Noted your shoe size, %s.", "Got it — %s."},
+	},
+	{
+		attr: "height", label: "height", pool: heightsCm,
+		stmt: []string{"I'm %s tall.", "My height is %s.", "For reference, I stand %s."},
+		ack:  []string{"Noted your height, %s.", "Got it — %s."},
+	},
+	{
+		attr: "favorite_song", label: "favorite song", pool: favoriteSongs,
+		stmt: []string{"My favorite song is %s.", "The song I love most is %s.", "%s is my all-time favorite song."},
+		ack:  []string{"%s — great pick.", "Noted, %s is your favorite song."},
+	},
+	{
+		attr: "star_sign", label: "star sign", pool: starSigns,
+		stmt: []string{"My star sign is %s.", "Astrologically, I'm a %s.", "I was born under %s."},
+		ack:  []string{"Noted, you're a %s.", "Got it — %s."},
+	},
+	{
+		attr: "middle_name", label: "middle name", pool: firstNames,
+		stmt: []string{"My middle name is %s.", "For the record, my middle name is %s.", "%s is my middle name."},
+		ack:  []string{"Noted your middle name, %s.", "Got it — %s."},
+	},
+	{
+		attr: "eye_color", label: "eye color", pool: eyeColors,
+		stmt: []string{"My eyes are %s.", "I have %s eyes.", "My eye color is %s."},
+		ack:  []string{"Noted, %s eyes.", "Got it — %s."},
+	},
+	{
+		attr: "blood_type", label: "blood type", pool: bloodTypes,
+		stmt: []string{"My blood type is %s.", "I'm %s, blood-wise.", "For medical records, my blood type is %s."},
+		ack:  []string{"Noted your blood type, %s.", "Got it — %s."},
+	},
+	{
+		attr: "birthday_month", label: "birthday month", pool: birthdayMonths,
+		stmt: []string{"My birthday is in %s.", "I was born in %s.", "My birthday month is %s."},
+		ack:  []string{"Noted, a %s birthday.", "Got it — %s."},
+	},
+	{
+		attr: "sports_team", label: "favorite sports team", pool: sportsTeams,
+		stmt: []string{"I support %s above all.", "My team is %s.", "I'm a lifelong %s fan."},
+		ack:  []string{"Noted, you support %s.", "Got it — %s."},
+	},
+	{
+		attr: "favorite_film", label: "favorite film", pool: favoriteFilms,
+		stmt: []string{"My favorite film is %s.", "The film I love most is %s.", "%s is my favorite movie."},
+		ack:  []string{"%s — a classic.", "Noted, %s is your favorite film."},
+	},
+}
+
+// Presence thresholds for sometimesSpecs: a seed roll below pSometimesSelf
+// states the fact as the user's own; between the two, a decoy person holds it
+// (false premise); above both, it is absent.
+const (
+	pSometimesSelf  = 0.45
+	pSometimesDecoy = 0.75
+)
+
+// allScalarSpecs is the full ordered scalar-attribute registry across the
+// universal specs, every professional domain, and the sometimes-present
+// attributes. The question layer walks it to derive abstention questions for
+// attributes the plan did NOT state for the user, so the abstention surface is
+// phrased from the same registry as answerable recall.
+func allScalarSpecs() []scalarSpec {
+	out := make([]scalarSpec, 0, len(scalarSpecs)+8+len(sometimesSpecs))
+	out = append(out, scalarSpecs...)
+	for _, d := range domains {
+		out = append(out, d.scalars...)
+	}
+	out = append(out, sometimesSpecs...)
+	return out
+}
+
 // BuildPlan produces the Layer-1 plan for (seed, opts). It is a PURE function:
 // the only entropy source is a math/rand stream seeded from seed; there is no
 // wall clock, no crypto-rand, and every iteration is over an ordered slice (no
@@ -681,26 +764,46 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 		})
 	}
 
-	// --- false-premise decoys: a friend's value for an attribute the user NEVER
-	// states, seeded so a hard abstention question ("what is MY blood type?") has a
-	// near-miss in the haystack. Never a self fact, so it yields no recall/temporal
-	// question; the only correct behavior is still to decline. ---
-	for d, fp := range falsePremiseAbsent {
-		who := pick(r, firstNames)
-		rel := relations[d%len(relations)]
-		v := pick(r, fp.Pool)
-		p.Facts = append(p.Facts, Fact{
-			ID:        fmt.Sprintf("f-fp-%d", d),
-			Kind:      KindDistractor,
-			Entity:    who,
-			Attribute: fp.Attribute,
-			Value:     v,
-			Display:   v,
-			Session:   spread(0, opts.Sessions),
-			Seq:       nextSeq(),
-			UserText:  fmt.Sprintf("Oh, %s %s's %s is %s.", rel, who, fp.Label, v),
-			AsstText:  fmt.Sprintf("Noted — that %s is %s's, not yours.", fp.Label, who),
-		})
+	// --- sometimes-present attributes: roll each one per seed. Self-stated →
+	// a normal recall fact; decoy-held → a false-premise near-miss (the hard
+	// abstention material: retrieval surfaces a friend's value, the correct
+	// behavior is still to decline); absent → pure abstention. The roll is what
+	// makes the abstention boundary seed-dependent instead of a fixed list. ---
+	for d, s := range sometimesSpecs {
+		roll := r.Float64()
+		switch {
+		case roll < pSometimesSelf:
+			v := pick(r, s.pool)
+			p.Facts = append(p.Facts, Fact{
+				ID:        "f-" + s.attr,
+				Kind:      KindScalar,
+				Entity:    "self",
+				Attribute: s.attr,
+				Value:     v,
+				Display:   v,
+				Session:   spread(0, opts.Sessions),
+				Seq:       nextSeq(),
+				Current:   true,
+				UserText:  fill(pickStr(r, s.stmt), v),
+				AsstText:  fill(pickStr(r, s.ack), v),
+			})
+		case roll < pSometimesDecoy:
+			who := pick(r, firstNames)
+			rel := relations[d%len(relations)]
+			v := pick(r, s.pool)
+			p.Facts = append(p.Facts, Fact{
+				ID:        "f-fp-" + s.attr,
+				Kind:      KindDistractor,
+				Entity:    who,
+				Attribute: s.attr,
+				Value:     v,
+				Display:   v,
+				Session:   spread(0, opts.Sessions),
+				Seq:       nextSeq(),
+				UserText:  fmt.Sprintf("Oh, %s %s's %s is %s.", rel, who, s.label, v),
+				AsstText:  fmt.Sprintf("Noted — that %s is %s's, not yours.", s.label, who),
+			})
+		}
 	}
 
 	// --- assistant-side recommendations ---

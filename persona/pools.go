@@ -324,3 +324,54 @@ var financeHoldings = []string{
 	"VTI", "VXUS", "BND", "QQQ", "SCHD", "VNQ", "GLD", "TLT", "AAPL", "MSFT",
 	"NVDA", "JEPI", "VYM", "VUG", "IWM", "BRKB",
 }
+
+// Sometimes-present attribute pools. Each attribute in sometimesSpecs is,
+// per seed, self-stated (a normal recall answer), stated only about a decoy
+// person (a false-premise abstention), or entirely absent (a pure abstention).
+// A fixed absent-question list would be a static decline rule a
+// pattern-matching harness could hard-code; rolling presence per seed makes
+// decline-vs-answer decidable only by reading the seeded haystack.
+var shoeSizes = []string{
+	"size 6", "size 7", "size 8", "size 9", "size 10", "size 11", "size 12",
+	"size 13",
+}
+
+var heightsCm = []string{
+	"162 cm", "168 cm", "171 cm", "175 cm", "178 cm", "182 cm", "185 cm",
+	"190 cm",
+}
+
+// favoriteSongs are coined titles (never real releases) so a base model cannot
+// pattern-complete them and a served answer is unambiguous.
+var favoriteSongs = []string{
+	"Glass Harbor", "Night Elevator", "Paper Satellites", "Copper Rain",
+	"The Longest Corridor", "Static Bloom", "Winter Arithmetic",
+	"Half-Moon Traffic", "Orchard Static", "Blue Reactor",
+}
+
+var starSigns = []string{
+	"Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", "Libra", "Scorpio",
+	"Sagittarius", "Capricorn", "Aquarius", "Pisces",
+}
+
+var eyeColors = []string{"brown", "blue", "green", "hazel", "gray", "amber"}
+
+var bloodTypes = []string{
+	"O negative", "A positive", "B positive", "AB negative", "O positive",
+	"A negative",
+}
+
+var birthdayMonths = []string{
+	"January", "February", "March", "April", "May", "June", "July", "August",
+	"September", "October", "November", "December",
+}
+
+var sportsTeams = []string{
+	"the Rangers", "Arsenal", "the Lakers", "Juventus", "the Red Sox",
+	"Bayern Munich", "the Maple Leafs", "Ajax",
+}
+
+var favoriteFilms = []string{
+	"Casablanca", "Blade Runner", "Amélie", "Heat", "Spirited Away",
+	"The Third Man", "Arrival", "Chinatown",
+}

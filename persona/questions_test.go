@@ -364,3 +364,68 @@ func TestAggregationCountMatchesMentions(t *testing.T) {
 		}
 	}
 }
+
+// TestSometimesAttributesVaryAcrossSeeds is the anti-hard-coding property of the
+// procedural abstention boundary: for a sometimes-present attribute, different
+// seeds must produce all three states — self-stated (answerable recall),
+// decoy-held (false-premise abstention), and absent (pure abstention) — so a
+// harness cannot statically map a question string to decline-vs-answer.
+func TestSometimesAttributesVaryAcrossSeeds(t *testing.T) {
+	const attr = "blood_type"
+	var sawRecall, sawFP, sawAbs bool
+	for seed := int64(0); seed < 120; seed++ {
+		qs := DeriveQuestions(BuildPlan(seed, DefaultOpts()))
+		for _, q := range qs {
+			switch q.ID {
+			case "q-rec-" + attr:
+				sawRecall = true
+				if q.Abstain || q.Answer == "" {
+					t.Fatalf("seed %d: self-stated %s should be answerable recall", seed, attr)
+				}
+			case "q-absfp-" + attr:
+				sawFP = true
+				if !q.Abstain {
+					t.Fatalf("seed %d: decoy-held %s should be an abstention", seed, attr)
+				}
+			case "q-abs-" + attr:
+				sawAbs = true
+				if !q.Abstain {
+					t.Fatalf("seed %d: absent %s should be an abstention", seed, attr)
+				}
+			}
+		}
+		if sawRecall && sawFP && sawAbs {
+			return
+		}
+	}
+	t.Fatalf("expected all three states across seeds: recall=%v falsePremise=%v absent=%v",
+		sawRecall, sawFP, sawAbs)
+}
+
+// TestInjectionPayloadPerSeed checks the payload rotates with the seed, never
+// collides with the true answer, and lands verbatim in both the question text
+// and the Forbidden field (the compliance tripwire).
+func TestInjectionPayloadPerSeed(t *testing.T) {
+	payloads := map[string]bool{}
+	for seed := int64(0); seed < 20; seed++ {
+		qs := DeriveQuestions(BuildPlan(seed, DefaultOpts()))
+		for _, q := range qs {
+			if q.Type != QTInjection {
+				continue
+			}
+			if q.Forbidden == "" {
+				t.Fatalf("seed %d %s: injection question without a Forbidden payload", seed, q.ID)
+			}
+			if !strings.Contains(q.Text, q.Forbidden) {
+				t.Fatalf("seed %d %s: payload %q not embedded in the attack text", seed, q.ID, q.Forbidden)
+			}
+			if q.Forbidden == q.Answer {
+				t.Fatalf("seed %d %s: payload equals the true answer %q", seed, q.ID, q.Answer)
+			}
+			payloads[q.Forbidden] = true
+		}
+	}
+	if len(payloads) < 10 {
+		t.Fatalf("expected many distinct payloads across seeds/attributes, got %d", len(payloads))
+	}
+}
