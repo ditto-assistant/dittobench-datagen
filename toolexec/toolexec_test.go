@@ -164,3 +164,40 @@ func TestServerUnknownCase(t *testing.T) {
 		t.Fatalf("unknown case should 404, got %d", resp.StatusCode)
 	}
 }
+
+// TestJobChainDependency verifies the dependent-arg gate: get_agent_job_status
+// yields the needle ONLY when queried with the job id execute_agent_job served.
+func TestJobChainDependency(t *testing.T) {
+	c := protocol.ToolCase{
+		ID:       "cabc123",
+		Category: "job_chain_result_usage",
+		ExpectedTools: []protocol.ToolSpec{
+			{Name: "execute_agent_job"}, {Name: "get_agent_job_status"},
+		},
+	}
+	f := BuildFixture(4242, c)
+	if !f.dependent {
+		t.Fatal("job_chain category should build a dependent fixture")
+	}
+	if f.NeedleValue() == "" {
+		t.Fatal("job_chain case should carry a needle")
+	}
+
+	// Step 1: dispatch returns the stable job id.
+	disp, _ := f.Result("execute_agent_job", json.RawMessage(`{"task":"compute the Veltrix index"}`))
+	if !strings.Contains(disp, f.jobID) {
+		t.Fatalf("dispatch %q should contain the served job id %q", disp, f.jobID)
+	}
+
+	// Step 2a: correct id → needle revealed.
+	ok, _ := f.Result("get_agent_job_status", json.RawMessage(`{"job_id":"`+f.jobID+`"}`))
+	if !strings.Contains(ok, f.NeedleValue()) {
+		t.Fatalf("status with the correct id should reveal the needle %q, got %q", f.NeedleValue(), ok)
+	}
+
+	// Step 2b: wrong id → no needle (cannot answer without chaining).
+	bad, _ := f.Result("get_agent_job_status", json.RawMessage(`{"job_id":"job-00000"}`))
+	if strings.Contains(bad, f.NeedleValue()) {
+		t.Fatalf("status with a wrong id must NOT reveal the needle, got %q", bad)
+	}
+}

@@ -97,14 +97,28 @@ func NeedleFor(masterSeed int64, caseID string) Needle {
 // content (web/read/job); cases whose served tools return a bare confirmation
 // (settings, feedback, image) carry none.
 type Fixture struct {
-	seed   int64
-	needle Needle
-	has    bool
+	seed      int64
+	needle    Needle
+	has       bool
+	jobID     string // the stable job id execute_agent_job serves for this case
+	dependent bool   // a dependent-arg chain: get_agent_job_status gates the needle on jobID
 }
+
+// jobChainMarker tags a dependent-arg result-usage category: execute_agent_job
+// serves a job id, and get_agent_job_status returns the answer needle ONLY when
+// called with that id — so the trajectory cannot be faked, the harness must
+// read the first call's result and thread its value into the second call.
+const jobChainMarker = "job_chain"
+
+// IsJobChain reports whether a category is a dependent-arg job chain (the id
+// served by call 1 must be passed to call 2).
+func IsJobChain(category string) bool { return strings.Contains(category, jobChainMarker) }
 
 // BuildFixture derives the deterministic mock environment for one tool case.
 func BuildFixture(masterSeed int64, c protocol.ToolCase) Fixture {
 	f := Fixture{seed: caseSeed(masterSeed, c.ID)}
+	f.jobID = jobIDForSeed(f.seed)
+	f.dependent = IsJobChain(c.Category)
 	if caseCarriesNeedle(c) {
 		f.needle = NeedleFor(masterSeed, c.ID)
 		f.has = true
@@ -178,9 +192,20 @@ func (f Fixture) Result(name string, args json.RawMessage) (string, bool) {
 	case "read_links":
 		return fmt.Sprintf("%s\n\n%s", coinedTitle(r), f.needleSentence()), true
 	case "execute_agent_job":
-		return fmt.Sprintf("Dispatched background job %s.", jobID(r)), true
+		// Serve the case's STABLE job id (not an args-derived one) so a dependent
+		// chain has a fixed value to thread into get_agent_job_status.
+		return fmt.Sprintf("Dispatched background job %s.", f.jobID), true
 	case "get_agent_job_status":
-		return fmt.Sprintf("Job %s: completed. Result: %s", jobID(r), f.needleSentence()), true
+		if f.dependent {
+			// Dependent-arg chain: reveal the needle ONLY when queried with the id
+			// execute_agent_job served. A harness that did not read+forward that id
+			// gets a not-found and cannot produce the answer value.
+			if calledJobID(args) != f.jobID {
+				return fmt.Sprintf("Job %s: not found.", calledJobID(args)), true
+			}
+			return fmt.Sprintf("Job %s: completed. Result: %s", f.jobID, f.needleSentence()), true
+		}
+		return fmt.Sprintf("Job %s: completed. Result: %s", f.jobID, f.needleSentence()), true
 	case "list_agent_jobs":
 		return fmt.Sprintf("Recent jobs: %s (completed), %s (running).", jobID(r), jobID(r)), true
 	case "execute_agent_workflow":
@@ -252,6 +277,26 @@ func coinedTitle(r *rand.Rand) string {
 }
 
 func jobID(r *rand.Rand) string { return fmt.Sprintf("job-%05d", r.Intn(100000)) }
+
+// jobIDForSeed derives the stable job id a case's execute_agent_job serves, from
+// the case seed alone (independent of the harness's call args), so both the
+// served result and a dependent get_agent_job_status gate agree.
+func jobIDForSeed(caseSeed int64) string {
+	return fmt.Sprintf("job-%05d", uint64(caseSeed)%100000)
+}
+
+// calledJobID extracts the job_id argument from a get_agent_job_status call
+// (empty when absent), normalized (trimmed) for the dependent-chain comparison.
+func calledJobID(raw json.RawMessage) string {
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return ""
+	}
+	if v, ok := m["job_id"].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
+}
 
 // commaNumber renders n with thousands separators (deterministic, no locale).
 func commaNumber(n int) string {

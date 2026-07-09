@@ -408,6 +408,20 @@ var categories = []category{
 			"Research %s on the web, read the leading source, and report its exact figure.",
 		},
 	},
+	// Dependent-arg chain (result-usage): execute_agent_job returns a job id that
+	// MUST be passed to get_agent_job_status, which only then returns the needle.
+	// The needle exists only behind the chained id, so the whole trajectory is
+	// unfakeable — a harness must read the first result and thread its value into
+	// the second call. The "_job_chain" marker selects the dependent serving gate
+	// (toolexec) and "_result_usage" the deterministic result-usage scoring.
+	{
+		name: "job_chain_result_usage", tools: []string{"execute_agent_job", "get_agent_job_status"},
+		templates: []string{
+			"Kick off a job to compute %s, then check its status and tell me the exact figure it returns.",
+			"Dispatch a background job for %s, then look up that job's result and give me the precise number.",
+			"Start a job to work out %s, then read the finished job's status and report its exact figure.",
+		},
+	},
 }
 
 // resultUsageSuffix marks the categories whose correct answer must incorporate a
