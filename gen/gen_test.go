@@ -1,7 +1,6 @@
 package gen
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -60,43 +59,6 @@ func TestGenerateToolsNilLLM(t *testing.T) {
 // template variants, and the ground truth is templated in the same pass, so
 // there is no separate rewrite step that could drift from it.
 
-// TestGenerateMemory exercises the embedded seed bundle (always present, so the
-// test is hermetic — no dependency on local on-disk assets).
-func TestGenerateMemory(t *testing.T) {
-	// Empty seedDir/oracle => embedded bundle.
-	r := NewRNG(12345)
-	seedReq, cases, _, err := GenerateMemory(r, 5, 20, "", "")
-	if err != nil {
-		t.Fatalf("GenerateMemory: %v", err)
-	}
-	if len(cases) != 5 {
-		t.Fatalf("expected 5 memory cases, got %d", len(cases))
-	}
-	if len(seedReq.Pairs) == 0 {
-		t.Fatal("expected a non-empty haystack")
-	}
-	if seedReq.UserID != "miner" {
-		t.Fatalf("expected default user 'miner', got %q", seedReq.UserID)
-	}
-	for _, c := range cases {
-		if c.ID == "" || c.QuestionID == "" || c.Question == "" {
-			t.Fatalf("malformed memory case: %+v", c)
-		}
-	}
-	// pairs carry fresh RFC3339 timestamps
-	for _, p := range seedReq.Pairs {
-		if p.Timestamp == "" || p.PairID == "" {
-			t.Fatalf("malformed pair: %+v", p)
-		}
-	}
-}
-
-func TestGenerateMemoryMissingAssets(t *testing.T) {
-	_, _, _, err := GenerateMemory(NewRNG(1), 5, 10, "/no/such/seeddir", "/no/such/oracle.json")
-	if err == nil {
-		t.Fatal("expected a clear error for missing assets, got nil")
-	}
-	if !strings.Contains(err.Error(), "seed dir") {
-		t.Fatalf("error should mention the missing seed dir, got %v", err)
-	}
-}
+// The legacy LongMemEval oracle path (GenerateMemory + the embedded seed
+// bundle) was removed: the v2 pipeline generates memory from the procedural
+// persona plan (GenerateMemorySuite), covered in memory_v2_test.go.

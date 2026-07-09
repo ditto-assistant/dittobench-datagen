@@ -1,54 +1,8 @@
 package gen
 
 import (
-	"strings"
 	"testing"
 )
-
-// TestAbstentionNeedleAbsent checks the core property: abstention cases are
-// present at the fixed quota, and NONE of their evidence pairs appear in the
-// seeded haystack (nor as distractors) — so the only correct behavior is a
-// grounded decline.
-func TestAbstentionNeedleAbsent(t *testing.T) {
-	assets, err := loadSeedAssets("", "")
-	if err != nil {
-		t.Fatalf("loadSeedAssets: %v", err)
-	}
-	const n = 30
-	seedReq, cases, _, err := GenerateMemory(NewRNG(42), n, 60, "", "")
-	if err != nil {
-		t.Fatalf("GenerateMemory: %v", err)
-	}
-	inHaystack := map[string]bool{}
-	for _, p := range seedReq.Pairs {
-		inHaystack[p.PairID] = true
-	}
-
-	absCount := 0
-	for _, c := range cases {
-		if c.QuestionType != abstentionType {
-			continue
-		}
-		absCount++
-		if !strings.Contains(strings.ToLower(c.ExpectedAnswer), "decline") {
-			t.Fatalf("abstention case %s should carry the decline marker, got %q", c.ID, c.ExpectedAnswer)
-		}
-		mc := assets.manifest[c.QuestionID]
-		for _, pids := range mc.SessionToPairs {
-			for _, pid := range pids {
-				if inHaystack[pid] {
-					t.Fatalf("abstention question %s has evidence pair %s seeded — needle not absent", c.QuestionID, pid)
-				}
-			}
-		}
-	}
-	if want := abstentionQuota(n); absCount != want {
-		t.Fatalf("abstention quota: got %d want %d", absCount, want)
-	}
-	if absCount == 0 {
-		t.Fatalf("expected abstention cases at n=%d", n)
-	}
-}
 
 func TestAbstentionQuota(t *testing.T) {
 	// ~1/12 of a run (see abstentionDenom): 0 below the denom, then n/12.
@@ -57,5 +11,26 @@ func TestAbstentionQuota(t *testing.T) {
 		if got := abstentionQuota(n); got != want {
 			t.Errorf("abstentionQuota(%d)=%d want %d", n, got, want)
 		}
+	}
+}
+
+// TestSuiteAbstentionQuotaMet checks the v2 suite carries the abstention share:
+// at n=30 the quota is 2, and every abstention case carries the decline
+// sentinel as its expected answer.
+func TestSuiteAbstentionQuotaMet(t *testing.T) {
+	const n = 30
+	suite := GenerateMemorySuite(NewRNG(42), 42, n, 1, 0)
+	abs := 0
+	for _, sc := range suite.Cases {
+		c := sc.Case
+		if c.QuestionType == abstentionType {
+			abs++
+			if c.ExpectedAnswer != abstentionExpectedAnswer {
+				t.Fatalf("abstention case %s should carry the decline sentinel, got %q", c.ID, c.ExpectedAnswer)
+			}
+		}
+	}
+	if want := abstentionQuota(n); abs != want {
+		t.Fatalf("abstention quota: got %d want %d", abs, want)
 	}
 }

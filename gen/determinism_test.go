@@ -18,35 +18,30 @@ func marshal(t *testing.T, v any) string {
 	return string(b)
 }
 
-// TestMemoryPlanByteIdenticalPerSeed is the golden test: with wall-clock
-// time removed (protocol.DatasetEpoch) and map iteration sorted, the plan layer
-// (the /seed haystack + the memory cases) is a pure function of the seed. Two
-// GenerateMemory runs at the same seed must be byte-identical. nil LLM keeps
-// this to the plan layer (no surface-realization LLM) per the reproducibility
-// contract.
+// TestMemoryPlanByteIdenticalPerSeed is the golden test: with wall-clock time
+// removed (protocol.DatasetEpoch) and map iteration sorted, the memory suite
+// (the /seed waves + the memory cases) is a pure function of the seed. Two
+// GenerateMemorySuite runs at the same seed must be byte-identical.
 func TestMemoryPlanByteIdenticalPerSeed(t *testing.T) {
 	const seed = 20260706
-	seedA, casesA, _, err := GenerateMemory(NewRNG(seed), 8, 25, "", "")
-	if err != nil {
-		t.Fatalf("GenerateMemory A: %v", err)
-	}
-	seedB, casesB, _, err := GenerateMemory(NewRNG(seed), 8, 25, "", "")
-	if err != nil {
-		t.Fatalf("GenerateMemory B: %v", err)
-	}
+	suiteA := GenerateMemorySuite(NewRNG(seed), seed, 8, 2, 0.25)
+	suiteB := GenerateMemorySuite(NewRNG(seed), seed, 8, 2, 0.25)
 
-	if got, want := marshal(t, seedA), marshal(t, seedB); got != want {
-		t.Fatalf("SeedRequest not byte-identical for the same seed:\n a=%s\n b=%s", got, want)
+	if got, want := marshal(t, suiteA.Waves), marshal(t, suiteB.Waves); got != want {
+		t.Fatalf("seed waves not byte-identical for the same seed:\n a=%s\n b=%s", got, want)
 	}
-	if got, want := marshal(t, casesA), marshal(t, casesB); got != want {
+	if got, want := marshal(t, suiteA.Cases), marshal(t, suiteB.Cases); got != want {
 		t.Fatalf("MemoryCases not byte-identical for the same seed:\n a=%s\n b=%s", got, want)
 	}
 
 	// The haystack must be non-trivial, otherwise byte-identity proves nothing.
-	// (Absolute timestamps legitimately span a window around the epoch — the
-	// session offset advances past it — so the anti-wall-clock guarantee comes
-	// from the byte-identity above, not from an upper bound here.)
-	if len(seedA.Pairs) == 0 {
+	nonEmpty := false
+	for _, w := range suiteA.Waves {
+		if len(w.Pairs) > 0 {
+			nonEmpty = true
+		}
+	}
+	if !nonEmpty {
 		t.Fatal("expected a non-empty haystack")
 	}
 }
@@ -54,15 +49,9 @@ func TestMemoryPlanByteIdenticalPerSeed(t *testing.T) {
 // TestMemoryPlanVariesAcrossSeeds guards the flip side: determinism must not
 // collapse the datasets to a constant — different seeds still differ.
 func TestMemoryPlanVariesAcrossSeeds(t *testing.T) {
-	seedA, _, _, err := GenerateMemory(NewRNG(1), 8, 25, "", "")
-	if err != nil {
-		t.Fatalf("GenerateMemory seed 1: %v", err)
-	}
-	seedB, _, _, err := GenerateMemory(NewRNG(2), 8, 25, "", "")
-	if err != nil {
-		t.Fatalf("GenerateMemory seed 2: %v", err)
-	}
-	if marshal(t, seedA) == marshal(t, seedB) {
+	suiteA := GenerateMemorySuite(NewRNG(1), 1, 8, 1, 0)
+	suiteB := GenerateMemorySuite(NewRNG(2), 2, 8, 1, 0)
+	if marshal(t, suiteA.Waves) == marshal(t, suiteB.Waves) {
 		t.Fatal("seeds 1 and 2 produced identical haystacks")
 	}
 }
