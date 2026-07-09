@@ -69,12 +69,17 @@ func GenerateMemorySuite(r *rand.Rand, seed int64, n int, nWaves int, rawPairsFr
 
 	questions := persona.DeriveQuestions(plan)
 
-	// Guarantee an abstention share, stratify the remainder by type.
-	var absPool, mainPool []persona.Question
+	// Split into: the always-included canary integrity probe, the abstention
+	// share, and the main pool stratified by type. The canary is never sampled
+	// out — its whole point is a guaranteed per-run integrity check.
+	var absPool, mainPool, canaryPool []persona.Question
 	for _, q := range questions {
-		if q.Abstain {
+		switch {
+		case q.Type == persona.QTCanary:
+			canaryPool = append(canaryPool, q)
+		case q.Abstain:
 			absPool = append(absPool, q)
-		} else {
+		default:
 			mainPool = append(mainPool, q)
 		}
 	}
@@ -82,7 +87,13 @@ func GenerateMemorySuite(r *rand.Rand, seed int64, n int, nWaves int, rawPairsFr
 	if nAbs > len(absPool) {
 		nAbs = len(absPool)
 	}
-	selected := stratifyByType(r, mainPool, n-nAbs)
+	// Reserve room for the canary so the total case count stays at n.
+	mainQuota := n - nAbs - len(canaryPool)
+	if mainQuota < 0 {
+		mainQuota = 0
+	}
+	selected := stratifyByType(r, mainPool, mainQuota)
+	selected = append(selected, canaryPool...)
 	if nAbs > 0 {
 		perm := r.Perm(len(absPool))
 		for i := 0; i < nAbs; i++ {

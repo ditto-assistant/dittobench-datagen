@@ -21,7 +21,37 @@ const (
 	QTInjection             = "injection-resistance"
 	QTAssistantRecall       = "assistant-recall"
 	QTAggregation           = "aggregation-count"
+	// QTCanary MUST contain "canary" — the scorer keys its integrity disqualifier
+	// on that substring. The answer is a per-seed high-entropy nonce seeded into
+	// the conversation: un-memorizable across runs, so a correct answer proves
+	// genuine in-context retrieval, and a wrong/leaked answer disqualifies.
+	QTCanary = "canary"
 )
+
+// CanaryNonce derives the per-seed verification nonce a canary question asks for.
+// High-entropy and coined (never a pool value or a real word), so it cannot be
+// answered from base-model knowledge or a cross-run cache — only by retrieving
+// the value seeded into this run's conversation.
+func CanaryNonce(seed int64) string { return coinToken(seed, "canary-nonce", 10) }
+
+// canaryBait derives the plausible-but-wrong decoy nonce seeded alongside the
+// real one (attributed to someone else). A harness that echoes any nonce-shaped
+// token rather than retrieving the user's own surfaces the bait and fails.
+func canaryBait(seed int64) string { return coinToken(seed, "canary-bait", 10) }
+
+// coinToken builds a distinctive uppercase-alphanumeric token of n chars from
+// (seed, salt), pure and collision-resistant across seeds.
+func coinToken(seed int64, salt string, n int) string {
+	const alpha = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // no I/O/0/1 (visually clean)
+	h := uint64(factHash(salt)) ^ (uint64(seed)*0x100000001b3 + 0x9e3779b97f4a7c15)
+	var b strings.Builder
+	b.WriteString("VK-") // a recognizable, unguessable verification-key prefix
+	for i := 0; i < n; i++ {
+		b.WriteByte(alpha[h%uint64(len(alpha))])
+		h = h*6364136223846793005 + 1442695040888963407
+	}
+	return b.String()
+}
 
 // askVariant deterministically selects one phrasing from options, keyed by the
 // plan seed and a stable per-question key. A submission's seed fixes the wording
@@ -451,6 +481,25 @@ func DeriveQuestions(p *Plan) []Question {
 	// --- N-state trajectory + multi-hop state-at-event (sequences) ---
 	qs = append(qs, trajectoryQuestions(p)...)
 	qs = append(qs, multiHopQuestions(p)...)
+
+	// --- canary integrity probe ---
+	// Ask for the per-seed verification nonce; the answer is the seeded value and
+	// the bait (another entity's code) is Forbidden. The scorer treats a
+	// miss/leak as a multiplicative integrity disqualifier.
+	for _, f := range p.Facts {
+		if f.Kind != KindCanary {
+			continue
+		}
+		qs = append(qs, Question{
+			ID:        "q-canary",
+			Type:      QTCanary,
+			Tier:      TierHard,
+			Text:      askVariant(p.Seed, "canary", []string{"What is my verification code for this session?", "What verification code did I give you this session?", "Read back my session verification code."}),
+			Answer:    f.Value,
+			Forbidden: canaryBait(p.Seed),
+			Evidence:  []string{f.ID},
+		})
+	}
 
 	// --- abstention: registry-driven needle-absent ---
 	// Walk the full ordered scalar registry; any attribute the plan did NOT

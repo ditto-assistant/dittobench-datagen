@@ -429,3 +429,44 @@ func TestInjectionPayloadPerSeed(t *testing.T) {
 		t.Fatalf("expected many distinct payloads across seeds/attributes, got %d", len(payloads))
 	}
 }
+
+// TestCanaryPresentAndDistinct checks every plan carries exactly one canary
+// question whose answer is the seeded nonce, whose forbidden value is the bait,
+// and whose nonce varies across seeds (un-cacheable).
+func TestCanaryPresentAndDistinct(t *testing.T) {
+	nonces := map[string]bool{}
+	for seed := int64(0); seed < 30; seed++ {
+		p := BuildPlan(seed, DefaultOpts())
+		var cq *Question
+		for i := range DeriveQuestions(p) {
+			q := DeriveQuestions(p)[i]
+			if q.Type == QTCanary {
+				cq = &q
+				break
+			}
+		}
+		if cq == nil {
+			t.Fatalf("seed %d: no canary question", seed)
+		}
+		if cq.Answer != CanaryNonce(seed) {
+			t.Fatalf("seed %d: canary answer %q != nonce %q", seed, cq.Answer, CanaryNonce(seed))
+		}
+		if cq.Forbidden != canaryBait(seed) || cq.Forbidden == cq.Answer {
+			t.Fatalf("seed %d: canary bait wrong or equals answer", seed)
+		}
+		// The nonce must be seeded into the haystack so it is retrievable.
+		var seeded bool
+		for _, f := range p.Facts {
+			if f.Kind == KindCanary && f.Value == cq.Answer {
+				seeded = true
+			}
+		}
+		if !seeded {
+			t.Fatalf("seed %d: canary nonce not seeded into the haystack", seed)
+		}
+		nonces[cq.Answer] = true
+	}
+	if len(nonces) < 25 {
+		t.Fatalf("canary nonce should vary across seeds, got %d distinct", len(nonces))
+	}
+}

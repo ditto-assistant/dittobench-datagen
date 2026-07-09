@@ -36,6 +36,12 @@ const (
 	// than counting distinct list items: a retriever that dedupes the repeated
 	// topic undercounts. All mentions share one Attribute; the count is the answer.
 	KindRecurring FactKind = "recurring"
+	// KindCanary is the per-seed verification nonce seeded into the conversation.
+	// Its value is a coined high-entropy token (CanaryNonce), so recalling it
+	// proves genuine in-context retrieval this run — it cannot be cached across
+	// runs or known to a base model. A bait decoy (KindDistractor, same attribute)
+	// is seeded too, so echoing any nonce-shaped token fails.
+	KindCanary FactKind = "canary"
 )
 
 // BeatKind classifies a session beat.
@@ -804,6 +810,44 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 				AsstText:  fmt.Sprintf(pickStr(r, notYouAcks), s.label, who),
 			})
 		}
+	}
+
+	// --- canary nonce + bait (integrity probe) ---
+	// A per-seed high-entropy verification code the user states once, plus a
+	// plausible-but-wrong decoy code attributed to someone else. Recalling the
+	// user's own code proves genuine in-context retrieval this run (the value
+	// cannot be cached across runs or known to a base model); echoing the decoy
+	// or any nonce-shaped token fails. The question layer emits a QTCanary
+	// question and the scorer treats a miss/leak as an integrity disqualifier.
+	{
+		nonce := CanaryNonce(seed)
+		bait := canaryBait(seed)
+		p.Facts = append(p.Facts, Fact{
+			ID:        "f-canary",
+			Kind:      KindCanary,
+			Entity:    "self",
+			Attribute: "session_code",
+			Value:     nonce,
+			Display:   nonce,
+			Session:   spread(0, opts.Sessions),
+			Seq:       nextSeq(),
+			Current:   true,
+			UserText:  varySurface(r, fmt.Sprintf("My verification code for this session is %s.", nonce)),
+			AsstText:  fmt.Sprintf("Got it — I've noted your verification code %s.", nonce),
+		})
+		who := pick(r, firstNames)
+		p.Facts = append(p.Facts, Fact{
+			ID:        "f-canary-bait",
+			Kind:      KindDistractor,
+			Entity:    who,
+			Attribute: "session_code",
+			Value:     bait,
+			Display:   bait,
+			Session:   spread(0, opts.Sessions),
+			Seq:       nextSeq(),
+			UserText:  fmt.Sprintf("For reference, %s's verification code is %s, not mine.", who, bait),
+			AsstText:  fmt.Sprintf("Understood — %s is %s's code, not yours.", bait, who),
+		})
 	}
 
 	// --- assistant-side recommendations ---
