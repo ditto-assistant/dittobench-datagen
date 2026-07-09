@@ -71,6 +71,14 @@ Go standard library, so a build from source reproduces the validators' bytes
 exactly. The validators run this same module, so their bytes match yours by
 construction.
 
+The output is a function of `(seed, bench_version)`, not the seed alone. Each
+version folds its number into the generation stream (`protocol.RotateSeed`), so
+the rendered surface rotates when `bench_version` bumps. A harness that only
+pattern-matches one version's rendered templates degrades on the next, while a
+harness that actually reasons is unaffected. The rotation is public and
+deterministic, so reproducibility is preserved: pin the seed and the version and
+you get the same bytes every time.
+
 ## Layout
 
 Every package is importable, so this module is the single source of truth for the

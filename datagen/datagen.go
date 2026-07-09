@@ -666,7 +666,7 @@ func Generate(seed int64, n int) protocol.Dataset {
 	if n > 200 {
 		n = 200
 	}
-	r := rand.New(rand.NewSource(seed))
+	r := rand.New(rand.NewSource(protocol.RotateSeed(seed)))
 	return protocol.Dataset{
 		Seed:        seed,
 		GeneratedAt: protocol.DatasetEpochRFC3339,

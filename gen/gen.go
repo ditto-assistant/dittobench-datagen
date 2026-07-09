@@ -34,6 +34,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/rand"
+
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // Profile is the size knobs for a run_size.
@@ -80,10 +82,12 @@ func FreshSeed() int64 {
 	return int64(binary.LittleEndian.Uint64(b[:]) >> 1)
 }
 
-// NewRNG returns a math/rand source seeded from seed. Determinism per seed is
-// what lets a logged run be reproduced exactly.
+// NewRNG returns a math/rand source for a run. It seeds from the version-rotated
+// seed (protocol.RotateSeed) so the generated surface rotates per bench_version;
+// determinism per (seed, bench_version) is what lets a logged run be reproduced
+// exactly.
 func NewRNG(seed int64) *rand.Rand {
-	return rand.New(rand.NewSource(seed))
+	return rand.New(rand.NewSource(protocol.RotateSeed(seed)))
 }
 
 // fmtErr wraps a stage error with package context.

@@ -9,6 +9,30 @@ import "time"
 // ledger to keep comparable, so every change ships under version 2.
 const BenchVersion = 2
 
+// RotateSeed folds the benchmark version into a run seed so the generated
+// surface rotates every version. Generation seeds its RNG streams from
+// RotateSeed(seed) rather than seed directly, so a template-matcher tuned to one
+// version's rendered surfaces sees a different distribution on the next version
+// (a public treadmill), while (seed, bench_version) stays byte-reproducible.
+//
+// It is a pure function of (seed, BenchVersion), fully public and deterministic,
+// so any validator or auditor recomputes the identical stream. Seed-derived
+// answer material (case ids, mock-tool needles, canary nonces) intentionally
+// keeps using the raw seed, so a value seeded into the haystack and its expected
+// answer stay coupled regardless of the rotation.
+func RotateSeed(seed int64) int64 {
+	// splitmix64 diffusion of the seed mixed with the version. v is a variable so
+	// the multiply is runtime (wrapping) arithmetic, not a constant that overflows.
+	v := uint64(BenchVersion)
+	x := uint64(seed) ^ (v * 0x9E3779B97F4A7C15)
+	x ^= x >> 30
+	x *= 0xBF58476D1CE4E5B9
+	x ^= x >> 27
+	x *= 0x94D049BB133111EB
+	x ^= x >> 31
+	return int64(x)
+}
+
 // DatasetEpoch is the pinned reference "as-of" instant for all generated
 // datasets. Benchmark generation must be a pure function of the run seed and
 // bench_version (the reproducibility contract: same (seed, bench_version) =>

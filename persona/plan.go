@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
+
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // FactKind classifies a fact for question derivation.
@@ -526,7 +528,10 @@ func allScalarSpecs() []scalarSpec {
 // Go map range), so the same inputs yield a byte-identical plan.
 func BuildPlan(seed int64, opts Opts) *Plan {
 	opts = opts.normalized()
-	r := rand.New(rand.NewSource(seed))
+	// Seed the plan RNG from the version-rotated seed so the persona surface
+	// rotates per bench_version (protocol.RotateSeed); still a pure function of
+	// (seed, bench_version). Seed-pure answer material keeps using the raw seed.
+	r := rand.New(rand.NewSource(protocol.RotateSeed(seed)))
 
 	name := pick(r, firstNames) + " " + pick(r, lastNames)
 	p := &Plan{Seed: seed, Name: name}

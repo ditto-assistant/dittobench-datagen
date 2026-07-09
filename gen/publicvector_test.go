@@ -3,14 +3,15 @@ package gen
 import "testing"
 
 // TestKnownVector pins the canonical hash of a fixed seed so any change that
-// alters generator output is caught in review. The same value is produced by the
-// validators' in-tree generator, so this is also the byte-parity anchor between
-// this public repo and the private scoring service. Update it only on a
-// deliberate generator change (v2 pre-ship hardening) or a bench_version bump.
+// alters generator output is caught in review. The validators run this same
+// module, so this is also the byte-parity anchor between this public repo and the
+// private scoring service. The hash is a function of (seed, bench_version): a
+// bench_version bump rotates the surface (RotateSeed) and moves it by design.
+// Update it only on a deliberate generator change or a bench_version bump.
 func TestKnownVector(t *testing.T) {
 	const (
 		seed = int64(123456789)
-		want = "e453e668b6f758bd40b913733fab8e20e126384c9f60b95e1c9f9cbeefd172e5"
+		want = "d7e042d1749a08c2ea3a186b9f5bceccaba2985173cb1a2a1ea549d2ceac7c53"
 	)
 	prof, _ := ProfileFor("full")
 	got, _, err := GenerateDataset(seed, prof).SHA256Hex()
