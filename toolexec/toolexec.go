@@ -4,10 +4,10 @@
 // endpoint (RunRequest.ToolEndpoint) instead of stubbing them locally; the server
 //
 //  1. returns a deterministic, seed-derived MOCK result for the tool (so the
-//     harness has real content to reason over — a web snippet, a page's text, a
+//     harness has real content to reason over: a web snippet, a page's text, a
 //     job status), and
 //  2. RECORDS the call as the authoritative observed tool trajectory for that
-//     case — the validator no longer has to trust the harness's self-reported
+//     case, so the validator no longer has to trust the harness's self-reported
 //     tool_calls.
 //
 // Memory tools (search_memories, search_subjects, fetch_memories,
@@ -17,7 +17,7 @@
 // answered with an error, exactly as a real unavailable tool would be.
 //
 // Determinism: every result is a pure function of (masterSeed, caseID, toolName,
-// args). No wall clock, no crypto-rand, no map-iteration order — so the served
+// args). No wall clock, no crypto-rand, no map-iteration order, so the served
 // content is reproducible from the run seed and can be folded into the dataset
 // hash (the reproducibility contract).
 package toolexec
@@ -54,7 +54,7 @@ func Serves(name string) bool { return name != "" && !memoryTools[name] }
 // Observable reports whether a tool case's expected trajectory is entirely made
 // of served (non-memory) tools, so the validator expects to observe every call
 // via the endpoint. No-expected-tool cases (chit-chat, abstention) are not
-// observable — there is nothing to observe.
+// observable: there is nothing to observe.
 func Observable(c protocol.ToolCase) bool {
 	if len(c.ExpectedTools) == 0 {
 		return false
@@ -69,7 +69,7 @@ func Observable(c protocol.ToolCase) bool {
 
 // Needle is the coined, fabricated fact a content tool embeds in its result. Its
 // Subject is what a result-usage prompt asks about ("the Veltrix index") and its
-// Value is the distinctive number a correct answer must echo ("3,418") — a value
+// Value is the distinctive number a correct answer must echo ("3,418"), a value
 // that CANNOT be known without executing the tool (it is invented per seed), so a
 // result-usage case cannot be answered by self-report or base-model knowledge.
 type Needle struct {
@@ -83,7 +83,7 @@ func (n Needle) Sentence() string {
 	return fmt.Sprintf("%s reached %s %s", n.Subject, n.Value, n.Unit)
 }
 
-// NeedleFor derives the coined fact for a case — a pure function of (masterSeed,
+// NeedleFor derives the coined fact for a case, a pure function of (masterSeed,
 // caseID). Both the fixture (which serves it) and the prompt generator (which
 // asks about its Subject) call this, so the question and the served answer are
 // always coherent without threading any state between them.
@@ -107,7 +107,7 @@ type Fixture struct {
 
 // jobChainMarker tags a dependent-arg result-usage category: execute_agent_job
 // serves a job id, and get_agent_job_status returns the answer needle ONLY when
-// called with that id — so the trajectory cannot be faked, the harness must
+// called with that id. The trajectory cannot be faked: the harness must
 // read the first call's result and thread its value into the second call.
 const jobChainMarker = "job_chain"
 
@@ -117,7 +117,7 @@ func IsJobChain(category string) bool { return strings.Contains(category, jobCha
 
 // recoveryMarker tags an error-recovery result-usage category: the first call to
 // the served content tool returns a transient error, and the answer needle is
-// delivered only on a retry — so a harness must recover from the error to score.
+// delivered only on a retry, so a harness must recover from the error to score.
 const recoveryMarker = "recovery"
 
 // IsErrorRecovery reports whether a category is an error-recovery case.
@@ -162,7 +162,7 @@ func (f Fixture) NeedleText() string {
 }
 
 // caseCarriesNeedle reports whether any of a case's expected tools returns
-// answer-bearing content (a web result, a page, a job status/result) — the tools
+// answer-bearing content (a web result, a page, a job status/result): the tools
 // whose output a correct answer is expected to USE.
 func caseCarriesNeedle(c protocol.ToolCase) bool {
 	for _, t := range c.ExpectedTools {
@@ -244,7 +244,7 @@ func (f Fixture) needleSentence() string {
 }
 
 // --- content pools (fabricated so results can't be answered from base-model
-// knowledge — an anti-memorization property, like the persona pools) ---
+// knowledge, an anti-memorization property like the persona pools) ---
 
 var (
 	coinedNames = []string{
@@ -266,7 +266,7 @@ var (
 )
 
 // synthNeedle coins a fabricated fact "the <Name> <noun> reached <number>
-// <unit>" — a distinctive, unguessable value a correct result-usage answer must
+// <unit>": a distinctive, unguessable value a correct result-usage answer must
 // echo (it exists only in the served content).
 func synthNeedle(r *rand.Rand) Needle {
 	name := coinedNames[r.Intn(len(coinedNames))]
@@ -331,8 +331,8 @@ func commaNumber(n int) string {
 	return b.String()
 }
 
-// caseSeed derives a per-case seed from the master seed and case id — pure and
-// order-independent, so every case's mock environment is fixed by the run seed.
+// caseSeed derives a per-case seed from the master seed and case id. It is pure
+// and order-independent, so every case's mock environment is fixed by the run seed.
 func caseSeed(master int64, caseID string) int64 {
 	return master ^ int64(fnv1a(caseID))
 }
@@ -473,7 +473,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	result, ok := fixture.Result(req.Name, req.Args)
 	if !ok {
 		// A memory or unknown tool: the harness should not route it here. Record it
-		// (done above — it is part of the observed trajectory) but return an error.
+		// (done above: it is part of the observed trajectory) but return an error.
 		writeJSON(w, http.StatusOK, protocol.ToolExecResponse{Error: "tool not available via this endpoint: " + req.Name})
 		return
 	}

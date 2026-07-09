@@ -21,8 +21,8 @@ func TestLexicalOverlap(t *testing.T) {
 }
 
 func TestContentTokensDropsScaffolding(t *testing.T) {
-	// Only "color" survives — question words + articles + "favorite"? favorite is
-	// content (not a stopword). So expect {favorite, color}.
+	// Question words and articles drop, but "favorite" is content (not a
+	// stopword), so expect {favorite, color}, not just {color}.
 	toks := contentTokens("What is my favorite color?")
 	if toks["what"] || toks["is"] || toks["my"] {
 		t.Fatalf("scaffolding words leaked: %v", toks)

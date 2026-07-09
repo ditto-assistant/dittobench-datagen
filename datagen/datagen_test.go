@@ -87,7 +87,7 @@ func TestClampAndShape(t *testing.T) {
 }
 
 // TestArgHallucinationIsNoTool: the missing-argument trap emits no-expected-tool
-// cases whose expected behavior is to ask rather than fabricate — so the
+// cases whose expected behavior is to ask rather than fabricate, so the
 // no-tool scoring path (any tool call ⇒ 0) probes hallucinated arguments.
 func TestArgHallucinationIsNoTool(t *testing.T) {
 	ds := Generate(42, len(categories)*3)

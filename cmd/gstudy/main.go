@@ -4,14 +4,14 @@
 //   - a crossed generalizability (G-study) variance decomposition of per-case
 //     scores into seed, item (category), and residual components, so you can see
 //     whether the benchmark is seed-dominated ("buy seeds") or item-dominated
-//     ("buy items") — the dominant facet flips with benchmark size, and an
+//     ("buy items"). The dominant facet flips with benchmark size, and an
 //     agent+memory bench is usually the small-N, seed-dominated regime;
 //   - a lightweight 2PL-style per-category difficulty (mean pass) and
 //     discrimination (spread) estimate, flagging saturated (everyone-passes) and
 //     floor (everyone-fails) categories that carry ~0 Fisher information at the
 //     champion boundary and should be retired or rebalanced.
 //
-// It is pure analysis over already-scored data — no LLM, no chain, stdlib only.
+// It is pure analysis over already-scored data: no LLM, no chain, stdlib only.
 // Input JSONL, one run per line:
 //
 //	{"seed":123,"per_case":[{"category":"web_search","score":1.0}, ...]}
@@ -213,7 +213,7 @@ func adviceFor(facet string) string {
 }
 
 // betweenGroup returns the size-weighted variance of group means around the grand
-// mean — the between-group (facet) variance component of a one-way decomposition.
+// mean: the between-group (facet) variance component of a one-way decomposition.
 func betweenGroup(groups [][]float64, grand float64) float64 {
 	var num float64
 	var n int

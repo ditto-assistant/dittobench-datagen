@@ -44,7 +44,7 @@ func TestGenerateIsolationStructure(t *testing.T) {
 }
 
 // The crux of isolation: for each case, the OTHER user's graph must hold a
-// DIFFERENT value for the queried attribute — otherwise there is no leak to catch.
+// DIFFERENT value for the queried attribute; otherwise there is no leak to catch.
 func TestIsolationCasesHaveConflictingValue(t *testing.T) {
 	const seed = 4242
 	iso := GenerateIsolation(seed, 20, 2, 4)

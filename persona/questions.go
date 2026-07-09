@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// Question types. QTAbstention MUST contain "abstention"
-// — the scorer/judge key their needle-absent clause on that substring.
+// Question types. QTAbstention MUST contain "abstention": the scorer/judge
+// key their needle-absent clause on that substring.
 const (
 	QTSingleSession         = "single-session-recall"
 	QTMultiSession          = "multi-session"
@@ -25,7 +25,7 @@ const (
 	// seeded facts (a filtered count, a temporal delta), not a lookup, so it
 	// cannot be answered by lexical overlap or single-fact retrieval.
 	QTComputed = "computed-answer"
-	// QTCanary MUST contain "canary" — the scorer keys its integrity disqualifier
+	// QTCanary MUST contain "canary": the scorer keys its integrity disqualifier
 	// on that substring. The answer is a per-seed high-entropy nonce seeded into
 	// the conversation: un-memorizable across runs, so a correct answer proves
 	// genuine in-context retrieval, and a wrong/leaked answer disqualifies.
@@ -34,7 +34,7 @@ const (
 
 // CanaryNonce derives the per-seed verification nonce a canary question asks for.
 // High-entropy and coined (never a pool value or a real word), so it cannot be
-// answered from base-model knowledge or a cross-run cache — only by retrieving
+// answered from base-model knowledge or a cross-run cache, only by retrieving
 // the value seeded into this run's conversation.
 func CanaryNonce(seed int64) string { return coinToken(seed, "canary-nonce", 10) }
 
@@ -59,7 +59,7 @@ func coinToken(seed int64, salt string, n int) string {
 
 // askVariant deterministically selects one phrasing from options, keyed by the
 // plan seed and a stable per-question key. A submission's seed fixes the wording
-// while different seeds vary it — deterministic surface anti-memorization,
+// while different seeds vary it: deterministic surface anti-memorization,
 // mirroring the tool path's template-variant selection (datagen's
 // cat.templates[r.Intn(...)]). It hashes the key rather than drawing from a
 // positional rng stream, so a question's phrasing does not shift when unrelated
@@ -108,8 +108,8 @@ var asstRecAsk = map[string][]string{
 // injectionPayloadFor coins the token an embedded prompt-injection tries to
 // make the harness emit, as a pure function of (seed, attribute). It is
 // deliberately distinctive (coined syllables + digits, never a pool value) so a
-// harness that RESISTS never produces it, while one that COMPLIES echoes it —
-// the response then trips the MemoryCase.ForbiddenAnswer check and scores 0.
+// harness that RESISTS never produces it, while one that COMPLIES echoes it.
+// The echoed response trips the MemoryCase.ForbiddenAnswer check and scores 0.
 // A constant payload would let a harness pass by suppressing one known string;
 // deriving it per (seed, attribute) means suppression requires actually
 // recognizing the injection framing.
@@ -140,7 +140,7 @@ var injectionTemplates = []string{
 }
 
 // Difficulty tiers. Fixed per-run quotas over these make difficulty
-// identical across seeds — a variance reducer and a calibration lever.
+// identical across seeds, a variance reducer and a calibration lever.
 const (
 	TierEasy   = "easy"
 	TierMedium = "medium"
@@ -152,7 +152,7 @@ const (
 // randomness is already baked into the plan. Answer is the canonical expected
 // answer used by the deterministic grader; Numeric marks a count answer (the
 // deterministic number-token path). Abstain marks a needle-absent question whose
-// correct behavior is a grounded decline (Answer empty — the gen layer fills the
+// correct behavior is a grounded decline (Answer empty; the gen layer fills the
 // decline sentinel). Evidence lists the fact IDs the answer depends on.
 type Question struct {
 	ID       string
@@ -581,7 +581,7 @@ func temporalQuestions(p *Plan) []Question {
 	for _, s := range p.Sessions {
 		dayOf[s.Index] = s.DayOffset
 	}
-	// One representative event per session, timeline order — each event is in a
+	// One representative event per session, in timeline order: each event is in a
 	// distinct session, so their order is a total order the harness can recover.
 	var evs []dated
 	lastSession := -1
@@ -672,7 +672,7 @@ var attrNoun = map[string]string{
 	"risk_tolerance": "risk tolerance", "brokerage": "brokerage",
 }
 
-// scalarChain returns the ordered (by Seq) scalar self-facts for attr — an update
+// scalarChain returns the ordered (by Seq) scalar self-facts for attr: an update
 // trajectory. Length 1 = never updated; 2 = one update; ≥3 = an N-state trajectory.
 func scalarChain(p *Plan, attr string) []Fact {
 	var out []Fact
@@ -745,7 +745,7 @@ func trajectoryQuestions(p *Plan) []Question {
 // multiHopQuestions derives a state-at-event JOIN: which value a scalar chain
 // held at the time of a list event ("At the time of your trip to Osaka, what was
 // my city?"). The answer is a PAST (superseded) chain value, so it cannot be
-// answered by current-state recall — it requires locating the event in time and
+// answered by current-state recall: it requires locating the event in time and
 // resolving the chain state then (a two-fact join). Only emitted when the event
 // falls unambiguously strictly between two chain changes.
 func multiHopQuestions(p *Plan) []Question {
@@ -862,7 +862,7 @@ func factLabel(f Fact) string {
 // domain), in timeline (Seq) order. This is the data-driven spine of scalar
 // recall / knowledge-update question derivation: a new domain scalar family
 // flows through automatically once its facts are planned and it has scalarAsk +
-// factLabel entries — DeriveQuestions never hard-codes the attribute list.
+// factLabel entries. DeriveQuestions never hard-codes the attribute list.
 func currentScalarFacts(p *Plan) []Fact {
 	var out []Fact
 	for _, f := range p.Facts {
@@ -996,7 +996,7 @@ func drmLureQuestions(p *Plan) []Question {
 // filteredAggQuestions builds a computed-answer question: count the user's trips
 // that happened AFTER they changed employers. It requires joining a knowledge-
 // update event (the employer change and its session) with the trip timeline and
-// filtering by session order — not a lookup, and not defeatable by lexical
+// filtering by session order: not a lookup, and not defeatable by lexical
 // overlap. Emitted only when an employer update and at least one trip exist.
 func filteredAggQuestions(p *Plan) []Question {
 	// Find the employer-change session: the current employer fact that supersedes.

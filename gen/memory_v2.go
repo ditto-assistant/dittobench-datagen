@@ -44,11 +44,11 @@ type MemorySuite struct {
 //   - Tier A (prepared seeding): a synthesized subject per persona attribute
 //     links the pairs, so retrieval is tested in isolation.
 //   - Tier B (raw-pairs seeding): for a rawPairsFrac slice of questions, the
-//     evidence pairs are seeded WITHOUT prepared subjects — the harness must
+//     evidence pairs are seeded WITHOUT prepared subjects: the harness must
 //     build its own subject index (the memory-construction test).
 //   - Tier C (staged ingestion): the haystack is split into nWaves waves by
 //     attribute cluster; the pipeline seeds a wave, runs the cases it unlocks,
-//     then seeds the next — memory built incrementally. nWaves=1 → single seed.
+//     then seeds the next, so memory is built incrementally. nWaves=1 → single seed.
 //
 // The plan is a pure function of the master `seed`; sampling uses the shared rng
 // `r`. Fully non-LLM and reproducible from (seed, bench_version): the haystack
@@ -71,7 +71,7 @@ func GenerateMemorySuite(r *rand.Rand, seed int64, n int, nWaves int, rawPairsFr
 
 	// Split into: the always-included canary integrity probe, the abstention
 	// share, and the main pool stratified by type. The canary is never sampled
-	// out — its whole point is a guaranteed per-run integrity check.
+	// out: its whole point is a guaranteed per-run integrity check.
 	var absPool, mainPool, canaryPool, twinPool []persona.Question
 	for _, q := range questions {
 		switch {
@@ -107,7 +107,7 @@ func GenerateMemorySuite(r *rand.Rand, seed int64, n int, nWaves int, rawPairsFr
 
 	// Tier-B selection: a rawPairsFrac slice of the non-abstention
 	// questions is chosen; the evidence of each is seeded WITHOUT a prepared
-	// subject, so a subjects-first retriever cannot route to it — the harness
+	// subject, so a subjects-first retriever cannot route to it; the harness
 	// must have built its own index. Pass 1 marks every fact claimed by a
 	// NON-Tier-B (Tier A) question; pass 2 promotes a rolled-B question to Tier B
 	// only if ALL its evidence is free of Tier-A claims, so Tier-A retrieval never
@@ -143,8 +143,8 @@ func GenerateMemorySuite(r *rand.Rand, seed int64, n int, nWaves int, rawPairsFr
 		}
 	}
 
-	// pairText: rendered text of each haystack pair, keyed by pair ID — the needle
-	// side of the query↔needle overlap measurement.
+	// pairText: rendered text of each haystack pair, keyed by pair ID. It is the
+	// needle side of the query↔needle overlap measurement.
 	pairText := make(map[string]string, len(pairs))
 	for _, p := range pairs {
 		pairText[p.PairID] = p.Prompt + " " + p.Response
@@ -245,7 +245,7 @@ func caseUnlockWave(q persona.Question, fw map[string]int) int {
 
 // factWaves assigns each fact a staging wave BY ATTRIBUTE CLUSTER, so a subject
 // and all its pairs (including an update chain or a reversal, which share the
-// attribute) always land in one wave — no dangling cross-wave subject links, and
+// attribute) always land in one wave: no dangling cross-wave subject links, and
 // ground truth stays exact (a knowledge-update question only runs once both
 // values are seeded). Attribute order is the facts' timeline order (deterministic).
 func factWaves(plan *persona.Plan, nWaves int) map[string]int {
@@ -355,7 +355,7 @@ func personaOptsFor(n int) persona.Opts {
 // discriminate among competent harnesses (multi-session synthesis, applied
 // preference, real temporal, contradiction) and away from single-fact recall a
 // good retriever always aces. Types not listed default to weight 1. The mix stays
-// seed-independent — only the emphasis changes, not per-seed reproducibility.
+// seed-independent: only the emphasis changes, not per-seed reproducibility.
 var memoryTypeWeight = map[string]int{
 	persona.QTMultiSession:          3,
 	persona.QTTemporal:              3,
@@ -460,7 +460,7 @@ func stratifyByType(r *rand.Rand, pool []persona.Question, n int) []persona.Ques
 
 // synthesizeSubjects builds Tier-A prepared seeding: one subject per persona
 // attribute, linking the evidence pairs of the (non-distractor) self facts of
-// that attribute — EXCEPT facts in rawFacts (Tier B), whose pairs are seeded
+// that attribute, EXCEPT facts in rawFacts (Tier B), whose pairs are seeded
 // without any subject scaffolding. Deterministic (timeline attribute order).
 func synthesizeSubjects(plan *persona.Plan, evidence map[string]string, rawFacts map[string]bool) ([]protocol.Subject, []protocol.SubjectLink) {
 	var attrOrder []string

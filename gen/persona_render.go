@@ -27,10 +27,10 @@ const personaTimeSlackDays = 7
 
 // RenderHaystack realizes a persona plan into a haystack of MemoryPairs (one per
 // beat) and returns the fact→pair evidence map so the question-derivation layer
-// can locate — or, for abstention, withhold — a fact's evidence. Every beat is
+// can locate (or, for abstention, withhold) a fact's evidence. Every beat is
 // rendered from its deterministic template surface (the plan already varied that
 // surface via seeded phrasing variants). Timestamps derive from each session's
-// seed-set DayOffset anchored backward from protocol.DatasetEpoch — never the
+// seed-set DayOffset anchored backward from protocol.DatasetEpoch, never the
 // wall clock.
 func RenderHaystack(plan *persona.Plan) ([]protocol.MemoryPair, map[string]string) {
 	evidence := make(map[string]string)

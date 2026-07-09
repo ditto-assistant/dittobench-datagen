@@ -65,7 +65,7 @@ func TestQuestionPhrasingVariesAcrossSeeds(t *testing.T) {
 }
 
 // TestQuestionTypeCoverage checks every question type is derivable from a
-// default plan — the per-type discrimination gate needs each present.
+// default plan: the per-type discrimination gate needs each present.
 func TestQuestionTypeCoverage(t *testing.T) {
 	p := BuildPlan(42, DefaultOpts())
 	qs := DeriveQuestions(p)
@@ -200,7 +200,7 @@ func TestDomainCoverage(t *testing.T) {
 // TestTrajectoryAndMultiHop verifies the N-state sequence questions against the
 // plan's ground truth: the ordered-history answer is the chain values in order,
 // the previous-value answer is the second-to-last, and a multi-hop state-at-event
-// answer is the chain value that held at the event's session — a genuinely PAST
+// answer is the chain value that held at the event's session, a genuinely PAST
 // (superseded) value, not the current one.
 func TestTrajectoryAndMultiHop(t *testing.T) {
 	sawTraj, sawMH := false, false
@@ -292,7 +292,7 @@ func TestKnowledgeUpdateAnswerIsLatest(t *testing.T) {
 }
 
 // TestAssistantRecallIsAssistantSide: every assistant-recall question's answer
-// lives in the assistant turn of its evidence beat and NOT the user turn — so it
+// lives in the assistant turn of its evidence beat and NOT the user turn, so it
 // genuinely tests recalling what the assistant said.
 func TestAssistantRecallIsAssistantSide(t *testing.T) {
 	p := BuildPlan(7, DefaultOpts())
@@ -367,9 +367,9 @@ func TestAggregationCountMatchesMentions(t *testing.T) {
 
 // TestSometimesAttributesVaryAcrossSeeds is the anti-hard-coding property of the
 // procedural abstention boundary: for a sometimes-present attribute, different
-// seeds must produce all three states — self-stated (answerable recall),
-// decoy-held (false-premise abstention), and absent (pure abstention) — so a
-// harness cannot statically map a question string to decline-vs-answer.
+// seeds must produce all three states: self-stated (answerable recall),
+// decoy-held (false-premise abstention), and absent (pure abstention). A
+// harness therefore cannot statically map a question string to decline-vs-answer.
 func TestSometimesAttributesVaryAcrossSeeds(t *testing.T) {
 	const attr = "blood_type"
 	var sawRecall, sawFP, sawAbs bool

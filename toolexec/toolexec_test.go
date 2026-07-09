@@ -61,7 +61,8 @@ func TestBuildFixtureDeterministic(t *testing.T) {
 	if BuildFixture(43, c).NeedleText() == a.NeedleText() {
 		t.Fatal("different seed should change the needle")
 	}
-	// NeedleFor is the shared deriver both the fixture and prompt use — coherent.
+	// NeedleFor is the shared deriver both the fixture and prompt use, so the
+	// question and served answer stay coherent.
 	if NeedleFor(42, c.ID).Value != a.NeedleValue() {
 		t.Fatal("NeedleFor must match the fixture's served needle")
 	}

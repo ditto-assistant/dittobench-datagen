@@ -47,7 +47,7 @@ func TestMemoryPlanByteIdenticalPerSeed(t *testing.T) {
 }
 
 // TestMemoryPlanVariesAcrossSeeds guards the flip side: determinism must not
-// collapse the datasets to a constant — different seeds still differ.
+// collapse the datasets to a constant: different seeds still differ.
 func TestMemoryPlanVariesAcrossSeeds(t *testing.T) {
 	suiteA := GenerateMemorySuite(NewRNG(1), 1, 8, 1, 0)
 	suiteB := GenerateMemorySuite(NewRNG(2), 2, 8, 1, 0)

@@ -66,9 +66,10 @@ Run sizes: `small` (smoke), `medium`, `full` (the scored profile).
 
 The same seed always yields the same bytes. The CI determinism test generates a
 fixed seed twice and asserts the hashes match, and a known-vector test pins the
-exact hash the validators' in-tree generator produces for that seed. The module
-has no external dependencies, only the Go standard library, so a build from source
-reproduces the validators' bytes exactly.
+canonical hash for a fixed seed. The module has no external dependencies, only the
+Go standard library, so a build from source reproduces the validators' bytes
+exactly. The validators run this same module, so their bytes match yours by
+construction.
 
 ## Layout
 

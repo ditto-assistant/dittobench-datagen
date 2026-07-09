@@ -14,7 +14,7 @@ import (
 // dataset. Its SHA-256 goes into ScoreReport.details as dataset_sha256 and pins
 // the exact bytes a dispute re-scores. Field order is fixed and the payload is
 // built from structs and sorted slices (no Go map is ranged into it), so
-// json.Marshal is byte-stable — hashing the same artifact always yields the same
+// json.Marshal is byte-stable: hashing the same artifact always yields the same
 // digest, and with no LLM surface variation the same (seed, bench_version) does
 // too. (Any map that json.Marshal touches, e.g. a ToolSpec's required_args, is
 // key-sorted by encoding/json, so it too is byte-stable.)
@@ -34,7 +34,7 @@ type DatasetArtifact struct {
 }
 
 // ArtifactCase is a memory case as it enters the hashed artifact: the case plus
-// the scoping that changes how it is scored — the memory graph it must be
+// the scoping that changes how it is scored, namely the memory graph it must be
 // answered under (UserID) and the seeding wave that unlocks it (RunAfterWave).
 // Without these two, an isolation case's graph scoping would not be pinned and
 // two datasets differing only in a case's user_id would hash identically.
@@ -83,7 +83,7 @@ func MergeMemoryWaves(primary []protocol.SeedRequest, secondary protocol.SeedReq
 }
 
 // BuildArtifact assembles the canonical DatasetArtifact from already-generated
-// pieces — pure (no generation), so the run path and GenerateDataset share one
+// pieces. It is pure (no generation), so the run path and GenerateDataset share one
 // assembly and can never drift into different bytes for the same seed. Tool
 // fixtures are rebuilt from (seed, case) and sorted by CaseID so the JSON is
 // byte-stable.

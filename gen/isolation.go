@@ -11,7 +11,7 @@ import (
 // primary persona is seeded under PrimaryUser (the historical default "miner");
 // a second persona is seeded under SecondaryUser. Isolation cases then query one
 // user while the OTHER user's graph holds a conflicting value for the same
-// attribute — a harness that respects the user_id scoping answers correctly; one
+// attribute. A harness that respects the user_id scoping answers correctly; one
 // that leaks across graphs returns the other user's value and is wrong.
 const (
 	PrimaryUser   = "miner"
@@ -32,7 +32,7 @@ type IsolationSuite struct {
 	Cases         []StagedCase         // isolation cases, each with StagedCase.UserID set
 }
 
-// isolationOpts sizes the secondary (contamination) persona — small: it exists to
+// isolationOpts keeps the secondary (contamination) persona small: it exists to
 // hold conflicting values, not to be the primary test surface.
 func isolationOpts() persona.Opts {
 	return persona.Opts{Sessions: 4, Projects: 3, Trips: 2, Pets: 1, UpdateChains: 1, Reversals: 1, DecoyPeople: 3, DomainItems: 3, LongChain: 0}
@@ -44,7 +44,7 @@ func isolationOpts() persona.Opts {
 // seeding waves, draws a distinct secondary persona, and emits up to isoCases
 // isolation cases split between A-scoped (query PrimaryUser, the conflicting
 // value lives in B) and B-scoped (query SecondaryUser, the conflict lives in A).
-// The secondary haystack is TEMPLATE-rendered (no LLM) — it is contamination, so
+// The secondary haystack is TEMPLATE-rendered (no LLM): it is contamination, so
 // it adds zero generator token cost. isoCases<=0 returns an empty suite.
 func GenerateIsolation(seed int64, primaryN, nWaves, isoCases int) IsolationSuite {
 	if isoCases <= 0 {
@@ -57,7 +57,7 @@ func GenerateIsolation(seed int64, primaryN, nWaves, isoCases int) IsolationSuit
 	sPlan := persona.BuildPlan(seed^isolationSalt, isolationOpts())
 
 	// Secondary haystack: template-rendered (non-LLM), fully Tier-A (prepared
-	// subjects) so it is retrievable — a cross-graph leak actually surfaces it.
+	// subjects) so it is retrievable: a cross-graph leak actually surfaces it.
 	sPairs, sEvidence := RenderHaystack(sPlan)
 	sSubjects, sLinks := synthesizeSubjects(sPlan, sEvidence, nil)
 	secondary := protocol.SeedRequest{
@@ -72,7 +72,7 @@ func GenerateIsolation(seed int64, primaryN, nWaves, isoCases int) IsolationSuit
 	pFW := factWaves(pPlan, nWaves)
 
 	// Attributes both personas hold as a current scalar self-fact with DIFFERENT
-	// values — the conflict axis. Sorted for determinism.
+	// values: the conflict axis. Sorted for determinism.
 	var attrs []string
 	for a, v := range pCur {
 		if sv, ok := sCur[a]; ok && sv != "" && sv != v {
@@ -101,7 +101,7 @@ func GenerateIsolation(seed int64, primaryN, nWaves, isoCases int) IsolationSuit
 					QuestionType:    "isolation",
 					Question:        q.Text,
 					ExpectedAnswer:  q.Answer,
-					ForbiddenAnswer: sCur[a], // the value B's graph holds — leaking it is wrong
+					ForbiddenAnswer: sCur[a], // the value B's graph holds; leaking it is wrong
 				},
 				RunAfterWave: caseUnlockWave(q, pFW),
 				UserID:       PrimaryUser,
@@ -118,7 +118,7 @@ func GenerateIsolation(seed int64, primaryN, nWaves, isoCases int) IsolationSuit
 					QuestionType:    "isolation",
 					Question:        q.Text,
 					ExpectedAnswer:  q.Answer,
-					ForbiddenAnswer: pCur[a], // the value A's graph holds — leaking it is wrong
+					ForbiddenAnswer: pCur[a], // the value A's graph holds; leaking it is wrong
 				},
 				RunAfterWave: 0, // B is seeded once, up front
 				UserID:       SecondaryUser,

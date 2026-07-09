@@ -1,8 +1,8 @@
 // Package datagen procedurally generates small, fresh, randomized DittoBench
 // tool-calling datasets. Generation is deterministic per seed (so a given seed
 // always yields the same dataset) but varies widely across seeds. The practice
-// API rotates the seed on every request so no two evaluations are identical —
-// this is the anti-overfit property of the off-chain practice loop.
+// API rotates the seed on every request so no two evaluations are identical.
+// This is the anti-overfit property of the off-chain practice loop.
 package datagen
 
 import (
@@ -30,7 +30,7 @@ type category struct {
 	allowExtra bool
 	// argKey, when set on a single-tool category whose filler is an exact token
 	// (a URL, a theme), pins RequiredArgs[argKey]=filler so the argument value is
-	// deterministically scored — right tool + wrong arg no longer gets full credit.
+	// deterministically scored: right tool + wrong arg no longer gets full credit.
 	argKey    string
 	templates []string
 	// intents are prompts that imply the arg VALUE (or name a near-miss) instead of
@@ -281,9 +281,9 @@ var categories = []category{
 		// Hallucinated-argument trap (BFCL): the request names an action that needs a
 		// specific argument but never supplies its VALUE, and no prior context holds
 		// it. The correct behavior is to ask for the missing detail, NOT to invoke the
-		// tool with a fabricated argument — so, like abstention, calling any tool
+		// tool with a fabricated argument; like abstention, calling any tool
 		// scores 0 (a guessed value is the failure mode being probed).
-		name: "arg_hallucination", tool: "", // required value missing — ask, don't invent
+		name: "arg_hallucination", tool: "", // required value missing: ask, don't invent
 		templates: []string{
 			"Change my theme.",
 			"Switch my main model, please.",
@@ -480,7 +480,7 @@ var categories = []category{
 	},
 	{
 		// Parallel independent calls (BFCL "parallel"): two unrelated actions in one
-		// turn, neither's input depending on the other's output — so any call order is
+		// turn, neither's input depending on the other's output, so any call order is
 		// correct. Both are about the same entity so one filler renders both.
 		name: "parallel_web_image", tools: []string{"search_web", "create_image"}, unordered: true,
 		templates: []string{
@@ -514,8 +514,8 @@ var categories = []category{
 		},
 	},
 	// Result-usage (Phase C, capability 13): the answer requires a value
-	// that exists ONLY in the tool's returned content — a fabricated per-seed
-	// needle (toolexec) — so the case cannot be answered by self-report or base-
+	// that exists ONLY in the tool's returned content (a fabricated per-seed
+	// needle, toolexec), so the case cannot be answered by self-report or base-
 	// model knowledge; the harness must actually execute the tool and USE the
 	// result. The %s is the needle's Subject (filled below), keeping the question
 	// and the served fact coherent. Scored deterministically (trajectory + needle-
@@ -539,7 +539,7 @@ var categories = []category{
 	// Dependent-arg chain (result-usage): execute_agent_job returns a job id that
 	// MUST be passed to get_agent_job_status, which only then returns the needle.
 	// The needle exists only behind the chained id, so the whole trajectory is
-	// unfakeable — a harness must read the first result and thread its value into
+	// unfakeable: a harness must read the first result and thread its value into
 	// the second call. The "_job_chain" marker selects the dependent serving gate
 	// (toolexec) and "_result_usage" the deterministic result-usage scoring.
 	{
@@ -571,7 +571,7 @@ var categories = []category{
 // Subject and they are scored deterministically against the needle Value.
 const resultUsageSuffix = "_result_usage"
 
-// IsResultUsage reports whether a case category is a result-usage category — the
+// IsResultUsage reports whether a case category is a result-usage category. The
 // pipeline scores these on trajectory + answer-incorporates-needle rather than
 // the LLM quality judge.
 func IsResultUsage(category string) bool { return strings.HasSuffix(category, resultUsageSuffix) }
@@ -676,8 +676,8 @@ func Generate(seed int64, n int) protocol.Dataset {
 
 // stratifiedCategoryOrder returns n category indices with a FIXED per-category
 // quota (each category appears floor(n/C) or ceil(n/C) times), then shuffles the
-// order with the seeded RNG. Fixing the category MIX per run — rather than
-// drawing each case's category uniformly at random — removes the multinomial
+// order with the seeded RNG. Fixing the category MIX per run (rather than
+// drawing each case's category uniformly at random) removes the multinomial
 // category-draw variance that dominated dataset-to-dataset difficulty (the
 // per-run score stddev scaled as sqrt(p(1-p)/n)). Every dataset now exercises
 // the same balance of easy categories and routing traps, so a miner can't get a
@@ -729,7 +729,7 @@ func GenerateCasesWithFillers(r *rand.Rand, seed int64, n int) ([]protocol.ToolC
 		tmpl := cat.templates[r.Intn(len(cat.templates))]
 		caseID := protocol.OpaqueCaseID(seed, "tool", i)
 		// Result-usage cases: the filler is the fixture needle's Subject, derived
-		// from the SAME (seed, caseID) the mock server uses to serve the answer — so
+		// from the SAME (seed, caseID) the mock server uses to serve the answer, so
 		// the question ("...figure on the Veltrix index...") and the served fact
 		// ("the Veltrix index reached 3,418 points") are always coherent.
 		var filler string

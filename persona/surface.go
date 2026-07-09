@@ -65,7 +65,7 @@ func lowerFirstUnlessI(s string) string {
 
 // notYouFrames render a decoy person's fact (a near-miss the user never stated).
 // Varying the frame stops a matcher from excluding every distractor by a single
-// fixed "By the way, X's Y is Z." signature — the false-premise grounding test
+// fixed "By the way, X's Y is Z." signature; the false-premise grounding test
 // then actually requires reading whose fact it is. %[1]s=relation, %[2]s=name,
 // %[3]s=label, %[4]s=value.
 var notYouFrames = []string{

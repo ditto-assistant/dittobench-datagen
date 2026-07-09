@@ -97,7 +97,7 @@ type SubjectLink struct {
 // the haystack with an incremented Wave, and interleave /run questions between
 // waves so memory is built incrementally "as you converse". Repeated /seed is an
 // idempotent upsert (the reference harness's contract); a single-wave run leaves
-// Wave=0. The field is ADDITIVE-OPTIONAL — a harness that ignores it and simply
+// Wave=0. The field is ADDITIVE-OPTIONAL: a harness that ignores it and simply
 // upserts each call still scores correctly.
 type SeedRequest struct {
 	UserID string `json:"user_id,omitempty"`
@@ -136,7 +136,7 @@ type ToolDefinition struct {
 // (result-usage). The field is ADDITIVE-OPTIONAL: a harness that ignores it and
 // stubs tools locally still scores, but selection-only and at a capped ceiling on
 // the categories the endpoint would have served (their self-reported calls are
-// untrusted). Memory tools are NOT served here — the harness answers those from
+// untrusted). Memory tools are NOT served here: the harness answers those from
 // its own seeded memory.
 //
 // UserID (multi-graph isolation) scopes the case to one
@@ -269,9 +269,9 @@ type CodeFingerprint struct {
 
 // ParaphraseStats counts the outcomes of the surface-realization (LLM
 // paraphrase) pass for one generation. It exists so a spike in template
-// fallbacks — an LLM outage or an over-strict verifier silently collapsing the
-// dataset back to verbatim templates — is visible in the report
-// rather than invisible. Purely advisory telemetry; never affects the score.
+// fallbacks (an LLM outage or an over-strict verifier silently collapsing the
+// dataset back to verbatim templates) is visible in the report.
+// Purely advisory telemetry; never affects the score.
 type ParaphraseStats struct {
 	Attempted int `json:"attempted"` // paraphrase was attempted (frac roll hit, LLM present)
 	Applied   int `json:"applied"`   // paraphrase verified (fact/entity preserved) and used
@@ -288,7 +288,7 @@ func (p *ParaphraseStats) Add(o ParaphraseStats) {
 }
 
 // LexicalGapStats reports the query↔needle content-word overlap of the memory
-// suite — the NoLiMa literal-match signal. A question
+// suite (the NoLiMa literal-match signal). A question
 // that shares wording with its stored fact can be answered by lexical shortcut,
 // overstating memory ability; the generator rewords questions to reduce overlap
 // and this makes the residual visible. Purely advisory telemetry; never scored.
@@ -309,7 +309,7 @@ type RunDetails struct {
 	// bump makes new scores non-comparable to old until a re-score.
 	BenchVersion int `json:"bench_version"`
 	// DatasetSHA256 is the hex SHA-256 of the fully-rendered dataset (tool cases +
-	// memory waves + memory cases). It pins the exact artifact a dispute re-scores
+	// memory waves + memory cases). It pins the exact artifact a dispute
 	// re-scores: the recorded hash must match a re-hash of the persisted
 	// artifact. With no LLM surface variation it is also reproducible from
 	// (seed, bench_version).
@@ -319,7 +319,7 @@ type RunDetails struct {
 	// attempts (each scored 0). A non-zero value is moderation-relevant evidence,
 	// the same policy channel as plagiarism.
 	InjectionAttempts int `json:"injection_attempts,omitempty"`
-	// Tokens is the total OpenRouter tokens (generator + judge) the run spent —
+	// Tokens is the total OpenRouter tokens (generator + judge) the run spent:
 	// budget telemetry (kept out of the composite).
 	Tokens int64 `json:"tokens,omitempty"`
 	// SeedingWaves is how many staged /seed waves the memory haystack was split
@@ -356,7 +356,7 @@ type RunDetails struct {
 	// the tool suite ran under observed execution. Advisory calibration telemetry.
 	ObservedToolCases int `json:"observed_tool_cases,omitempty"`
 	CappedToolCases   int `json:"capped_tool_cases,omitempty"`
-	// IsolationCases is how many multi-graph isolation cases ran — a second
+	// IsolationCases is how many multi-graph isolation cases ran: a second
 	// persona seeded under a different user_id with a conflicting value, so a
 	// cross-graph memory leak scores wrong. Advisory telemetry.
 	IsolationCases int `json:"isolation_cases,omitempty"`
@@ -364,9 +364,9 @@ type RunDetails struct {
 	// into the composite as a bounded multiplier: 1.0 when harnesses reached
 	// correct answers within their expected tool budget, dropping toward the floor
 	// as observed trajectories overshot. 1.0 (no effect) when no tool case ran
-	// under observed execution. Advisory — the composite already reflects it.
+	// under observed execution. Advisory: the composite already reflects it.
 	ToolEfficiency float64 `json:"tool_efficiency,omitempty"`
-	// Models records the LLM model ids that produced this run — the datagen
+	// Models records the LLM model ids that produced this run: the datagen
 	// generator, the judge(s), and (when the operator forces it) the miner's
 	// harness chat model. Advisory transparency metadata for the public
 	// leaderboard: it makes a composite reproducible/comparable (a score is only
@@ -374,13 +374,13 @@ type RunDetails struct {
 	Models *ModelInfo `json:"models,omitempty"`
 	// PerCategory echoes ScoreReport.PerCategory into the details blob so the
 	// per-category breakdown (per tool / per memory-question-type mean) survives
-	// the platform wire — which carries details but not the top-level
-	// per_category — and can drive a transparent leaderboard. Advisory only.
+	// the platform wire (which carries details but not the top-level
+	// per_category) and can drive a transparent leaderboard. Advisory only.
 	PerCategory []CategoryStat `json:"per_category,omitempty"`
 }
 
 // ModelInfo is the set of LLM model ids a run was produced with (RunDetails.models).
-// All fields are advisory transparency metadata — never scored or signed.
+// All fields are advisory transparency metadata, never scored or signed.
 type ModelInfo struct {
 	// Generator is the datagen model (paraphrase + haystack surface realization).
 	Generator string `json:"generator,omitempty"`
@@ -419,7 +419,7 @@ type ScoreReport struct {
 	PerCase         []CaseScore    `json:"per_case"`
 	PerCategory     []CategoryStat `json:"per_category,omitempty"`
 	// Details is opaque, additive run telemetry (paraphrase fallback counts and,
-	// in later bench versions, more). Advisory only — never scored or signed.
+	// in later bench versions, more). Advisory only, never scored or signed.
 	Details *RunDetails `json:"details,omitempty"`
 	// StructuralFingerprint is an AST-level shingle sketch of the built crate
 	// (nil when unavailable), forwarded to the platform's anti-copy gate as

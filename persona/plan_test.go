@@ -7,7 +7,7 @@ import (
 )
 
 // TestBuildPlanDeterministic is the golden test: same (seed, opts) ⇒
-// byte-identical plan. This is the reproducibility contract — if
+// byte-identical plan. This is the reproducibility contract: if
 // any wall-clock, crypto-rand, or map-iteration nondeterminism creeps into the
 // plan layer, this fails.
 func TestBuildPlanDeterministic(t *testing.T) {
@@ -37,7 +37,7 @@ func TestBuildPlanDistinctSeeds(t *testing.T) {
 
 // TestPlanStructure checks the plan contains the material every question type
 // needs: an update chain, a reversal, list facts, preferences, and
-// near-miss distractors — and that no fact carries an empty canonical value.
+// near-miss distractors, and that no fact carries an empty canonical value.
 func TestPlanStructure(t *testing.T) {
 	p := BuildPlan(42, DefaultOpts())
 	if p.Name == "" || !strings.Contains(p.Name, " ") {
@@ -148,7 +148,7 @@ func TestSessionsCoverFacts(t *testing.T) {
 }
 
 // TestFactValuePreservedInBeat ensures the template surface already carries the
-// canonical value verbatim — the invariant the LLM surface verification enforces.
+// canonical value verbatim: the invariant the LLM surface verification enforces.
 func TestFactValuePreservedInBeat(t *testing.T) {
 	p := BuildPlan(123, DefaultOpts())
 	beat := map[string]Beat{}
@@ -162,7 +162,7 @@ func TestFactValuePreservedInBeat(t *testing.T) {
 	for _, f := range p.Facts {
 		b := beat[f.ID]
 		// Assistant-side recommendations put the value ONLY in the assistant turn
-		// (the user request names no value) — that is what makes them assistant-side
+		// (the user request names no value); that is what makes them assistant-side
 		// recall. Every other fact is user-stated.
 		side, sideName := b.UserText, "user"
 		if f.Kind == KindAsstRec {

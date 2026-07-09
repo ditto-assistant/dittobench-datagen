@@ -13,11 +13,11 @@ const (
 	// KindScalar is a single-valued attribute (city, occupation, car). Some
 	// scalars carry an update chain (Superseded set on the current fact).
 	KindScalar FactKind = "scalar"
-	// KindList is one item of a multi-valued attribute (projects, trips, pets) —
+	// KindList is one item of a multi-valued attribute (projects, trips, pets):
 	// the material for multi-session "how many / list all" synthesis questions.
 	KindList FactKind = "list"
-	// KindPreference is a taste the persona holds (cuisine, dietary style, color)
-	// — recall plus preference-application questions.
+	// KindPreference is a taste the persona holds (cuisine, dietary style,
+	// color): recall plus preference-application questions.
 	KindPreference FactKind = "preference"
 	// KindOpinion is a reversible stance on a hobby (loved → later can't stand):
 	// the raw material for contradiction / change-of-mind questions.
@@ -29,7 +29,7 @@ const (
 	// KindAsstRec is an assistant-side recommendation: the ASSISTANT proposed a
 	// value the user never stated, so its Value lives only in AsstText. Recalling it
 	// tests reading the assistant's past turn (assistant-side recall), not the
-	// user's — a capability user-stated facts don't exercise.
+	// user's, a capability user-stated facts don't exercise.
 	KindAsstRec FactKind = "asst_rec"
 	// KindRecurring is one mention of a single recurring topic the user raises
 	// several times across sessions. Counting the mentions (aggregation) is harder
@@ -38,7 +38,7 @@ const (
 	KindRecurring FactKind = "recurring"
 	// KindCanary is the per-seed verification nonce seeded into the conversation.
 	// Its value is a coined high-entropy token (CanaryNonce), so recalling it
-	// proves genuine in-context retrieval this run — it cannot be cached across
+	// proves genuine in-context retrieval this run. It cannot be cached across
 	// runs or known to a base model. A bait decoy (KindDistractor, same attribute)
 	// is seeded too, so echoing any nonce-shaped token fails.
 	KindCanary FactKind = "canary"
@@ -53,10 +53,10 @@ const (
 )
 
 // Fact is a typed atom of the persona universe: (entity, attribute, value) with
-// a creation session and timeline position. Value is the CANONICAL answer token
-// — a memory answer is checked for normalized containment of Value verbatim, so
-// it must survive surface realization unchanged (verified in Layer 2). Display is
-// the natural phrase used when the fact is spoken in a beat.
+// a creation session and timeline position. Value is the CANONICAL answer
+// token: a memory answer is checked for normalized containment of Value
+// verbatim, so it must survive surface realization unchanged (verified in
+// Layer 2). Display is the natural phrase used when the fact is spoken in a beat.
 type Fact struct {
 	ID        string
 	Kind      FactKind
@@ -75,7 +75,7 @@ type Fact struct {
 	// (latest value wins). A superseded fact has Current=false.
 	Current bool
 	// UserText / AsstText are the Layer-1 TEMPLATE rendering of the beat that
-	// introduces this fact — deterministic, always carrying Value verbatim. They
+	// introduces this fact: deterministic, always carrying Value verbatim. They
 	// are copied into the fact's session Beat and are the fallback surface if LLM
 	// realization fails verification.
 	UserText string
@@ -89,7 +89,7 @@ type Beat struct {
 	Kind   BeatKind
 	FactID string // set for BeatFact
 	Topic  string // set for BeatNoise
-	// UserText / AsstText are the Layer-1 TEMPLATE rendering — deterministic,
+	// UserText / AsstText are the Layer-1 TEMPLATE rendering: deterministic,
 	// always present, and the fallback if LLM surface realization fails
 	// verification. They already carry Fact.Value verbatim.
 	UserText string
@@ -108,7 +108,7 @@ type Session struct {
 // Plan is the complete Layer-1 ground truth for one seed: the persona name, the
 // full fact timeline (including superseded values and decoy distractors), and
 // the session scripts that introduce them. It is a pure function of (seed,
-// Opts) — see BuildPlan.
+// Opts); see BuildPlan.
 type Plan struct {
 	Seed     int64
 	Name     string
@@ -318,7 +318,7 @@ var prefSpecs = []prefSpec{
 // personal facts, so every run carries a specialist register (motivated by
 // BEIR's cross-domain retrieval collapse and LongMemEval-V2's
 // professional reframe). Adding a family here flows through DeriveQuestions with
-// no change to its loops — it reads currentScalarFacts / listAttributesPresent
+// no change to its loops: it reads currentScalarFacts / listAttributesPresent
 // and looks phrasing up by attribute (scalarAsk / listCountAsk / factLabel).
 type domainSpec struct {
 	name    string
@@ -553,7 +553,7 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 	// --- scalar facts (some with update chains) ---
 	// Choose which updatable scalars get a value update this run. Domain scalars
 	// are in `scalars` too, so a knowledge-update can land on a professional
-	// attribute (a re-diagnosis, a language migration) — the dynamic-state case.
+	// attribute (a re-diagnosis, a language migration), the dynamic-state case.
 	updatableIdx := make([]int, 0, len(scalars))
 	for i, s := range scalars {
 		if s.updatable {
@@ -750,7 +750,7 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 		who := pick(r, firstNames)
 		rel := relations[d%len(relations)]
 		// Round-robin over the scalar specs (not random) so decoys reliably COVER
-		// the self attributes being recalled — every recall/knowledge-update
+		// the self attributes being recalled: every recall/knowledge-update
 		// question then faces a same-attribute, different-value near-miss, instead
 		// of coverage being a coin flip. Includes the specialist attributes, where
 		// jargon most pressures retrieval.

@@ -9,7 +9,7 @@ import (
 
 // TestStagedSuiteEvidenceSeededByUnlockWave is the core Tier-C correctness
 // invariant: for every case, ALL of its answer's evidence is present in the
-// haystack accumulated through its RunAfterWave — so a case is never asked
+// haystack accumulated through its RunAfterWave, so a case is never asked
 // before the facts it depends on have been seeded (ground truth stays exact).
 func TestStagedSuiteEvidenceSeededByUnlockWave(t *testing.T) {
 	suite := GenerateMemorySuite(NewRNG(1), 4242, 40, 3, 0.35)
@@ -77,7 +77,7 @@ func TestEveryPairInExactlyOneWave(t *testing.T) {
 
 // TestTierBSeedsPairsWithoutSubjects proves the memory-construction test: a
 // Tier-B (raw-pairs) run seeds a materially larger share of its pairs with NO
-// prepared subject than a Tier-A run — the info is present, the scaffolding is
+// prepared subject than a Tier-A run: the info is present, the scaffolding is
 // not, so a subjects-first retriever must self-construct to answer.
 func TestTierBSeedsPairsWithoutSubjects(t *testing.T) {
 	unlinkedFrac := func(rawFrac float64) float64 {

@@ -13,7 +13,7 @@
 //     (datagen); the prompt is one of the category's hand-written phrasing
 //     variants, chosen by the seeded rng, so the surface wording varies per seed
 //     while the deterministic ground truth (expected_tools + expected_behavior)
-//     is preserved — scoring stays exact and the dataset is reproducible.
+//     is preserved: scoring stays exact and the dataset is reproducible.
 //
 // Memory cases (persona engine):
 //   - a procedural persona universe is built from the seed; its beats render to a

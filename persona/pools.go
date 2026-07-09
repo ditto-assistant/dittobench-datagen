@@ -1,6 +1,6 @@
 // Package persona is the DittoBench v2 plan layer. It
-// generates a fresh, procedural "persona universe" — a fact graph plus the
-// session scripts that introduce those facts — as a PURE function of a single
+// generates a fresh, procedural "persona universe" (a fact graph plus the
+// session scripts that introduce those facts) as a PURE function of a single
 // int64 seed. No wall clock, no crypto-rand, no map-iteration order: same seed
 // ⇒ byte-identical plan (the reproducibility contract).
 //
@@ -8,7 +8,7 @@
 // Layer 2 (surface realization) renders each beat into a natural
 // user/assistant pair with an LLM, verified against the plan's canonical
 // values; question derivation and difficulty tiers read the plan to
-// build the memory suite. This package intentionally has NO LLM dependency —
+// build the memory suite. This package intentionally has NO LLM dependency:
 // it is the thing everything else is checked against.
 //
 // # Combinatorics (≥10⁹ distinct universes)
@@ -25,7 +25,7 @@
 // That is five orders of magnitude past the ≥10⁹ target BEFORE counting the
 // list attributes (projects/trips/pets, each a multi-draw subset), the
 // preference and opinion facts, the update/reversal choices, the near-miss
-// distractor draws, or the seed-derived timeline — every one of which
+// distractor draws, or the seed-derived timeline, every one of which
 // multiplies the space further. There is nothing to memorize.
 package persona
 
@@ -189,7 +189,7 @@ var hobbies = []string{
 // noiseTopics are chit-chat beats (no fact) sprinkled into sessions so recall
 // is not trivially "every turn is a fact". They carry no ground truth. They are
 // first-person noun phrases so they slot cleanly into the noiseTemplates below
-// and read as coherent, topic-continuous filler — not the semantically-disjoint
+// and read as coherent, topic-continuous filler, not the semantically-disjoint
 // padding that inflates lexical-retrieval scores (a well-attested memory-
 // benchmark validity critique).
 var noiseTopics = []string{
@@ -220,7 +220,7 @@ var noiseTemplates = []struct{ user, asst string }{
 // whose fact families layer onto the universal personal facts. The register
 // matters for the benchmark's validity: retrieval and entity-matching quality
 // demonstrably do NOT transfer from casual to specialist text (BEIR,
-// arXiv:2104.08663), and domain jargon breaks paraphrase + embedding match — the
+// arXiv:2104.08663), and domain jargon breaks paraphrase + embedding match: the
 // exact store→retrieve→match path a memory harness runs. LongMemEval-V2
 // (arXiv:2605.12493) makes the same move, reframing the target from a personal
 // assistant to an "experienced colleague" over professional environments. These
@@ -230,7 +230,7 @@ var noiseTemplates = []struct{ user, asst string }{
 // softwareLanguages / softwareEditors / softwareServices feed the
 // software-engineering persona. Languages + editors are scalar (with update
 // chains: a dev switches primary language / editor); services are a list
-// (microservices they own — multi-session "how many / list all" material).
+// (microservices they own, multi-session "how many / list all" material).
 var softwareLanguages = []string{
 	"Rust", "Go", "TypeScript", "Python", "Kotlin", "Elixir", "Scala",
 	"Swift", "Zig", "Haskell", "Clojure", "Ruby", "OCaml", "Erlang",
@@ -250,9 +250,9 @@ var softwareServices = []string{
 }
 
 // medicalDiagnoses / medicalMedications / medicalAllergies feed the medical
-// (patient) persona — a person tracking their own care with the assistant.
+// (patient) persona: a person tracking their own care with the assistant.
 // Diagnosis + medication are scalar (with update chains: a re-diagnosis or a
-// medication switch — a professional-register knowledge update); allergies are a
+// medication switch, a professional-register knowledge update); allergies are a
 // list. Multi-word canonical tokens (e.g. "type 2 diabetes") survive containment
 // scoring verbatim, exercising the jargon-paraphrase gap.
 var medicalDiagnoses = []string{
@@ -277,7 +277,7 @@ var medicalAllergies = []string{
 
 // legalPracticeAreas / legalJurisdictions / legalMatters feed the legal (lawyer)
 // persona. Practice area is scalar-updatable (a lateral move into a new
-// specialty); jurisdiction is scalar; matters are a list (active cases/deals —
+// specialty); jurisdiction is scalar; matters are a list (active cases/deals,
 // multi-session synthesis). Matter names read like real case captions/deal
 // codenames so the terminology is genuinely specialist.
 var legalPracticeAreas = []string{
@@ -303,10 +303,10 @@ var legalMatters = []string{
 }
 
 // financeRiskProfiles / financeBrokerages / financeHoldings feed the finance
-// (retail-investor) persona — a person tracking their portfolio with the
+// (retail-investor) persona: a person tracking their portfolio with the
 // assistant. Risk tolerance is scalar-updatable (a rebalance after a market
-// event — a professional-register knowledge update); brokerage is scalar;
-// holdings are a list (tickers/asset classes — multi-session synthesis). Finance
+// event, a professional-register knowledge update); brokerage is scalar;
+// holdings are a list (tickers/asset classes, multi-session synthesis). Finance
 // is a domain where models measurably collapse (FinanceBench, ConvFinQA), so its
 // jargon is a strong memory stressor.
 var financeRiskProfiles = []string{

@@ -9,7 +9,7 @@ import (
 )
 
 // A result-usage case's prompt must reference the SAME needle subject the mock
-// server will serve — otherwise the question and the served answer are incoherent.
+// server will serve; otherwise the question and the served answer are incoherent.
 func TestResultUsagePromptsAreCoherent(t *testing.T) {
 	const seed = 12345
 	r := rand.New(rand.NewSource(seed))

@@ -19,7 +19,7 @@ func isNumeric(s string) bool { return numberRe.MatchString(s) && wordRe.FindStr
 // NoLiMa (arXiv:2502.05167) shows that when a benchmark question shares content
 // words with the stored fact ("What is my favorite COLOR?" ↔ "my favorite COLOR
 // is teal"), a memory system can retrieve by lexical shortcut and its measured
-// ability is massively overstated — restoring the literal match restores the
+// ability is massively overstated: restoring the literal match restores the
 // score. We reduce that by rewording questions to share fewer content words with
 // their evidence (see question_gap.go) and by MEASURING the residual overlap as
 // advisory telemetry so the gap is visible, never silently assumed closed.
@@ -65,7 +65,7 @@ func contentTokens(s string) map[string]bool {
 }
 
 // sharedContentCount is the number of content words the question and evidence
-// share — the ABSOLUTE strength of the lexical-retrieval shortcut. Unlike the
+// share: the ABSOLUTE strength of the lexical-retrieval shortcut. Unlike the
 // coefficient below it cannot be gamed by padding the question with filler
 // (which lowers a ratio without removing the matchable term), so it is the
 // acceptance criterion for a low-overlap rewrite: a genuine synonym swap must
@@ -83,7 +83,7 @@ func sharedContentCount(question, evidence string) int {
 }
 
 // lexicalOverlap is the fraction of the QUESTION's content words that also appear
-// in the evidence text — the interpretable [0,1] telemetry figure a lexical
+// in the evidence text: the interpretable [0,1] telemetry figure a lexical
 // retriever exploits. Lower means a harder, more memory-testing question. An
 // empty question or empty evidence yields 0.
 func lexicalOverlap(question, evidence string) float64 {
