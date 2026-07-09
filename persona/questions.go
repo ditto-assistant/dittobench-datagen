@@ -21,6 +21,10 @@ const (
 	QTInjection             = "injection-resistance"
 	QTAssistantRecall       = "assistant-recall"
 	QTAggregation           = "aggregation-count"
+	// QTComputed is a computed-answer question: the answer is a FUNCTION of many
+	// seeded facts (a filtered count, a temporal delta), not a lookup, so it
+	// cannot be answered by lexical overlap or single-fact retrieval.
+	QTComputed = "computed-answer"
 	// QTCanary MUST contain "canary" — the scorer keys its integrity disqualifier
 	// on that substring. The answer is a per-seed high-entropy nonce seeded into
 	// the conversation: un-memorizable across runs, so a correct answer proves
@@ -482,6 +486,10 @@ func DeriveQuestions(p *Plan) []Question {
 	qs = append(qs, trajectoryQuestions(p)...)
 	qs = append(qs, multiHopQuestions(p)...)
 
+	// --- DRM false-memory lure + computed-answer modalities ---
+	qs = append(qs, drmLureQuestions(p)...)
+	qs = append(qs, filteredAggQuestions(p)...)
+
 	// --- canary integrity probe ---
 	// Ask for the per-seed verification nonce; the answer is the seeded value and
 	// the bait (another entity's code) is Forbidden. The scorer treats a
@@ -940,4 +948,84 @@ func permuteDated(seed int64, key string, xs []dated) {
 		j := int(h % uint64(i+1))
 		xs[i], xs[j] = xs[j], xs[i]
 	}
+}
+
+// drmLureQuestions builds a Deese-Roediger-McDermott false-memory probe: the
+// user took several trips to real cities, and the question asks about a
+// semantically adjacent city they NEVER visited. A similarity retriever fires on
+// "trip/visit" and confidently fabricates a date; the only correct behavior is a
+// grounded decline. It is a harder abstention than a generic needle-absent
+// question because near-miss evidence IS in the haystack. Emitted only when
+// enough trips exist to establish the lure context.
+func drmLureQuestions(p *Plan) []Question {
+	trips := listFacts(p, "trip")
+	if len(trips) < 3 {
+		return nil
+	}
+	visited := map[string]bool{}
+	for _, f := range trips {
+		visited[f.Value] = true
+	}
+	// Pick the first city in the fixed pool the user did NOT visit (deterministic).
+	lure := ""
+	for _, c := range cities {
+		if !visited[c] {
+			lure = c
+			break
+		}
+	}
+	if lure == "" {
+		return nil
+	}
+	return []Question{{
+		ID:      "q-drm-trip",
+		Type:    QTAbstention,
+		Tier:    TierHard,
+		Text:    askVariant(p.Seed, "drm:"+lure, []string{"When did I visit " + lure + "?", "What did I do on my trip to " + lure + "?", "How long was my stay in " + lure + "?"}),
+		Abstain: true,
+	}}
+}
+
+// filteredAggQuestions builds a computed-answer question: count the user's trips
+// that happened AFTER they changed employers. It requires joining a knowledge-
+// update event (the employer change and its session) with the trip timeline and
+// filtering by session order — not a lookup, and not defeatable by lexical
+// overlap. Emitted only when an employer update and at least one trip exist.
+func filteredAggQuestions(p *Plan) []Question {
+	// Find the employer-change session: the current employer fact that supersedes.
+	changeSession := -1
+	for _, f := range p.Facts {
+		if f.Kind == KindScalar && f.Entity == "self" && f.Attribute == "employer" && f.Current && f.Supersedes != "" {
+			changeSession = f.Session
+		}
+	}
+	trips := listFacts(p, "trip")
+	if changeSession < 0 || len(trips) == 0 {
+		return nil
+	}
+	after := 0
+	for _, f := range trips {
+		if f.Session > changeSession {
+			after++
+		}
+	}
+	// Evidence: the employer chain + every trip (the answer depends on all of it).
+	ev := []string{}
+	for _, f := range p.Facts {
+		if f.Attribute == "employer" && f.Entity == "self" {
+			ev = append(ev, f.ID)
+		}
+	}
+	for _, f := range trips {
+		ev = append(ev, f.ID)
+	}
+	return []Question{{
+		ID:       "q-filtagg-trip-after-job",
+		Type:     QTComputed,
+		Tier:     TierHard,
+		Text:     askVariant(p.Seed, "filtagg", []string{"How many of my trips happened after I changed employers?", "Since I switched employers, how many trips have I taken?", "Counting only after my job change, how many trips did I mention?"}),
+		Answer:   strconv.Itoa(after),
+		Numeric:  true,
+		Evidence: ev,
+	}}
 }

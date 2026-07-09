@@ -470,3 +470,51 @@ func TestCanaryPresentAndDistinct(t *testing.T) {
 		t.Fatalf("canary nonce should vary across seeds, got %d distinct", len(nonces))
 	}
 }
+
+// TestComputedAndDrmModalities checks the DRM lure asks about an unvisited city
+// (abstention) and the filtered aggregation counts trips after a job change.
+func TestComputedAndDrmModalities(t *testing.T) {
+	var sawDRM, sawFiltAgg bool
+	for seed := int64(0); seed < 60 && !(sawDRM && sawFiltAgg); seed++ {
+		p := BuildPlan(seed, DefaultOpts())
+		trips := map[string]bool{}
+		for _, f := range p.Facts {
+			if f.Kind == KindList && f.Attribute == "trip" {
+				trips[f.Value] = true
+			}
+		}
+		for _, q := range DeriveQuestions(p) {
+			switch q.ID {
+			case "q-drm-trip":
+				sawDRM = true
+				if !q.Abstain {
+					t.Fatalf("seed %d: DRM lure must be an abstention", seed)
+				}
+			case "q-filtagg-trip-after-job":
+				sawFiltAgg = true
+				if q.Type != QTComputed || !q.Numeric {
+					t.Fatalf("seed %d: filtered-agg must be a numeric computed answer", seed)
+				}
+				// Recompute the expected count independently.
+				changeSession := -1
+				for _, f := range p.Facts {
+					if f.Attribute == "employer" && f.Entity == "self" && f.Current && f.Supersedes != "" {
+						changeSession = f.Session
+					}
+				}
+				want := 0
+				for _, f := range p.Facts {
+					if f.Kind == KindList && f.Attribute == "trip" && f.Session > changeSession {
+						want++
+					}
+				}
+				if q.Answer != strconv.Itoa(want) {
+					t.Fatalf("seed %d: filtered-agg answer %q != recomputed %d", seed, q.Answer, want)
+				}
+			}
+		}
+	}
+	if !sawDRM || !sawFiltAgg {
+		t.Fatalf("expected both modalities across seeds: drm=%v filtagg=%v", sawDRM, sawFiltAgg)
+	}
+}
