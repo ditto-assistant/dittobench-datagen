@@ -1,6 +1,10 @@
 // Package catalog defines the Ditto tool catalog presented to harnesses. Each
-// entry has a name, a short description, and a minimal JSON-schema parameter
+// entry has a name, a short description, and a JSON-schema parameter
 // definition. This is the tool menu a harness sees on every RunRequest.
+//
+// Schemas mirror the production Ditto backend's tool surface (array-valued
+// queries/urls/pairIds, goal-based dynamic workflows), so a harness graded
+// here faces the same shapes it would face in the real product.
 package catalog
 
 import (
@@ -9,24 +13,50 @@ import (
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
-// params is a tiny helper to build a JSON-schema object for parameters.
-func params(props map[string]string, required ...string) json.RawMessage {
+// prop is one JSON-schema property: name, type, and description. Type
+// "string[]" renders an array of strings; anything else is used verbatim
+// ("string", "integer", "boolean").
+type prop struct {
+	name string
+	typ  string
+	desc string
+}
+
+// schema builds a JSON-schema object from ordered property definitions.
+func schema(required []string, props ...prop) json.RawMessage {
 	properties := map[string]any{}
-	for name, desc := range props {
-		properties[name] = map[string]any{
-			"type":        "string",
-			"description": desc,
+	for _, p := range props {
+		if p.typ == "string[]" {
+			properties[p.name] = map[string]any{
+				"type":        "array",
+				"items":       map[string]any{"type": "string"},
+				"description": p.desc,
+			}
+			continue
+		}
+		properties[p.name] = map[string]any{
+			"type":        p.typ,
+			"description": p.desc,
 		}
 	}
-	schema := map[string]any{
+	s := map[string]any{
 		"type":       "object",
 		"properties": properties,
 	}
 	if len(required) > 0 {
-		schema["required"] = required
+		s["required"] = required
 	}
-	b, _ := json.Marshal(schema)
+	b, _ := json.Marshal(s)
 	return json.RawMessage(b)
+}
+
+// params keeps the string-only helper for simple tools.
+func params(props map[string]string, required ...string) json.RawMessage {
+	ps := make([]prop, 0, len(props))
+	for name, desc := range props {
+		ps = append(ps, prop{name: name, typ: "string", desc: desc})
+	}
+	return schema(required, ps...)
 }
 
 // Catalog returns the full Ditto tool catalog.
@@ -44,33 +74,49 @@ func Catalog() []protocol.ToolDefinition {
 		},
 		{
 			Name:        "read_links",
-			Description: "Fetch and read the contents of one or more URLs.",
-			Parameters:  params(map[string]string{"url": "the URL to read"}, "url"),
+			Description: "Read one or more URLs and return markdown text content.",
+			Parameters: schema([]string{"urls"},
+				prop{"urls", "string[]", "URLs to read"},
+			),
 		},
 		{
 			Name:        "search_web",
-			Description: "Search the public web for current information.",
-			Parameters:  params(map[string]string{"query": "the search query"}, "query"),
+			Description: "Search live sources for one or more queries.",
+			Parameters: schema([]string{"queries"},
+				prop{"queries", "string[]", "Search queries"},
+				prop{"num_results", "integer", "Number of results per query, default 10"},
+				prop{"search_mode", "string", "Optional source filter, default all"},
+			),
 		},
 		{
 			Name:        "search_memories",
-			Description: "Search the user's long-term memories by semantic query.",
-			Parameters:  params(map[string]string{"query": "what to recall"}, "query"),
+			Description: "Search past conversations and return compact memory summaries. Use fetch_memories for selected IDs that need full text. For named entities/topics, prefer search_subjects -> search_memories_in_subjects.",
+			Parameters: schema([]string{"queries"},
+				prop{"queries", "string[]", "Memory search queries"},
+			),
 		},
 		{
 			Name:        "search_subjects",
-			Description: "Find subject/topic clusters in the user's memories.",
-			Parameters:  params(map[string]string{"query": "topic to find"}, "query"),
+			Description: "Search the user's subject graph and return subject objects with id, name, description, and similarity.",
+			Parameters: schema([]string{"queries"},
+				prop{"queries", "string[]", "Subject search queries"},
+			),
 		},
 		{
 			Name:        "fetch_memories",
-			Description: "Fetch specific memories by ID or outline.",
-			Parameters:  params(map[string]string{"ids": "comma-separated memory IDs"}),
+			Description: "Fetch full conversation text for selected memory pair IDs.",
+			Parameters: schema([]string{"pairIds"},
+				prop{"pairIds", "string[]", "Memory pair IDs to fetch"},
+				prop{"stripImages", "boolean", "Exclude images, default true"},
+			),
 		},
 		{
 			Name:        "search_memories_in_subjects",
-			Description: "Search memories scoped to specific subjects.",
-			Parameters:  params(map[string]string{"query": "what to recall", "subjects": "subjects to scope to"}, "query"),
+			Description: "Semantic memory search inside one subject. Use focused queries; fetch selected IDs for full text.",
+			Parameters: schema([]string{"subject_id", "queries"},
+				prop{"subject_id", "string", "Subject ID from search_subjects or the prompt"},
+				prop{"queries", "string[]", "Focused queries within the subject"},
+			),
 		},
 		{
 			Name:        "artifacts",
@@ -79,13 +125,16 @@ func Catalog() []protocol.ToolDefinition {
 		},
 		{
 			Name:        "execute_agent_job",
-			Description: "Dispatch a one-off background agent job.",
+			Description: "Dispatch a one-off background agent job. For a goal with clear independent parts, use execute_agent_workflow instead.",
 			Parameters:  params(map[string]string{"task": "the task to run"}, "task"),
 		},
 		{
 			Name:        "execute_agent_workflow",
-			Description: "Run a predefined multi-step agent workflow.",
-			Parameters:  params(map[string]string{"workflow": "workflow name", "input": "workflow input"}, "workflow"),
+			Description: "Plan a complex task as multiple parallel sub-agents. Use only when the task has clear independent parts (multi-angle research, audits across dimensions); for single one-shot tasks use execute_agent_job instead.",
+			Parameters: schema([]string{"goal"},
+				prop{"goal", "string", "High-level intent; the planner decomposes this into 2-6 parallel sub-tasks."},
+				prop{"max_parallel", "integer", "Cap on concurrent workers (default 4, max 8)."},
+			),
 		},
 		{
 			Name:        "get_agent_job_status",
@@ -95,7 +144,10 @@ func Catalog() []protocol.ToolDefinition {
 		{
 			Name:        "list_agent_jobs",
 			Description: "List the user's recent agent jobs.",
-			Parameters:  params(map[string]string{"limit": "max number to return"}),
+			Parameters: schema(nil,
+				prop{"status", "string", "Filter by status: pending, running, completed, failed, cancelled (optional)"},
+				prop{"limit", "integer", "Max results to return (default 20, max 50)"},
+			),
 		},
 		{
 			Name:        "file_feedback_for_team",

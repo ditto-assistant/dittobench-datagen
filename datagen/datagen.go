@@ -82,7 +82,18 @@ var (
 	themes = []string{"dark", "light", "system", "midnight", "solarized"}
 
 	memoryIDs = []string{"mem-1042", "mem-2087", "mem-3310", "mem-7761", "mem-9024"}
-	workflows = []string{"weekly-report", "inbox-triage", "release-notes", "standup-summary", "lead-enrichment"}
+	// workflowGoals are decomposable multi-part goals: the production
+	// execute_agent_workflow takes a free-form goal a planner splits into
+	// parallel sub-agents (there are no named, predefined workflows). The value
+	// doubles as the pinned goal argument, so it must survive verbatim inside
+	// the goal the harness passes.
+	workflowGoals = []string{
+		"a comparison of our top five competitors",
+		"an audit of our three services for risks",
+		"research on four laptop options with a recommendation",
+		"a review of the codebase for security, performance, and correctness",
+		"a market scan across several regions with a combined summary",
+	}
 	models    = []string{"gpt-5", "claude-sonnet-5", "gemini-3-pro", "llama-4-70b"}
 	efforts   = []string{"low", "medium", "high"}
 	toolPrefs = []string{"disable web search", "enable image tools", "turn off agent jobs", "allow only memory tools"}
@@ -133,7 +144,7 @@ var categories = []category{
 		},
 	},
 	{
-		name: "link_read", tool: "read_links", argKey: "url",
+		name: "link_read", tool: "read_links", argKey: "urls",
 		templates: []string{
 			"Read %s and summarize it.",
 			"What does this page say: %s",
@@ -227,13 +238,15 @@ var categories = []category{
 		},
 	},
 	{
-		// Job-vs-workflow trap: phrased like a one-off background job, but it names a
-		// predefined WORKFLOW, so the right tool is execute_agent_workflow.
-		name: "workflow_not_job", tool: "execute_agent_workflow", argKey: "workflow",
+		// Job-vs-workflow trap: phrased like a one-off background job, but the goal
+		// has clear independent parts, so the right tool is execute_agent_workflow
+		// (production semantics: a planner decomposes a free-form goal into parallel
+		// sub-agents; there are no named workflows).
+		name: "workflow_not_job", tool: "execute_agent_workflow", argKey: "goal",
 		templates: []string{
-			"Kick off a background job for my %s routine.",
-			"Dispatch an agent to run my %s process.",
-			"Start a one-off task to do my usual %s.",
+			"Kick off a background job to produce %s, working the independent parts in parallel.",
+			"Dispatch an agent to put together %s, tackling each piece simultaneously.",
+			"Start a one-off task for %s, splitting the separate angles across workers.",
 		},
 	},
 	{
@@ -261,13 +274,13 @@ var categories = []category{
 			"Set my reasoning effort.",
 			"Read that link and summarize it.",
 			"File that as feedback for the team.",
-			"Run my workflow.",
+			"Spin up a parallel agent workflow for me.",
 		},
 	},
 	// Full-catalog coverage: single-hop categories so every remaining
 	// catalog tool is the correct answer for some case (10/18 were dead in v1).
 	{
-		name: "memory_fetch", tool: "fetch_memories", argKey: "ids",
+		name: "memory_fetch", tool: "fetch_memories", argKey: "pairIds",
 		templates: []string{
 			"Fetch the full text of memory %s.",
 			"Pull up memory %s in full.",
@@ -275,11 +288,11 @@ var categories = []category{
 		},
 	},
 	{
-		name: "agent_workflow", tool: "execute_agent_workflow", argKey: "workflow",
+		name: "agent_workflow", tool: "execute_agent_workflow", argKey: "goal",
 		templates: []string{
-			"Run the %s workflow.",
-			"Kick off my %s workflow.",
-			"Execute the %s workflow now.",
+			"Plan %s as parallel sub-agents.",
+			"Split %s into parallel subtasks and run them.",
+			"Use a multi-agent workflow to produce %s.",
 		},
 	},
 	{
@@ -433,11 +446,11 @@ func fillerFor(r *rand.Rand, cat string) string {
 	case "agent_read_not_run", "image_edit_not_create":
 		return "" // templates have no placeholder
 	case "workflow_not_job":
-		return workflows[r.Intn(len(workflows))]
+		return workflowGoals[r.Intn(len(workflowGoals))]
 	case "memory_fetch":
 		return memoryIDs[r.Intn(len(memoryIDs))]
 	case "agent_workflow":
-		return workflows[r.Intn(len(workflows))]
+		return workflowGoals[r.Intn(len(workflowGoals))]
 	case "feedback":
 		return feedback[r.Intn(len(feedback))]
 	case "set_model":

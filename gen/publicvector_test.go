@@ -10,7 +10,7 @@ import "testing"
 func TestKnownVector(t *testing.T) {
 	const (
 		seed = int64(123456789)
-		want = "9f7a24f98943e461714e86a4dbb47c43d7e941cea6ab820f9ff694ecde0c46bb"
+		want = "b56119c38bd887a0b62af7542d921ae22b4b6f268aff969b4eb52e450a4d21d3"
 	)
 	prof, _ := ProfileFor("full")
 	got, _, err := GenerateDataset(seed, prof).SHA256Hex()
