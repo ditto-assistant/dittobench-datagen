@@ -155,31 +155,35 @@ func TestDurationAnswersReachMonthScale(t *testing.T) {
 	}
 }
 
-// TestInvarianceTwinsSeedKeyed pins the P1 fix: the twin pair (attribute and
-// phrasing pair) varies across seeds instead of always being the first/last
-// variant of the first non-updated scalar.
+// TestInvarianceTwinsSeedKeyed pins the P1 fix and the N2 family extension: the
+// twin family (attribute and phrasing set) varies across seeds, has at least the
+// pair minimum, and every sibling surface is distinct within a family.
 func TestInvarianceTwinsSeedKeyed(t *testing.T) {
-	pairs := map[string]bool{}
+	families := map[string]bool{}
 	for seed := int64(1); seed <= 40; seed++ {
 		p := BuildPlan(seed, fullOpts())
-		var a, b string
+		var texts []string
+		seen := map[string]bool{}
 		for _, q := range DeriveQuestions(p) {
 			if q.TwinGroup == "" {
 				continue
 			}
-			if a == "" {
-				a = q.Text
-			} else {
-				b = q.Text
+			if seen[q.Text] {
+				t.Fatalf("seed %d: twin family has a duplicate surface %q", seed, q.Text)
 			}
+			seen[q.Text] = true
+			texts = append(texts, q.Text)
 		}
-		if a == "" || b == "" || a == b {
-			t.Fatalf("seed %d: expected a twin pair with distinct phrasings, got %q / %q", seed, a, b)
+		if len(texts) < 2 {
+			t.Fatalf("seed %d: expected a twin family of >= 2 distinct phrasings, got %v", seed, texts)
 		}
-		pairs[a+" || "+b] = true
+		if len(texts) != twinSiblings {
+			t.Fatalf("seed %d: expected a family of %d siblings (every scalar has 3 phrasings), got %d", seed, twinSiblings, len(texts))
+		}
+		families[strings.Join(texts, " || ")] = true
 	}
-	if len(pairs) < 8 {
-		t.Fatalf("twin pairs take only %d distinct forms across 40 seeds — not seed-keyed", len(pairs))
+	if len(families) < 8 {
+		t.Fatalf("twin families take only %d distinct forms across 40 seeds — not seed-keyed", len(families))
 	}
 }
 

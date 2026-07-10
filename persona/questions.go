@@ -1271,12 +1271,22 @@ func filteredAggQuestions(p *Plan) []Question {
 	return qs
 }
 
-// invarianceTwins emits a metamorphic invariance pair (Ideas #3): the same
-// current-scalar fact asked TWO different ways, sharing a TwinGroup. A robust
-// harness answers both identically; a phrasing-brittle one disagrees, which the
-// scorer surfaces as a consistency sub-score. One twin per run keeps the case
-// budget in check. Both the attribute and the phrasing PAIR are seed-keyed: a
-// fixed first/last pick would make the twin surface a memorizable constant.
+// twinSiblings is the metamorphic family size j (anti-gaming addendum N2): the
+// number of distinct surface phrasings of ONE fact served in a run and scored
+// together. j=3 (up from the original pair) strengthens the signal the survey
+// names (SCORE/PromptEval/CheckList INV): a template-matcher rides one surface
+// and fails the rest, so it splits the family and loses the consistency factor,
+// while a grounded reader answers all j alike. Capped by the phrasings a given
+// attribute actually has (every scalar attribute currently has exactly 3).
+const twinSiblings = 3
+
+// invarianceTwins emits a metamorphic invariance FAMILY (Ideas #3, N2): the
+// same current-scalar fact asked j (twinSiblings) different ways, all sharing a
+// TwinGroup. A robust harness answers every sibling identically; a
+// phrasing-brittle one splits the family, which the scorer folds into the
+// composite as a consistency factor. One family per run keeps the case budget in
+// check. Both the attribute and the phrasing SET are seed-keyed: a fixed pick
+// would make the twin surface a memorizable constant.
 func invarianceTwins(p *Plan) []Question {
 	scalars := currentScalarFacts(p)
 	// Only non-updated scalars, so the twin tests phrasing invariance, not
@@ -1292,21 +1302,49 @@ func invarianceTwins(p *Plan) []Question {
 	}
 	pick := &elig[variantIndex(p.Seed, "twin-attr", len(elig))]
 	variants := scalarAsk[pick.Attribute]
-	// Two distinct phrasings, seed-keyed (variantIndex) and guaranteed different.
-	ai := variantIndex(p.Seed, "twin-a:"+pick.Attribute, len(variants))
-	bi := variantIndex(p.Seed, "twin-b:"+pick.Attribute, len(variants)-1)
-	if bi >= ai {
-		bi++
+	// Up to twinSiblings distinct phrasings, seed-keyed and guaranteed distinct.
+	k := twinSiblings
+	if k > len(variants) {
+		k = len(variants)
 	}
-	a := variants[ai]
-	b := variants[bi]
-	if a == b {
-		return nil
+	idx := distinctVariantIndexes(p.Seed, "twin:"+pick.Attribute, len(variants), k)
+	if len(idx) < 2 {
+		return nil // a family needs at least two distinct surfaces
 	}
 	group := "twin-" + pick.Attribute
 	dis := distractorsFor(p, pick.Attribute)
-	return []Question{
-		{ID: "q-inv-a-" + pick.Attribute, Type: QTSingleSession, Tier: TierMedium, Text: a, Answer: pick.Value, Distractors: dis, Evidence: []string{pick.ID}, TwinGroup: group},
-		{ID: "q-inv-b-" + pick.Attribute, Type: QTSingleSession, Tier: TierMedium, Text: b, Answer: pick.Value, Distractors: dis, Evidence: []string{pick.ID}, TwinGroup: group},
+	out := make([]Question, 0, len(idx))
+	for n, vi := range idx {
+		out = append(out, Question{
+			ID:          fmt.Sprintf("q-inv-%c-%s", 'a'+n, pick.Attribute),
+			Type:        QTSingleSession,
+			Tier:        TierMedium,
+			Text:        variants[vi],
+			Answer:      pick.Value,
+			Distractors: dis,
+			Evidence:    []string{pick.ID},
+			TwinGroup:   group,
+		})
 	}
+	return out
+}
+
+// distinctVariantIndexes deterministically selects k distinct indices in [0,n)
+// keyed by (seed, key), via seeded selection without replacement. Order is
+// seed-varied so the family's surface set is not a memorizable constant.
+func distinctVariantIndexes(seed int64, key string, n, k int) []int {
+	if k > n {
+		k = n
+	}
+	pool := make([]int, n)
+	for i := range pool {
+		pool[i] = i
+	}
+	out := make([]int, 0, k)
+	for i := 0; i < k; i++ {
+		j := variantIndex(seed, fmt.Sprintf("%s#%d", key, i), len(pool))
+		out = append(out, pool[j])
+		pool = append(pool[:j], pool[j+1:]...)
+	}
+	return out
 }

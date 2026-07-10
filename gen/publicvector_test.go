@@ -15,7 +15,12 @@ func TestKnownVector(t *testing.T) {
 		// audited low-variety tool categories moved from flat template lists to
 		// CFG grammar expansion (persona.Expand), which changes both the emitted
 		// prompts and the per-case RNG draw counts.
-		want = "e96291e2dfe1cfcaa42336bd07d63737e6b10e4201fae79cc641adac4f45c5ac"
+		//
+		// Moved again (anti-gaming addendum N2, bench_version 2): the metamorphic
+		// invariance twin became a j=3 sibling FAMILY (invarianceTwins) instead of
+		// a seed-selected pair, so the run emits one more consistency case and the
+		// twin phrasing-set selection changed.
+		want = "c80b6ceb0251f8867da6d17dc472406466aa407f440e04bb803dd0c359bdb805"
 	)
 	prof, _ := ProfileFor("full")
 	got, _, err := GenerateDataset(seed, prof).SHA256Hex()
