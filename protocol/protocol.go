@@ -400,8 +400,12 @@ type RunDetails struct {
 	LexicalGap *LexicalGapStats `json:"lexical_gap,omitempty"`
 	// MetamorphicConsistency is the fraction of invariance twin groups (Ideas #3)
 	// whose members the harness answered consistently (all correct or all
-	// incorrect). A phrasing-brittle harness scores below 1.0. Advisory only,
-	// never folded into the composite. nil when no twin groups ran.
+	// incorrect). A phrasing-brittle harness scores below 1.0. The validator folds
+	// this into the composite as a bounded factor over the SPLIT groups only
+	// (anti-gaming addendum N2: MetamorphicConsistencyFactor multiplies the
+	// composite by 1 - maxPenalty*(1 - this rate)); the rate reported here is the
+	// pre-fold advisory value, so the applied factor stays reconstructable. nil
+	// when no twin groups ran.
 	MetamorphicConsistency *float64 `json:"metamorphic_consistency,omitempty"`
 	// CalibrationBrier is the mean Brier score over cases where the harness
 	// reported a confidence (Ideas #6): mean((confidence - correct)^2), lower is
