@@ -150,6 +150,10 @@ var capabilityGrammar = persona.Grammar{
 		"can actually do", "are able to do", "are capable of",
 		"can help with",
 	},
+	// features avoids the tool-name word "capabilities" (discover_capabilities):
+	// it is a distinctive name token, so emitting it hands the no-model reference
+	// router a free solve for the capability-discovery trap. See
+	// TestGrammarCategoriesNoRouterKeywordLeak.
 	"askfor": {
 		"ask you for", "get your help with", "have you handle",
 		"lean on you for",
@@ -165,7 +169,7 @@ var capabilityGrammar = persona.Grammar{
 		"connecting my calendar", "the app's appearance",
 		"tool permissions", "notification behavior",
 	},
-	"features": {"features", "capabilities", "options"},
+	"features": {"features", "abilities", "options"},
 	"featurearea": {
 		"working with images", "scheduling things", "background tasks",
 		"customizing the interface",
