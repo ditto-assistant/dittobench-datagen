@@ -34,28 +34,42 @@ var stmtTrailers = []string{
 	" Nothing urgent.", " Just keeping you posted.",
 }
 
-// varySurface wraps a rendered statement with a seed-chosen lead-in and trailer.
-// It always consumes exactly two draws from r (so the RNG stream is independent
-// of which variant lands, keeping the plan byte-reproducible). When a lead-in is
+// varySurface wraps a rendered statement with a seed-chosen lead-in and trailer
+// from the persona statement pools. See Wrap for the contract.
+func varySurface(r *rand.Rand, s, value string) string {
+	return Wrap(r, s, value, stmtLeadIns, stmtTrailers)
+}
+
+// Wrap is the shared Tier-1a surface-variation engine: it wraps a rendered
+// statement with a lead-in and trailer drawn from the given pools. It always
+// consumes exactly two draws from r (so the RNG stream is independent of which
+// variant lands, keeping generation byte-reproducible). When a lead-in is
 // prepended, the statement's first letter is lowercased unless it is a
-// standalone "I", so "By the way, i just moved" reads naturally while "I" stays
-// capitalized.
-func varySurface(r *rand.Rand, s string) string {
-	lead := stmtLeadIns[r.Intn(len(stmtLeadIns))]
-	trail := stmtTrailers[r.Intn(len(stmtTrailers))]
+// standalone "I" or the statement begins with the protected value (a canonical
+// fact value or pinned argument must survive realization verbatim, case
+// included — "Copper Rain" must never become "copper Rain"). protect may be ""
+// when the statement carries no such value. Exported so the tool-prompt wrap
+// (datagen) runs THIS engine with its own pools instead of a drifting copy.
+func Wrap(r *rand.Rand, s, protect string, leadIns, trailers []string) string {
+	lead := leadIns[r.Intn(len(leadIns))]
+	trail := trailers[r.Intn(len(trailers))]
 	if s == "" {
 		return s
 	}
 	if lead != "" {
-		s = lowerFirstUnlessI(s)
+		s = lowerFirstUnlessProtected(s, protect)
 	}
 	return lead + s + trail
 }
 
-// lowerFirstUnlessI lowercases the first rune of s unless the first word is the
-// pronoun "I" (so it survives a mid-sentence lead-in without being mangled).
-func lowerFirstUnlessI(s string) string {
+// lowerFirstUnlessProtected lowercases the first rune of s unless the first
+// word is the pronoun "I" or s begins with the verbatim fact value (so a
+// value-leading template survives a mid-sentence lead-in unmangled).
+func lowerFirstUnlessProtected(s, value string) string {
 	if strings.HasPrefix(s, "I ") || s == "I" || strings.HasPrefix(s, "I'") {
+		return s
+	}
+	if value != "" && strings.HasPrefix(s, value) {
 		return s
 	}
 	rs := []rune(s)

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ditto-assistant/dittobench-datagen/grade"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
@@ -74,10 +75,17 @@ func askVariant(seed int64, key string, options []string) string {
 	if len(options) == 1 {
 		return options[0]
 	}
-	// Mix the key hash with the seed (odd multiplier + golden-ratio constant) so
-	// distinct keys decorrelate and the same key varies across seeds.
+	return options[variantIndex(seed, key, len(options))]
+}
+
+// variantIndex is THE seed-keyed selection primitive: it mixes the key hash
+// with the seed (odd multiplier + golden-ratio constant) so distinct keys
+// decorrelate and the same key varies across seeds, then reduces mod n. Every
+// stable per-(seed, key) choice (ask phrasings, twin pair, twin attribute)
+// goes through here so a future change to the keying scheme lands everywhere.
+func variantIndex(seed int64, key string, n int) int {
 	h := uint64(factHash(key)) ^ (uint64(seed)*0x100000001b3 + 0x9e3779b97f4a7c15)
-	return options[h%uint64(len(options))]
+	return int(h % uint64(n))
 }
 
 // asstRecAsk is the recall question for an assistant-side recommendation, keyed
@@ -187,23 +195,99 @@ type Question struct {
 // could surface: every non-self value of the same attribute in the plan (decoy
 // persons, colleague graphs). The user's own values, including superseded chain
 // values, are excluded: mentioning old state next to the current answer is
-// correct behavior, not confusion.
+// correct behavior, not confusion. A candidate that bound-matches INSIDE a self
+// value is excluded too (pool values can be phrases of each other: expected
+// "moderately conservative" contains "conservative"), because a fully correct
+// response would surface it by construction and be zeroed. The reverse
+// direction (a self value inside a candidate) is kept: it only fires when the
+// response actually names the longer wrong value, which is a real confusion.
 func distractorsFor(p *Plan, attr string) []string {
-	self := map[string]bool{}
+	var selfVals []string
+	allSelf := map[string]bool{}
 	for _, f := range p.Facts {
-		if f.Entity == "self" && f.Attribute == attr {
-			self[f.Value] = true
+		if f.Entity != "self" {
+			continue
+		}
+		allSelf[f.Value] = true
+		if f.Attribute == attr {
+			selfVals = append(selfVals, f.Value)
 		}
 	}
 	var out []string
 	seen := map[string]bool{}
 	for _, f := range p.Facts {
-		if f.Entity != "self" && f.Attribute == attr && !self[f.Value] && !seen[f.Value] {
-			seen[f.Value] = true
-			out = append(out, f.Value)
+		if f.Entity == "self" || f.Attribute != attr || seen[f.Value] {
+			continue
 		}
+		if grade.ContainedInAny(f.Value, selfVals) {
+			continue
+		}
+		seen[f.Value] = true
+		out = append(out, f.Value)
+	}
+	// Pool backfill: the containment filter can leave the list empty (the only
+	// decoy value nests inside the expected answer), which would remove the
+	// anti-shotgun defense — a full pool dump would score 1. Top up with
+	// seed-keyed pool values that the plan never stated for the user: naming one
+	// is a fabrication, so zeroing on it is always correct. Candidates contained
+	// in ANY self value (any attribute — pools are shared across attributes) are
+	// skipped so an honest mention of another seeded fact can never trip it.
+	pool := poolForAttr(attr)
+	h := uint64(factHash("distpool:"+attr)) ^ uint64(p.Seed)
+	for tries := 0; len(out) < 2 && len(pool) > 0 && tries < 4*len(pool); tries++ {
+		h = h*6364136223846793005 + 1442695040888963407
+		v := pool[h%uint64(len(pool))]
+		if seen[v] || allSelf[v] {
+			continue
+		}
+		contained := false
+		for sv := range allSelf {
+			if grade.Hit(v, sv) {
+				contained = true
+				break
+			}
+		}
+		if contained {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
 	}
 	return out
+}
+
+// poolForAttr returns the value pool an attribute draws from, for distractor
+// backfill. Walks the same ordered registries the planner uses; nil for
+// attributes without a pool (e.g. the canary session code).
+func poolForAttr(attr string) []string {
+	for _, s := range allScalarSpecs() {
+		if s.attr == attr {
+			return s.pool
+		}
+	}
+	for _, s := range prefSpecs {
+		if s.attr == attr {
+			return s.pool
+		}
+	}
+	for _, ls := range []listSpec{projectSpec, tripSpec, petSpec} {
+		if ls.attr == attr {
+			return ls.pool
+		}
+	}
+	for _, d := range domains {
+		for _, lc := range d.lists {
+			if lc.spec.attr == attr {
+				return lc.spec.pool
+			}
+		}
+	}
+	for _, s := range asstRecSpecs {
+		if s.attr == attr {
+			return s.pool
+		}
+	}
+	return nil
 }
 
 // declinePoolDistractors builds the fabrication detector for a decline
@@ -444,7 +528,7 @@ func DeriveQuestions(p *Plan) []Question {
 			}
 		}
 		if len(recEv) >= 2 {
-			ask := recurringAskFor(recAttr)
+			ask := recurringAskFor(p.Seed, recAttr)
 			qs = append(qs, Question{
 				ID:       "q-agg-" + recAttr,
 				Type:     QTAggregation,
@@ -536,23 +620,42 @@ func DeriveQuestions(p *Plan) []Question {
 		})
 	}
 
-	// --- contradiction (change-of-mind reversals) ---
+	// --- contradiction (change-of-mind reversals AND standing opinions) ---
+	// Both reversed and never-reversed opinions get the SAME question surface,
+	// so whether the correct answer is cessation or persistence is decidable
+	// only from memory: "you no longer do it" is not a free win.
 	for _, f := range p.Facts {
-		if f.Kind != KindOpinion || !f.Reversal {
+		if f.Kind != KindOpinion {
 			continue
 		}
-		// Graded as a reversal: the response must name the activity AND convey
-		// cessation (Items[0] carries the bare value for the grader).
-		qs = append(qs, Question{
-			ID:       "q-contra-" + f.ID,
-			Type:     QTContradiction,
-			Tier:     TierHard,
-			Text:     fmt.Sprintf("How do I feel about %s these days?", f.Value),
-			Answer:   fmt.Sprintf("I no longer do %s — I used to enjoy it but have since given it up.", f.Value),
-			Kind:     protocol.AnswerReversal,
-			Items:    []string{f.Value},
-			Evidence: []string{f.ID, f.Supersedes},
-		})
+		switch {
+		case f.Reversal:
+			// Graded as a reversal: the response must name the activity AND convey
+			// cessation (Items[0] carries the bare value for the grader).
+			qs = append(qs, Question{
+				ID:       "q-contra-" + f.ID,
+				Type:     QTContradiction,
+				Tier:     TierHard,
+				Text:     fmt.Sprintf("How do I feel about %s these days?", f.Value),
+				Answer:   fmt.Sprintf("I no longer do %s — I used to enjoy it but have since given it up.", f.Value),
+				Kind:     protocol.AnswerReversal,
+				Items:    []string{f.Value},
+				Evidence: []string{f.ID, f.Supersedes},
+			})
+		case f.Current && f.Supersedes == "":
+			// Standing opinion: graded as persistence — the response must name the
+			// activity, convey continued enthusiasm, and NOT claim cessation.
+			qs = append(qs, Question{
+				ID:       "q-contra-" + f.ID,
+				Type:     QTContradiction,
+				Tier:     TierHard,
+				Text:     fmt.Sprintf("How do I feel about %s these days?", f.Value),
+				Answer:   fmt.Sprintf("I still love %s — nothing has changed.", f.Value),
+				Kind:     protocol.AnswerPersistence,
+				Items:    []string{f.Value},
+				Evidence: []string{f.ID},
+			})
+		}
 	}
 
 	// --- temporal ordering (which came first) ---
@@ -657,14 +760,24 @@ func temporalQuestions(p *Plan) []Question {
 	for _, s := range p.Sessions {
 		dayOf[s.Index] = s.DayOffset
 	}
-	// One representative event per session, in timeline order: each event is in a
-	// distinct session, so their order is a total order the harness can recover.
+	// One representative event per session, in CHRONOLOGICAL order. The rendered
+	// haystack orders pairs by (session day offset, beat position), NOT by fact
+	// Seq — a fact's Session is drawn independently of its Seq — so the timeline
+	// a harness reads from timestamps is session order. Ground truth must sort
+	// the same way or the expected ordering contradicts the transcript. Each
+	// event is in a distinct session, so the order is a total order the harness
+	// can recover (and duration gaps span at least two session gaps).
 	var evs []dated
-	lastSession := -1
+	seenSession := map[int]bool{}
 	facts := append([]Fact(nil), p.Facts...)
-	sort.Slice(facts, func(i, j int) bool { return facts[i].Seq < facts[j].Seq })
+	sort.Slice(facts, func(i, j int) bool {
+		if facts[i].Session != facts[j].Session {
+			return facts[i].Session < facts[j].Session
+		}
+		return facts[i].Seq < facts[j].Seq
+	})
 	for _, f := range facts {
-		if f.Entity != "self" || !f.Current || f.Session == lastSession {
+		if f.Entity != "self" || !f.Current || seenSession[f.Session] {
 			continue
 		}
 		lbl := factLabel(f)
@@ -672,7 +785,7 @@ func temporalQuestions(p *Plan) []Question {
 			continue
 		}
 		evs = append(evs, dated{f: f, label: lbl})
-		lastSession = f.Session
+		seenSession[f.Session] = true
 	}
 
 	var qs []Question
@@ -1072,76 +1185,121 @@ func drmLureQuestions(p *Plan) []Question {
 	}}
 }
 
-// filteredAggQuestions builds a computed-answer question: count the user's trips
-// that happened AFTER they changed employers. It requires joining a knowledge-
-// update event (the employer change and its session) with the trip timeline and
-// filtering by session order: not a lookup, and not defeatable by lexical
-// overlap. Emitted only when an employer update and at least one trip exist.
+// filtAggSpec is one filtered-aggregation (computed-answer) family: count the
+// listAttr events that happened AFTER the chainAttr scalar's latest change. The
+// asks never name the chain's VALUE (that would leak the recall answer into a
+// question); they reference the change event itself.
+type filtAggSpec struct {
+	chainAttr string
+	listAttr  string
+	id        string // question ID; doubles as the askVariant key
+	asks      []string
+}
+
+// filtAggSpecs is the single source of truth for the computed-answer joins:
+// BuildPlan reads it too (anchor guarantee, change-session clamp, straddle),
+// so adding a family here automatically gets the plan-side guarantees. The
+// asks say "most recent"/"latest": an anchor chain can have 3+ states, and the
+// answer counts events after the LAST change.
+var filtAggSpecs = []filtAggSpec{
+	{
+		chainAttr: "employer", listAttr: "trip", id: "q-filtagg-trip-after-job",
+		asks: []string{
+			"How many of my trips happened after my most recent employer change?",
+			"Since I last switched employers, how many trips have I taken?",
+			"Counting only after my latest job change, how many trips did I mention?",
+		},
+	},
+	{
+		chainAttr: "city", listAttr: "project", id: "q-filtagg-project-after-move",
+		asks: []string{
+			"How many of my projects did I start after my most recent move?",
+			"Since I last moved cities, how many new projects have I mentioned?",
+			"Counting only after my latest move, how many projects did I bring up?",
+		},
+	},
+}
+
+// filteredAggQuestions builds the computed-answer questions: count the list
+// events that happened AFTER a scalar change. Each requires joining a knowledge-
+// update event (the change and its session) with a list timeline and filtering
+// by session order: not a lookup, and not defeatable by lexical overlap. A
+// family is emitted only when its chain updated and its list is non-empty;
+// BuildPlan guarantees at least one anchor chain (employer or city) updates and
+// that its list straddles the change.
 func filteredAggQuestions(p *Plan) []Question {
-	// Find the employer-change session: the current employer fact that supersedes.
-	changeSession := -1
-	for _, f := range p.Facts {
-		if f.Kind == KindScalar && f.Entity == "self" && f.Attribute == "employer" && f.Current && f.Supersedes != "" {
-			changeSession = f.Session
+	var qs []Question
+	for _, spec := range filtAggSpecs {
+		// The chain's latest change session: the current fact that supersedes.
+		changeSession := -1
+		for _, f := range p.Facts {
+			if f.Kind == KindScalar && f.Entity == "self" && f.Attribute == spec.chainAttr && f.Current && f.Supersedes != "" {
+				changeSession = f.Session
+			}
 		}
-	}
-	trips := listFacts(p, "trip")
-	if changeSession < 0 || len(trips) == 0 {
-		return nil
-	}
-	after := 0
-	for _, f := range trips {
-		if f.Session > changeSession {
-			after++
+		items := listFacts(p, spec.listAttr)
+		if changeSession < 0 || len(items) == 0 {
+			continue
 		}
-	}
-	// Evidence: the employer chain + every trip (the answer depends on all of it).
-	ev := []string{}
-	for _, f := range p.Facts {
-		if f.Attribute == "employer" && f.Entity == "self" {
+		after := 0
+		for _, f := range items {
+			if f.Session > changeSession {
+				after++
+			}
+		}
+		// Evidence: the scalar chain + every list event (the answer depends on all of it).
+		ev := []string{}
+		for _, f := range p.Facts {
+			if f.Attribute == spec.chainAttr && f.Entity == "self" {
+				ev = append(ev, f.ID)
+			}
+		}
+		for _, f := range items {
 			ev = append(ev, f.ID)
 		}
+		qs = append(qs, Question{
+			ID:       spec.id,
+			Type:     QTComputed,
+			Tier:     TierHard,
+			Text:     askVariant(p.Seed, spec.id, spec.asks),
+			Answer:   strconv.Itoa(after),
+			Numeric:  true,
+			Kind:     protocol.AnswerNumber,
+			Evidence: ev,
+		})
 	}
-	for _, f := range trips {
-		ev = append(ev, f.ID)
-	}
-	return []Question{{
-		ID:       "q-filtagg-trip-after-job",
-		Type:     QTComputed,
-		Tier:     TierHard,
-		Text:     askVariant(p.Seed, "filtagg", []string{"How many of my trips happened after I changed employers?", "Since I switched employers, how many trips have I taken?", "Counting only after my job change, how many trips did I mention?"}),
-		Answer:   strconv.Itoa(after),
-		Numeric:  true,
-		Kind:     protocol.AnswerNumber,
-		Evidence: ev,
-	}}
+	return qs
 }
 
 // invarianceTwins emits a metamorphic invariance pair (Ideas #3): the same
 // current-scalar fact asked TWO different ways, sharing a TwinGroup. A robust
 // harness answers both identically; a phrasing-brittle one disagrees, which the
 // scorer surfaces as a consistency sub-score. One twin per run keeps the case
-// budget in check; the attribute is chosen deterministically from the plan.
+// budget in check. Both the attribute and the phrasing PAIR are seed-keyed: a
+// fixed first/last pick would make the twin surface a memorizable constant.
 func invarianceTwins(p *Plan) []Question {
 	scalars := currentScalarFacts(p)
-	// Prefer a non-updated scalar so the twin tests phrasing invariance, not
+	// Only non-updated scalars, so the twin tests phrasing invariance, not
 	// update handling (which knowledge-update already covers).
-	var pick *Fact
-	for i := range scalars {
-		if scalars[i].Supersedes == "" {
-			if variants := scalarAsk[scalars[i].Attribute]; len(variants) >= 2 {
-				pick = &scalars[i]
-				break
-			}
+	var elig []Fact
+	for _, f := range scalars {
+		if f.Supersedes == "" && len(scalarAsk[f.Attribute]) >= 2 {
+			elig = append(elig, f)
 		}
 	}
-	if pick == nil {
+	if len(elig) == 0 {
 		return nil
 	}
+	pick := &elig[variantIndex(p.Seed, "twin-attr", len(elig))]
 	variants := scalarAsk[pick.Attribute]
-	// Two distinct phrasings, deterministically chosen and different.
-	a := variants[0]
-	b := variants[len(variants)-1]
+	// Two distinct phrasings, seed-keyed (variantIndex) and guaranteed different.
+	ai := variantIndex(p.Seed, "twin-a:"+pick.Attribute, len(variants))
+	bi := variantIndex(p.Seed, "twin-b:"+pick.Attribute, len(variants)-1)
+	if bi >= ai {
+		bi++
+	}
+	a := variants[ai]
+	b := variants[bi]
 	if a == b {
 		return nil
 	}

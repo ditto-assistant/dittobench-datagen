@@ -59,6 +59,14 @@ func Memory(mc protocol.MemoryCase, resp protocol.RunResponse) Verdict {
 		}
 	}
 	for _, d := range mc.DistractorAnswers {
+		// A distractor that bound-matches INSIDE the expected answer (or an
+		// accepted item) cannot be scanned for: a fully correct response would
+		// contain it by construction (expected "moderately conservative" carries
+		// "conservative" as a bounded phrase). The generator avoids emitting such
+		// distractors; this guard keeps re-grading safe for datasets that did.
+		if overlapsAccepted(d, mc) {
+			continue
+		}
 		if Hit(d, full) {
 			return Verdict{Notes: []string{fmt.Sprintf("surfaced a wrong same-attribute value %q (scored 0)", d)}}
 		}
@@ -90,7 +98,14 @@ func Memory(mc protocol.MemoryCase, resp protocol.RunResponse) Verdict {
 		case protocol.AnswerDuration:
 			s = b2f(durationHit(mc.ExpectedAnswer, text))
 		case protocol.AnswerReversal:
-			s = b2f(len(mc.AnswerItems) == 1 && Hit(mc.AnswerItems[0], text) && anyPhrase(text, cessationPhrases))
+			s = b2f(len(mc.AnswerItems) == 1 && Hit(mc.AnswerItems[0], text) && stancePhrase(text, cessationPhrases))
+		case protocol.AnswerPersistence:
+			// The no-cessation exclusion is a NEGATIVE check, so like the
+			// forbidden/distractor scans it runs over the FULL response (slot +
+			// prose): a harness cannot hedge by putting persistence in the slot
+			// and cessation in the prose.
+			s = b2f(len(mc.AnswerItems) == 1 && Hit(mc.AnswerItems[0], text) &&
+				stancePhrase(text, persistencePhrases) && !stancePhrase(full, cessationPhrases))
 		case protocol.AnswerDecline:
 			s = b2f(resp.Abstain || anyPhrase(text, declinePhrases))
 		default: // AnswerValue
@@ -107,6 +122,26 @@ func Memory(mc protocol.MemoryCase, resp protocol.RunResponse) Verdict {
 		return Verdict{Score: best, Notes: []string{fmt.Sprintf("partial %s match (%.2f)", kind, best)}}
 	}
 	return Verdict{Notes: []string{"no deterministic " + kind + " match"}}
+}
+
+// overlapsAccepted reports whether a distractor value is contained (by the same
+// bounded-phrase match Hit uses) in the case's expected answer or any accepted
+// list item, i.e. whether a correct response necessarily surfaces it.
+func overlapsAccepted(d string, mc protocol.MemoryCase) bool {
+	return Hit(d, mc.ExpectedAnswer) || ContainedInAny(d, mc.AnswerItems)
+}
+
+// ContainedInAny reports whether v bound-matches inside (or equals) any of
+// vals, by the grader's own containment check. Exported so the generator's
+// distractor emission and the grader's overlap skip use ONE definition and can
+// never drift apart.
+func ContainedInAny(v string, vals []string) bool {
+	for _, sv := range vals {
+		if Hit(v, sv) {
+			return true
+		}
+	}
+	return false
 }
 
 // Hit reports whether the expected answer is present in the response by
@@ -127,16 +162,23 @@ func Hit(expected, response string) bool {
 	return containsBoundedPhrase(r, e)
 }
 
-// numberHit accepts the expected count as a digit token or its English word
-// ("3" or "three"), both boundary-checked.
+// numberHit accepts the expected count as a digit token, its English word
+// ("3" or "three"), or the idiomatic "once"/"twice" for 1/2, all
+// boundary-checked.
 func numberHit(expected, text string) bool {
 	e := Normalize(expected)
 	r := Normalize(text)
 	if containsNumberToken(r, e) {
 		return true
 	}
-	if w, ok := numberWords[e]; ok {
-		return containsBoundedPhrase(r, w)
+	if w, ok := numberWords[e]; ok && containsBoundedPhrase(r, w) {
+		return true
+	}
+	switch e {
+	case "1":
+		return containsBoundedPhrase(r, "once")
+	case "2":
+		return containsBoundedPhrase(r, "twice")
 	}
 	return false
 }
@@ -248,17 +290,94 @@ var declinePhrases = []string{
 	"i'm not sure", "i am not sure", "not stated", "haven't shared", "never shared",
 }
 
-// cessationPhrases mark a reversal answer ("I no longer do X").
-var cessationPhrases = []string{
-	"no longer", "anymore", "any more", "gave it up", "given it up",
-	"gave up", "stopped", "quit", "used to", "went off", "lost interest",
-	"don't do", "do not do", "not into",
+// persistencePhrases mark a standing-opinion answer ("you still love X").
+// Matched as bounded phrases with negation awareness (stancePhrase). A
+// persistence answer must ALSO be free of unnegated cessationPhrases across
+// the whole response, so hedged both-ways answers never credit. Some tokens
+// ("still", "into", "like") are generic enough that a stance-free mention can
+// slip through; that looseness is not a scoring lever, because a blind
+// stance guess is already capped at ~50% by the symmetric reversed/standing
+// opinion mix, while dropping the tokens would zero natural correct answers.
+var persistencePhrases = []string{
+	"still", "love", "loves", "loving", "enjoy", "enjoys", "enjoying",
+	"keen", "into", "fond", "fondly", "favorite", "favourite", "passionate",
+	"enthusiastic", "big fan", "as much as ever", "like", "likes",
+	"positively", "adore", "adores",
 }
 
+// cessationPhrases mark a reversal answer ("I no longer do X"). Matched as
+// bounded phrases with negation awareness, so "never stopped" or "haven't
+// given it up" read as persistence, not cessation.
+var cessationPhrases = []string{
+	"no longer", "anymore", "any more", "gave it up", "given it up",
+	"gave up", "given up", "stopped", "quit", "used to", "went off",
+	"gone off", "lost interest", "don't do", "do not do", "doesn't do",
+	"not into", "not that into", "not really into",
+	"don't enjoy", "do not enjoy", "doesn't enjoy",
+	"don't like", "do not like", "doesn't like",
+}
+
+// stanceNegators are tokens that, immediately before a stance phrase (within a
+// two-word window), invert it: "never stopped" is not a cessation claim.
+var stanceNegators = map[string]bool{
+	"never": true, "not": true, "haven't": true, "hasn't": true,
+	"havent": true, "hasnt": true, "didn't": true, "didnt": true,
+	"doesn't": true, "doesnt": true, "don't": true, "dont": true,
+	"without": true, "hardly": true,
+}
+
+// stancePhrase reports whether any phrase occurs in text as a BOUNDED phrase
+// (word boundaries, so "quit" never fires inside "quite" nor "any more" inside
+// "many more") that is not negated by a stanceNegators token in the two words
+// before it.
+func stancePhrase(text string, phrases []string) bool {
+	r := Normalize(text)
+	for _, p := range phrases {
+		for from := 0; ; {
+			j := indexBoundedFrom(r, p, from)
+			if j < 0 {
+				break
+			}
+			if !negatedAt(r, j) {
+				return true
+			}
+			from = j + 1
+		}
+	}
+	return false
+}
+
+// negationIntensifiers are adverbs the negation check skips through, so
+// "don't really enjoy" and "not that into" read as negated while a
+// non-intensifier in between ("never stopped loving") does NOT propagate the
+// negation onto the following stance word.
+var negationIntensifiers = map[string]bool{
+	"really": true, "that": true, "quite": true, "truly": true,
+	"actually": true, "ever": true, "even": true, "very": true,
+}
+
+// negatedAt reports whether the word immediately before index j in normalized
+// text is a stance negator, skipping through intensifier adverbs.
+func negatedAt(r string, j int) bool {
+	before := strings.Fields(strings.TrimRight(r[:j], " "))
+	for i := len(before) - 1; i >= 0; i-- {
+		w := strings.Trim(before[i], `"'.,!?;:`)
+		if stanceNegators[w] {
+			return true
+		}
+		if !negationIntensifiers[w] {
+			return false
+		}
+	}
+	return false
+}
+
+// anyPhrase reports whether any phrase occurs in text as a bounded phrase
+// (used for the decline lexicon, where negation inversion does not apply).
 func anyPhrase(text string, phrases []string) bool {
 	r := Normalize(text)
 	for _, p := range phrases {
-		if strings.Contains(r, p) {
+		if containsBoundedPhrase(r, p) {
 			return true
 		}
 	}

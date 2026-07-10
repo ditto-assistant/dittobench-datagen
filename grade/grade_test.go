@@ -105,6 +105,109 @@ func TestReversalKind(t *testing.T) {
 	}
 }
 
+// TestOverlappingDistractorNeverZeroesCorrectAnswer pins the P0 grader fix:
+// pool values can be phrases of each other ("moderately conservative" contains
+// "conservative"), so a distractor that bound-matches inside the expected
+// answer (or an accepted item) is skipped — a fully correct response must
+// never be zeroed by a value it contains by construction.
+func TestOverlappingDistractorNeverZeroesCorrectAnswer(t *testing.T) {
+	mc := protocol.MemoryCase{
+		ExpectedAnswer:    "moderately conservative",
+		DistractorAnswers: []string{"conservative", "aggressive"},
+	}
+	if s := Memory(mc, resp("Your risk tolerance is moderately conservative.")); s.Score != 1 {
+		t.Fatalf("correct answer zeroed by overlapping distractor: got %v (%v)", s.Score, s.Notes)
+	}
+	// A genuinely different distractor still zeroes.
+	if s := Memory(mc, resp("You said you're aggressive about risk.")); s.Score != 0 {
+		t.Fatalf("non-overlapping distractor must still score 0: got %v", s.Score)
+	}
+	// The wrong shorter value alone gets no credit (the positive check fails).
+	if s := Memory(mc, resp("Your risk tolerance is conservative.")); s.Score != 0 {
+		t.Fatalf("shorter wrong value must not credit: got %v", s.Score)
+	}
+	// List kinds: a distractor inside an accepted item is skipped too.
+	lc := protocol.MemoryCase{
+		AnswerKind:        protocol.AnswerList,
+		AnswerItems:       []string{"tree nuts", "penicillin"},
+		DistractorAnswers: []string{"nuts"},
+	}
+	if s := Memory(lc, resp("You're allergic to tree nuts and penicillin.")); s.Score != 1 {
+		t.Fatalf("item-overlapping distractor zeroed a full list: got %v (%v)", s.Score, s.Notes)
+	}
+}
+
+func TestPersistenceKind(t *testing.T) {
+	mc := protocol.MemoryCase{
+		AnswerKind:  protocol.AnswerPersistence,
+		AnswerItems: []string{"bouldering"},
+	}
+	for _, good := range []string{
+		"You still love bouldering.",
+		"You're really into bouldering these days.",
+		"Bouldering is still your favorite weekend activity.",
+		"You're still quite fond of bouldering.",                            // "quit" must not fire inside "quite"
+		"You've brought bouldering up many more times — you still love it.", // "any more" must not fire inside "many more"
+		"You never stopped loving bouldering.",                              // negated cessation reads as persistence
+		"You haven't given up bouldering — you still go most weekends.",
+	} {
+		if s := Memory(mc, resp(good)); s.Score != 1 {
+			t.Fatalf("persistence hit %q: got %v (%v)", good, s.Score, s.Notes)
+		}
+	}
+	for _, bad := range []string{
+		"You no longer do bouldering.",                    // cessation claim
+		"You gave up bouldering last year.",               // cessation claim
+		"You mentioned bouldering once.",                  // no stance
+		"You still love it.",                              // activity missing
+		"You still enjoy bouldering, but you've quit it.", // hedged both ways
+		"You're not that into bouldering these days.",     // negated persistence is not persistence
+	} {
+		if s := Memory(mc, resp(bad)); s.Score != 0 {
+			t.Fatalf("persistence miss %q must score 0: got %v", bad, s.Score)
+		}
+	}
+	// The no-cessation exclusion is a negative check over the FULL response:
+	// a slot/prose hedge must not credit.
+	hedge := protocol.RunResponse{Answer: "You still love bouldering.", FinalText: "Actually, you told me you gave it up and no longer do bouldering."}
+	if s := Memory(mc, hedge); s.Score != 0 {
+		t.Fatalf("slot/prose hedge must score 0: got %v (%v)", s.Score, s.Notes)
+	}
+}
+
+func TestReversalNegationAndSynonyms(t *testing.T) {
+	mc := protocol.MemoryCase{
+		AnswerKind:  protocol.AnswerReversal,
+		AnswerItems: []string{"bouldering"},
+	}
+	for _, good := range []string{
+		"You've completely gone off bouldering.",
+		"You don't enjoy bouldering these days.",
+	} {
+		if s := Memory(mc, resp(good)); s.Score != 1 {
+			t.Fatalf("reversal hit %q: got %v (%v)", good, s.Score, s.Notes)
+		}
+	}
+	// A negated cessation phrase is a persistence statement, not a reversal.
+	if s := Memory(mc, resp("You never stopped doing bouldering.")); s.Score != 0 {
+		t.Fatalf("negated cessation must not credit reversal: got %v", s.Score)
+	}
+}
+
+func TestNumberOnceTwice(t *testing.T) {
+	two := protocol.MemoryCase{ExpectedAnswer: "2", AnswerKind: protocol.AnswerNumber}
+	if s := Memory(two, resp("You've brought it up twice.")); s.Score != 1 {
+		t.Fatalf("\"twice\" must credit a count of 2: got %v", s.Score)
+	}
+	one := protocol.MemoryCase{ExpectedAnswer: "1", AnswerKind: protocol.AnswerNumber}
+	if s := Memory(one, resp("You only mentioned that once.")); s.Score != 1 {
+		t.Fatalf("\"once\" must credit a count of 1: got %v", s.Score)
+	}
+	if s := Memory(two, resp("You mentioned it once.")); s.Score != 0 {
+		t.Fatalf("\"once\" must not credit a count of 2: got %v", s.Score)
+	}
+}
+
 func TestDeclineKind(t *testing.T) {
 	mc := protocol.MemoryCase{
 		ExpectedAnswer:    "decline",

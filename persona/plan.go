@@ -128,10 +128,13 @@ func (p *Plan) FactByID(id string) (Fact, bool) {
 	return Fact{}, false
 }
 
-// Opts are the deterministic (NON-entropy) size knobs for a plan. They are part
-// of the plan's identity alongside the seed: same (seed, Opts) ⇒ identical
-// plan. Opts are derived from the run profile; DefaultOpts is used by tests
-// and as the medium baseline.
+// Opts are the deterministic size knobs for a plan. They are part of the
+// plan's identity alongside the seed: same (seed, Opts) ⇒ identical plan.
+// The list-family sizes (Projects/Trips/Pets/DomainItems) and LongChain are
+// CENTERS of seeded ranges, not exact counts: BuildPlan jitters each around its
+// knob so count/list-all/history answers vary per seed (a constant count is a
+// hardcodable answer). Opts are derived from the run profile; DefaultOpts is
+// used by tests and as the medium baseline.
 type Opts struct {
 	Sessions     int // number of conversation sessions
 	Projects     int // list-attribute items (multi-session synthesis material)
@@ -533,6 +536,21 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 	// (seed, bench_version). Seed-pure answer material keeps using the raw seed.
 	r := rand.New(rand.NewSource(protocol.RotateSeed(seed)))
 
+	// List sizes are drawn from a seeded range around each Opts knob so the
+	// count/list-all/history answers vary per seed instead of being one constant
+	// per run profile (a hardcodable integer). Floors keep every per-family
+	// question quota satisfiable: trips ≥3 (DRM lure precondition), domain items
+	// ≥2 (a countable list), pets ≥1. A knob of 0 stays 0 (the family is off).
+	opts.Projects = jitterSize(r, opts.Projects, 3)
+	opts.Trips = jitterSize(r, opts.Trips, 3)
+	opts.Pets = jitterSize(r, opts.Pets, 1)
+	opts.DomainItems = jitterSize(r, opts.DomainItems, 2)
+	// The long-chain length varies in [3, LongChain+1] so ordered-history answers
+	// are not a fixed length either.
+	if opts.LongChain >= 3 {
+		opts.LongChain = 3 + r.Intn(opts.LongChain-1)
+	}
+
 	name := pick(r, firstNames) + " " + pick(r, lastNames)
 	p := &Plan{Seed: seed, Name: name}
 
@@ -566,6 +584,42 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 		}
 	}
 	shuffleInts(r, updatableIdx)
+	// isAnchor marks the attributes the computed-answer (filtered-aggregation)
+	// questions join against; filtAggSpecs (questions.go) is the single source
+	// of truth, so a new family added there gets every plan-side guarantee.
+	isAnchor := func(attr string) bool {
+		for _, spec := range filtAggSpecs {
+			if spec.chainAttr == attr {
+				return true
+			}
+		}
+		return false
+	}
+	// Computed-answer anchor: guarantee at least one anchor attribute is among
+	// the updated scalars; without this the computed questions' precondition
+	// holds in only ~2/3 of seeds. The swap lands in the LAST update slot so
+	// the long-chain pick (slot 0) keeps its own seeded variety (when
+	// UpdateChains is 1 that slot IS the long-chain slot, so such a profile
+	// would pin the trajectory to an anchor attribute — no current profile
+	// combines UpdateChains 1 with LongChain ≥ 3), and which anchor is swapped
+	// in stays a seeded draw.
+	if opts.UpdateChains > 0 && opts.UpdateChains <= len(updatableIdx) {
+		var anchorPos []int
+		anchored := false
+		for pos, idx := range updatableIdx {
+			if isAnchor(scalars[idx].attr) {
+				if pos < opts.UpdateChains {
+					anchored = true
+					break
+				}
+				anchorPos = append(anchorPos, pos)
+			}
+		}
+		if !anchored && len(anchorPos) > 0 {
+			pos := anchorPos[r.Intn(len(anchorPos))]
+			updatableIdx[opts.UpdateChains-1], updatableIdx[pos] = updatableIdx[pos], updatableIdx[opts.UpdateChains-1]
+		}
+	}
 	updates := map[int]bool{}
 	for i := 0; i < opts.UpdateChains && i < len(updatableIdx); i++ {
 		updates[updatableIdx[i]] = true
@@ -581,6 +635,8 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 	if half < 1 {
 		half = 1
 	}
+	// Anchor attributes get their change session clamped off the final session
+	// so a list event can land after the change (the straddle post-pass below).
 	for i, s := range scalars {
 		// N-state trajectory: opts.LongChain distinct values over increasing
 		// sessions, each superseding the previous, only the last current. The
@@ -592,7 +648,11 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 				longChainIdx = -1
 			} else {
 				k = len(vals)
-				base := spread(0, maxInt(1, opts.Sessions-k+1))
+				hi := opts.Sessions - k + 1
+				if isAnchor(s.attr) {
+					hi-- // keep a session after the last change for the straddle
+				}
+				base := spread(0, maxInt(1, hi))
 				var prevID string
 				for j, v := range vals {
 					id := "f-" + s.attr
@@ -612,9 +672,9 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 						Current:    j == len(vals)-1,
 					}
 					if j == 0 {
-						f.UserText, f.AsstText = varySurface(r, fill(pickStr(r, s.stmt), v)), fill(pickStr(r, s.ack), v)
+						f.UserText, f.AsstText = varySurface(r, fill(pickStr(r, s.stmt), v), v), fill(pickStr(r, s.ack), v)
 					} else {
-						f.UserText, f.AsstText = varySurface(r, fill(pickStr(r, s.updateStmt), v)), fill(pickStr(r, s.updateAck), v)
+						f.UserText, f.AsstText = varySurface(r, fill(pickStr(r, s.updateStmt), v), v), fill(pickStr(r, s.updateAck), v)
 					}
 					p.Facts = append(p.Facts, f)
 					prevID = id
@@ -640,6 +700,10 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 		if updates[i] {
 			v2 := pickDistinct(r, s.pool, v1)
 			f1.Current = false
+			updHi := opts.Sessions
+			if isAnchor(s.attr) && opts.Sessions-1 > half {
+				updHi-- // keep a session after the change for the straddle
+			}
 			f2 := Fact{
 				ID:         "f-" + s.attr + "-2",
 				Kind:       KindScalar,
@@ -647,16 +711,16 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 				Attribute:  s.attr,
 				Value:      v2,
 				Display:    v2,
-				Session:    spread(half, opts.Sessions), // update lands later
+				Session:    spread(half, updHi), // update lands later
 				Seq:        nextSeq(),
 				Supersedes: f1.ID,
 				Current:    true,
 			}
-			f1.UserText, f1.AsstText = varySurface(r, fill(stmt, v1)), fill(ack, v1)
-			f2.UserText, f2.AsstText = varySurface(r, fill(pickStr(r, s.updateStmt), v2)), fill(pickStr(r, s.updateAck), v2)
+			f1.UserText, f1.AsstText = varySurface(r, fill(stmt, v1), v1), fill(ack, v1)
+			f2.UserText, f2.AsstText = varySurface(r, fill(pickStr(r, s.updateStmt), v2), v2), fill(pickStr(r, s.updateAck), v2)
 			p.Facts = append(p.Facts, f1, f2)
 		} else {
-			f1.UserText, f1.AsstText = varySurface(r, fill(stmt, v1)), fill(ack, v1)
+			f1.UserText, f1.AsstText = varySurface(r, fill(stmt, v1), v1), fill(ack, v1)
 			p.Facts = append(p.Facts, f1)
 		}
 	}
@@ -666,12 +730,12 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 		vals := pickN(r, spec.pool, count)
 		for j, v := range vals {
 			display, value := v, v
-			userText := varySurface(r, fill(pickStr(r, spec.stmt), display))
+			userText := varySurface(r, fill(pickStr(r, spec.stmt), display), display)
 			if spec.isPet {
 				t := pick(r, petTypes)
 				display = fmt.Sprintf("a %s named %s", t, v)
 				value = v // the pet's name is the canonical answer token
-				userText = varySurface(r, fill(pickStr(r, spec.stmt), display))
+				userText = varySurface(r, fill(pickStr(r, spec.stmt), display), display)
 			}
 			p.Facts = append(p.Facts, Fact{
 				ID:        fmt.Sprintf("f-%s-%d", spec.attr, j),
@@ -696,6 +760,69 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 		appendList(lc.spec, opts.DomainItems)
 	}
 
+	// Straddle guarantee for the computed-answer (filtered-aggregation) joins
+	// (filtAggSpecs, questions.go): when the anchor chain updated, its joined
+	// list family gets at least one event strictly BEFORE and one strictly
+	// AFTER the change, and none ON the change session. Both sides populated
+	// keeps the filtered count off the guessable 0/full-list extremes; clearing
+	// the change session itself keeps the ground truth unambiguous (an event in
+	// that session renders after the change inside the conversation, but a
+	// strict Session comparison would not count it). Sessions are reassigned
+	// only when a rule is violated, so most seeds keep their natural spread.
+	ensureStraddle := func(chainAttr, listAttr string) {
+		c := -1
+		for _, f := range p.Facts {
+			if f.Kind == KindScalar && f.Entity == "self" && f.Attribute == chainAttr && f.Current && f.Supersedes != "" {
+				c = f.Session
+			}
+		}
+		if c < 1 || c > opts.Sessions-2 {
+			return // chain never updated, or no room on one side
+		}
+		var items []int
+		for i := range p.Facts {
+			if p.Facts[i].Kind == KindList && p.Facts[i].Attribute == listAttr {
+				items = append(items, i)
+			}
+		}
+		if len(items) < 2 {
+			return
+		}
+		moveBefore := func(i int) { p.Facts[i].Session = r.Intn(c) }
+		moveAfter := func(i int) { p.Facts[i].Session = c + 1 + r.Intn(opts.Sessions-1-c) }
+		// Clear the change session first, alternating sides to keep balance.
+		side := 0
+		for _, i := range items {
+			if p.Facts[i].Session == c {
+				if side%2 == 0 {
+					moveBefore(i)
+				} else {
+					moveAfter(i)
+				}
+				side++
+			}
+		}
+		before, after := 0, 0
+		for _, i := range items {
+			if p.Facts[i].Session < c {
+				before++
+			} else {
+				after++
+			}
+		}
+		// Every item now sits strictly on one side, so with len ≥ 2 an empty
+		// side can be fed from the other without emptying it.
+		if before == 0 {
+			moveBefore(items[0])
+		}
+		if after == 0 {
+			moveAfter(items[len(items)-1])
+		}
+	}
+	for _, spec := range filtAggSpecs {
+		ensureStraddle(spec.chainAttr, spec.listAttr)
+	}
+
 	// --- preference facts ---
 	for _, s := range prefSpecs {
 		v := pick(r, s.pool)
@@ -709,13 +836,19 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 			Session:   spread(0, opts.Sessions),
 			Seq:       nextSeq(),
 			Current:   true,
-			UserText:  varySurface(r, fill(pickStr(r, s.stmt), v)),
+			UserText:  varySurface(r, fill(pickStr(r, s.stmt), v), v),
 			AsstText:  fill(pickStr(r, s.ack), v),
 		})
 	}
 
-	// --- opinion facts with reversals (contradiction material) ---
-	revHobbies := pickN(r, hobbies, opts.Reversals+1)
+	// --- opinion facts: reversals + an EQUAL number of standing opinions ---
+	// Symmetric counts cap a retrieval-free stance guess at ~50% of the
+	// contradiction tier: with only reversed opinions asked, "you no longer do
+	// it" was a free win, and with a single standing opinion a hedged cessation
+	// template still took 75%. Both kinds share one question surface AND one
+	// statement surface (opinionStmts), so which stance holds is decidable only
+	// from memory.
+	revHobbies := pickN(r, hobbies, opts.Reversals*2)
 	for j := 0; j < opts.Reversals && j < len(revHobbies); j++ {
 		h := revHobbies[j]
 		orig := Fact{
@@ -728,8 +861,8 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 			Session:   spread(0, half),
 			Seq:       nextSeq(),
 			Current:   false, // the reversal supersedes the original stance
-			UserText:  varySurface(r, fill(pickStr(r, []string{"I absolutely love %s.", "I've really gotten into %s lately.", "%s is my favorite way to spend a weekend."}), h)),
-			AsstText:  fill(pickStr(r, []string{"%s sounds like a joy.", "Great that you enjoy %s."}), h),
+			UserText:  varySurface(r, fill(pickStr(r, opinionStmts), h), h),
+			AsstText:  fill(pickStr(r, opinionAcks), h),
 		}
 		rev := Fact{
 			ID:         fmt.Sprintf("f-opinion-%d-rev", j),
@@ -743,10 +876,26 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 			Supersedes: orig.ID,
 			Reversal:   true,
 			Current:    true,
-			UserText:   varySurface(r, fill(pickStr(r, []string{"Honestly, I can't stand %s anymore — I've given it up.", "I've completely gone off %s; I don't do it now.", "I used to love %s but I've quit it entirely."}), h)),
+			UserText:   varySurface(r, fill(pickStr(r, []string{"Honestly, I can't stand %s anymore — I've given it up.", "I've completely gone off %s; I don't do it now.", "I used to love %s but I've quit it entirely."}), h), h),
 			AsstText:   fill(pickStr(r, []string{"Understood — you no longer do %s.", "Noted that you've given up %s."}), h),
 		}
 		p.Facts = append(p.Facts, orig, rev)
+	}
+	for j := opts.Reversals; j < 2*opts.Reversals && j < len(revHobbies); j++ {
+		h := revHobbies[j]
+		p.Facts = append(p.Facts, Fact{
+			ID:        fmt.Sprintf("f-opinion-still-%d", j-opts.Reversals),
+			Kind:      KindOpinion,
+			Entity:    "self",
+			Attribute: "hobby_opinion",
+			Value:     h,
+			Display:   h,
+			Session:   spread(0, opts.Sessions),
+			Seq:       nextSeq(),
+			Current:   true,
+			UserText:  varySurface(r, fill(pickStr(r, opinionStmts), h), h),
+			AsstText:  fill(pickStr(r, opinionAcks), h),
+		})
 	}
 
 	// --- near-miss distractors: same attributes, different (decoy) entities ---
@@ -795,7 +944,7 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 				Session:   spread(0, opts.Sessions),
 				Seq:       nextSeq(),
 				Current:   true,
-				UserText:  varySurface(r, fill(pickStr(r, s.stmt), v)),
+				UserText:  varySurface(r, fill(pickStr(r, s.stmt), v), v),
 				AsstText:  fill(pickStr(r, s.ack), v),
 			})
 		case roll < pSometimesDecoy:
@@ -837,7 +986,7 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 			Session:   spread(0, opts.Sessions),
 			Seq:       nextSeq(),
 			Current:   true,
-			UserText:  varySurface(r, fmt.Sprintf("My verification code for this session is %s.", nonce)),
+			UserText:  varySurface(r, fmt.Sprintf("My verification code for this session is %s.", nonce), nonce),
 			AsstText:  fmt.Sprintf("Got it — I've noted your verification code %s.", nonce),
 		})
 		who := pick(r, firstNames)
@@ -881,7 +1030,7 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 	// One topic the user raises K times across DISTINCT sessions. The count is the
 	// answer; a retriever that collapses the repeated mentions undercounts.
 	rec := recurringSpecs[r.Intn(len(recurringSpecs))]
-	kRec := 3 + r.Intn(3) // 3..5 mentions
+	kRec := 2 + r.Intn(7) // 2..8 mentions (wide range: the count answer carries ~2.8 bits)
 	if kRec > opts.Sessions {
 		kRec = opts.Sessions
 	}
@@ -897,7 +1046,7 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 			Session:   sess,
 			Seq:       nextSeq(),
 			Current:   true,
-			UserText:  varySurface(r, fill(recurringMentionTmpls[j%len(recurringMentionTmpls)], rec.label)),
+			UserText:  varySurface(r, fill(recurringMentionTmpls[j%len(recurringMentionTmpls)], rec.label), rec.label),
 			AsstText:  fill(pickStr(r, []string{"Noted — %s has come up before.", "Understood, thanks for the update on %s.", "Got it, %s again."}), rec.label),
 		})
 	}
@@ -907,26 +1056,53 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 	return p
 }
 
+// opinionStmts/opinionAcks phrase BOTH a to-be-reversed opinion's original
+// statement and a standing (never-reversed) opinion. The two MUST stay
+// surface-identical: if they diverge, reversed-vs-standing becomes decidable
+// from phrasing alone and the contradiction questions stop testing memory.
+var (
+	opinionStmts = []string{"I absolutely love %s.", "I've really gotten into %s lately.", "%s is my favorite way to spend a weekend."}
+	opinionAcks  = []string{"%s sounds like a joy.", "Great that you enjoy %s."}
+)
+
 // recurringSpec scripts a topic the user mentions repeatedly. label is the spoken
-// noun phrase (appears in every mention); ask is the count question.
+// noun phrase (appears in every mention); asks are the count-question phrasings
+// (askVariant picks one per seed, so the aggregation ask is not mono-phrased).
 type recurringSpec struct {
 	attr  string
 	label string
-	ask   string
+	asks  []string
 }
 
 var recurringSpecs = []recurringSpec{
-	{"recur_backpain", "my ongoing back pain", "How many separate times have I brought up my ongoing back pain?"},
-	{"recur_account", "the Barton account", "How many separate times have I mentioned the Barton account?"},
-	{"recur_starter", "my sourdough starter", "How many times have I brought up my sourdough starter?"},
-	{"recur_thesis", "my thesis revisions", "How many separate times did I mention my thesis revisions?"},
+	{"recur_backpain", "my ongoing back pain", []string{
+		"How many separate times have I brought up my ongoing back pain?",
+		"Across all our chats, on how many occasions has my ongoing back pain come up?",
+		"Count the distinct times I've complained to you about my ongoing back pain.",
+	}},
+	{"recur_account", "the Barton account", []string{
+		"How many separate times have I mentioned the Barton account?",
+		"On how many distinct occasions has the Barton account come up with me?",
+		"Count the separate times I've raised the Barton account with you.",
+	}},
+	{"recur_starter", "my sourdough starter", []string{
+		"How many times have I brought up my sourdough starter?",
+		"On how many separate occasions have I mentioned my sourdough starter?",
+		"Count how many different times my sourdough starter has come up.",
+	}},
+	{"recur_thesis", "my thesis revisions", []string{
+		"How many separate times did I mention my thesis revisions?",
+		"On how many distinct occasions have my thesis revisions come up?",
+		"Count the separate times I've talked about my thesis revisions.",
+	}},
 }
 
-// recurringAskFor returns the count question for a recurring-topic attribute.
-func recurringAskFor(attr string) string {
+// recurringAskFor returns a seed-keyed count-question phrasing for a
+// recurring-topic attribute.
+func recurringAskFor(seed int64, attr string) string {
 	for _, s := range recurringSpecs {
 		if s.attr == attr {
-			return s.ask
+			return askVariant(seed, "agg:"+attr, s.asks)
 		}
 	}
 	return "How many separate times have I brought that topic up?"
@@ -993,7 +1169,14 @@ func buildSessions(r *rand.Rand, facts []Fact, nSessions int) []Session {
 			beats = append(beats, noiseBeat(r))
 		}
 		sessions = append(sessions, Session{Index: i, DayOffset: day, Beats: beats})
-		day += 1 + r.Intn(14) // strictly increasing gaps (1..14 days)
+		// Strictly increasing gaps, mixing week-scale (1..10 days) with an
+		// occasional month-scale jump (15..55 days) so elapsed-duration answers
+		// span days through months instead of clustering at the small buckets.
+		gap := 1 + r.Intn(10)
+		if r.Intn(4) == 0 {
+			gap += 14 + r.Intn(31)
+		}
+		day += gap
 	}
 	return sessions
 }

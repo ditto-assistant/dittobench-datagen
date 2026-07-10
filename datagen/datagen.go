@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"strings"
 
+	"github.com/ditto-assistant/dittobench-datagen/persona"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 	"github.com/ditto-assistant/dittobench-datagen/toolexec"
 )
@@ -31,7 +32,14 @@ type category struct {
 	// argKey, when set on a single-tool category whose filler is an exact token
 	// (a URL, a theme), pins RequiredArgs[argKey]=filler so the argument value is
 	// deterministically scored: right tool + wrong arg does not get full credit.
-	argKey    string
+	argKey string
+	// wrap applies the Tier-1a lead-in/trailer surface variation to the rendered
+	// prompt (persona.Wrap with the prompt pools below). Set it on template-only
+	// categories whose prompt pool would otherwise be a handful of memorizable
+	// strings; leave it off for categories whose surface entropy comes from a
+	// large filler pool, and for result-usage/intent prompts that must reach the
+	// harness exactly as authored.
+	wrap      bool
 	templates []string
 	// intents are prompts that imply the arg VALUE (or name a near-miss) instead of
 	// stating it verbatim, so a harness must parse intent rather than copy a token.
@@ -122,11 +130,17 @@ var (
 		"hey, how's it going?", "thanks, that was helpful!",
 		"tell me a joke", "what's your favorite color?",
 		"good morning!", "you're awesome", "lol nice",
+		"haha that one made me laugh", "hope your day's going well",
+		"just saying hi", "nice, that's exactly what I meant",
+		"gm! ready when you are", "appreciate you", "ok cool cool cool",
 	}
 	abstentions = []string{
 		"what's the meaning of life?", "should I quit my job?",
 		"do you love me?", "what will the weather be like next year?",
 		"who will win the next election?", "what am I thinking right now?",
+		"will my startup succeed?", "is my sister secretly mad at me?",
+		"what number am I thinking of?", "will it rain on my wedding day next June?",
+		"how long am I going to live?", "did my neighbor take my package?",
 	}
 )
 
@@ -236,21 +250,33 @@ var categories = []category{
 	},
 	{
 		// Run-vs-read trap: check status of EXISTING jobs (not start a new one).
-		name: "agent_read_not_run", tool: "list_agent_jobs",
+		name: "agent_read_not_run", wrap: true, tool: "list_agent_jobs",
 		templates: []string{
 			"What background jobs do I have running?",
 			"Show me my recent agent jobs.",
 			"Did any of my dispatched tasks finish yet?",
+			"Any update on the agents I kicked off earlier?",
+			"Check on my running background tasks for me.",
+			"Which of my jobs are still going?",
+			"Give me a rundown of the background work I've queued.",
+			"Has that task I dispatched wrapped up?",
+			"What's sitting in my job queue right now?",
 		},
 	},
 	{
 		// Edit-vs-create trap: the user references an EXISTING image to modify, so
 		// the right tool is edit_image, not create_image.
-		name: "image_edit_not_create", tool: "edit_image",
+		name: "image_edit_not_create", wrap: true, tool: "edit_image",
 		templates: []string{
 			"Take the last image and make the sky purple.",
 			"Edit that picture you made to add a small hat.",
 			"Change the background of the image to a quiet beach.",
+			"Touch up the image you generated — warmer tones, please.",
+			"On that last picture, remove the text in the corner.",
+			"Make the existing image black and white.",
+			"Crop that image tighter around the subject.",
+			"Brighten up the picture from before a little.",
+			"Give the image you just made a night-time look.",
 		},
 	},
 	{
@@ -283,7 +309,7 @@ var categories = []category{
 		// it. The correct behavior is to ask for the missing detail, NOT to invoke the
 		// tool with a fabricated argument; like abstention, calling any tool
 		// scores 0 (a guessed value is the failure mode being probed).
-		name: "arg_hallucination", tool: "", // required value missing: ask, don't invent
+		name: "arg_hallucination", wrap: true, tool: "", // required value missing: ask, don't invent
 		templates: []string{
 			"Change my theme.",
 			"Switch my main model, please.",
@@ -291,16 +317,29 @@ var categories = []category{
 			"Read that link and summarize it.",
 			"File that as feedback for the team.",
 			"Spin up a parallel agent workflow for me.",
+			"Set my accent color.",
+			"Change the chat font, please.",
+			"Put it on my calendar.",
+			"Email them the update.",
+			"Delete that memory for me.",
+			"Run my recipe.",
 		},
 	},
 	// Full-catalog coverage: single-hop categories so every catalog tool is the
 	// correct answer for some case.
 	{
-		name: "memory_fetch", tool: "fetch_memories", argKey: "pairIds",
+		// Deliberately avoids the tool's own keywords (fetch/full/text/memory/
+		// pair): the old templates stated the call verbatim, so a no-model
+		// keyword router solved this category at floor 1.0. The pair ID is still
+		// the pinned argument; the intent must be read, not string-matched.
+		name: "memory_fetch", wrap: true, tool: "fetch_memories", argKey: "pairIds",
 		templates: []string{
-			"Fetch the full text of memory %s.",
-			"Pull up memory %s in full.",
-			"Open memory %s and show me everything in it.",
+			"Pull up the whole exchange saved under %s.",
+			"Show me everything we said in %s.",
+			"I need the complete record behind %s — bring it up.",
+			"Open up %s and show me the entire thing.",
+			"What exactly is stored under %s? Show me all of it.",
+			"Bring back the entire thread for %s.",
 		},
 	},
 	{
@@ -368,11 +407,17 @@ var categories = []category{
 		},
 	},
 	{
-		name: "automation_list", tool: "list_automations",
+		name: "automation_list", wrap: true, tool: "list_automations",
 		templates: []string{
 			"What automations do I have set up?",
 			"Show me my scheduled automations.",
 			"List the recurring tasks I've created.",
+			"Which scheduled jobs are active for me right now?",
+			"Remind me what I've got running on a schedule.",
+			"Do I have any recurring automations at the moment?",
+			"Pull up everything I've set to run automatically.",
+			"What's on my automation roster these days?",
+			"Show which tasks run for me on a timer.",
 		},
 	},
 	{
@@ -394,11 +439,17 @@ var categories = []category{
 	{
 		// Capability discovery: "what can you do / where is X" routes to
 		// discover_capabilities, not a guess from memory or the web.
-		name: "capability_discovery", tool: "discover_capabilities",
+		name: "capability_discovery", wrap: true, tool: "discover_capabilities",
 		templates: []string{
 			"What can you actually do?",
 			"How do I turn on dark mode in this app?",
 			"Where do I find the setting to connect my calendar?",
+			"What kinds of things can I ask you for?",
+			"Is there a way to change how the app looks?",
+			"Walk me through what this assistant is able to do.",
+			"How would I set up a recurring reminder in here?",
+			"What features do you have for working with images?",
+			"Where do I manage which tools you're allowed to use?",
 		},
 	},
 	{
@@ -564,6 +615,22 @@ var categories = []category{
 			"Get the current number for %s from the web, retrying past any transient hiccup.",
 		},
 	},
+}
+
+// Tier-1a prompt-surface variation for the template-only categories whose
+// prompt pool would otherwise be a handful of memorizable strings (the same
+// machinery the persona haystack uses: a seed-chosen lead-in and trailer
+// multiply the surface a template matcher must cover without changing the
+// intent or any pinned argument). Empty entries weight toward the plain prompt.
+var promptLeadIns = []string{
+	"", "", "", "",
+	"Hey, ", "Quick one: ", "Ok, so — ", "Real quick, ", "One thing: ",
+	"When you get a sec, ", "Oh right — ",
+}
+
+var promptTrailers = []string{
+	"", "", "", "",
+	" Thanks!", " Cheers.", " No rush.", " Appreciate it.", " When you can.",
 }
 
 // resultUsageSuffix marks the categories whose correct answer must incorporate a
@@ -767,6 +834,12 @@ func GenerateCasesWithFillers(r *rand.Rand, seed int64, n int) ([]protocol.ToolC
 			if len(seq) > 0 {
 				usedFiller = filler
 			}
+		}
+		// Surface variation for wrap-flagged categories: the shared Tier-1a
+		// lead-in/trailer engine, protecting a leading pinned-argument token from
+		// the lowercase pass and leaving the intent untouched.
+		if cat.wrap {
+			prompt = persona.Wrap(r, prompt, argValue, promptLeadIns, promptTrailers)
 		}
 
 		tc := protocol.ToolCase{

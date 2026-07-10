@@ -52,6 +52,25 @@ func pickN(r *rand.Rand, pool []string, count int) []string {
 	return out
 }
 
+// jitterSize draws a list-family size from the seeded range [max(floor, base-2),
+// base+3], so per-seed counts vary around the profile knob instead of being one
+// constant. A base of 0 stays 0 (the family is disabled); when the knob sits
+// below the floor, the floor wins (quota satisfiability over a tiny knob).
+func jitterSize(r *rand.Rand, base, floor int) int {
+	if base <= 0 {
+		return 0
+	}
+	lo := base - 2
+	if lo < floor {
+		lo = floor
+	}
+	hi := base + 3
+	if lo >= hi {
+		return lo
+	}
+	return lo + r.Intn(hi-lo+1)
+}
+
 // shuffleInts shuffles a slice of ints in place with the run's stream.
 func shuffleInts(r *rand.Rand, xs []int) {
 	r.Shuffle(len(xs), func(i, j int) { xs[i], xs[j] = xs[j], xs[i] })

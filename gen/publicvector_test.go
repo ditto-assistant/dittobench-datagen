@@ -11,10 +11,12 @@ import "testing"
 func TestKnownVector(t *testing.T) {
 	const (
 		seed = int64(123456789)
-		// Deliberate change (judge-free grading): MemoryCase gained
-		// answer_kind/answer_items/distractor_answers and the binary temporal
-		// leftover question was dropped, both of which move the artifact bytes.
-		want = "73781f0f59c1e5bc0864463ff3e2f658d6f3d525923324d2add73b88351f323d"
+		// Deliberate change (question-audit hardening, bench_version 2):
+		// seeded list sizes, recurring-count widening, day-offset spread, the
+		// computed-answer anchor + straddle, persistence contradiction cases,
+		// overlap-safe distractors, chronological temporal ground truth, and
+		// the tool-prompt surface extension all move the artifact bytes.
+		want = "f88e63b9c9a6dabc67d8a9924c167c5a551eebf732a64ca5d17fc4cb3e6809d3"
 	)
 	prof, _ := ProfileFor("full")
 	got, _, err := GenerateDataset(seed, prof).SHA256Hex()

@@ -54,6 +54,11 @@ const (
 	// AnswerReversal: the expected value must be present together with a
 	// cessation phrase (no longer / gave up / stopped ...).
 	AnswerReversal = "reversal"
+	// AnswerPersistence: the mirror of AnswerReversal for a NEVER-reversed
+	// opinion: the expected value must be present together with a persistence
+	// phrase (still / love / enjoy ...) and WITHOUT any cessation phrase, so
+	// "you no longer do it" is not a free win on contradiction questions.
+	AnswerPersistence = "persistence"
 	// AnswerDecline: correct behavior is a grounded decline: RunResponse.Abstain,
 	// or a decline phrase, and NO DistractorAnswers value (a named value is a
 	// fabrication and scores 0).

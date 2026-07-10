@@ -361,8 +361,13 @@ var bloodTypes = []string{
 	"A negative",
 }
 
+// birthdayMonths deliberately omits May: the grader's common-word guard
+// (grade.commonWords) refuses to credit the bare token "may" (the modal), so a
+// May answer could never score — the case would be unwinnable by construction.
+// Every pool value must be creditable by the grader (see
+// TestPoolValuesGradeable).
 var birthdayMonths = []string{
-	"January", "February", "March", "April", "May", "June", "July", "August",
+	"January", "February", "March", "April", "June", "July", "August",
 	"September", "October", "November", "December",
 }
 

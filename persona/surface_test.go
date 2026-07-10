@@ -12,7 +12,7 @@ import (
 func TestVarySurfacePreservesValue(t *testing.T) {
 	for seed := int64(0); seed < 200; seed++ {
 		r := rand.New(rand.NewSource(seed))
-		got := varySurface(r, "I just moved to Denver.")
+		got := varySurface(r, "I just moved to Denver.", "Denver")
 		if !strings.Contains(got, "Denver") {
 			t.Fatalf("seed %d: value dropped from %q", seed, got)
 		}
@@ -25,7 +25,7 @@ func TestVarySurfaceProducesDiversity(t *testing.T) {
 	seen := map[string]bool{}
 	for seed := int64(0); seed < 300; seed++ {
 		r := rand.New(rand.NewSource(seed))
-		seen[varySurface(r, "I just moved to Denver.")] = true
+		seen[varySurface(r, "I just moved to Denver.", "Denver")] = true
 	}
 	if len(seen) < 20 {
 		t.Fatalf("expected many distinct surfaces, got %d", len(seen))
