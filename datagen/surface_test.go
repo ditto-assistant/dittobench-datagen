@@ -30,14 +30,54 @@ func TestWrappedCategoriesHaveWideSurface(t *testing.T) {
 			prompts[c.Category][c.Prompt] = true
 		}
 	}
+	// Grammar-driven categories must clear a much higher floor than the plain
+	// wrapped ones: the CFG expander exists to lift them from a memorizable
+	// template list to hundreds of surfaces (audit follow-up item A).
+	grammarDriven := map[string]bool{}
+	for _, c := range categories {
+		if c.grammar != nil {
+			grammarDriven[c.name] = true
+		}
+	}
+	if len(grammarDriven) < 5 {
+		t.Fatalf("only %d grammar-driven categories — the five audited categories must use grammars", len(grammarDriven))
+	}
 	for cat, seen := range prompts {
-		if len(seen) < 12 {
-			t.Errorf("category %s: only %d distinct prompts across 80 seeds — template-memorizable", cat, len(seen))
+		floor := 12
+		if grammarDriven[cat] {
+			floor = 60
+		}
+		if len(seen) < floor {
+			t.Errorf("category %s: only %d distinct prompts across 80 seeds (floor %d) — template-memorizable", cat, len(seen), floor)
 		}
 	}
 	for cat := range wrapped {
 		if prompts[cat] == nil {
 			t.Errorf("category %s never emitted in 80 seeds", cat)
+		}
+	}
+}
+
+// TestGrammarPromptsWellFormed sweeps every grammar-driven category's emitted
+// prompts for leaked grammar syntax and unfilled placeholders.
+func TestGrammarPromptsWellFormed(t *testing.T) {
+	grammarDriven := map[string]bool{}
+	for _, c := range categories {
+		if c.grammar != nil {
+			grammarDriven[c.name] = true
+		}
+	}
+	for seed := int64(1); seed <= 60; seed++ {
+		for _, c := range Generate(seed, 60).ToolCases {
+			if !grammarDriven[c.Category] {
+				continue
+			}
+			if strings.Contains(c.Prompt, "#") {
+				t.Fatalf("seed %d %s: prompt leaked grammar syntax: %q", seed, c.Category, c.Prompt)
+			}
+			if strings.Contains(c.Prompt, "%s") {
+				t.Fatalf("seed %d %s: prompt has unfilled placeholder: %q", seed, c.Category, c.Prompt)
+			}
 		}
 	}
 }

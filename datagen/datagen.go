@@ -41,6 +41,11 @@ type category struct {
 	// harness exactly as authored.
 	wrap      bool
 	templates []string
+	// grammar, when set, replaces templates as the prompt source: the prompt is
+	// persona.Expand(r, grammar, "root"), then the normal %s fill and wrap run on
+	// the expansion. Used by the audited low-variety categories whose surface
+	// must outgrow a memorizable template list.
+	grammar persona.Grammar
 	// intents are prompts that imply the arg VALUE (or name a near-miss) instead of
 	// stating it verbatim, so a harness must parse intent rather than copy a token.
 	// Used for a share of a set_* category's cases; requires argKey.
@@ -251,33 +256,13 @@ var categories = []category{
 	{
 		// Run-vs-read trap: check status of EXISTING jobs (not start a new one).
 		name: "agent_read_not_run", wrap: true, tool: "list_agent_jobs",
-		templates: []string{
-			"What background jobs do I have running?",
-			"Show me my recent agent jobs.",
-			"Did any of my dispatched tasks finish yet?",
-			"Any update on the agents I kicked off earlier?",
-			"Check on my running background tasks for me.",
-			"Which of my jobs are still going?",
-			"Give me a rundown of the background work I've queued.",
-			"Has that task I dispatched wrapped up?",
-			"What's sitting in my job queue right now?",
-		},
+		grammar: agentReadGrammar,
 	},
 	{
 		// Edit-vs-create trap: the user references an EXISTING image to modify, so
 		// the right tool is edit_image, not create_image.
 		name: "image_edit_not_create", wrap: true, tool: "edit_image",
-		templates: []string{
-			"Take the last image and make the sky purple.",
-			"Edit that picture you made to add a small hat.",
-			"Change the background of the image to a quiet beach.",
-			"Touch up the image you generated — warmer tones, please.",
-			"On that last picture, remove the text in the corner.",
-			"Make the existing image black and white.",
-			"Crop that image tighter around the subject.",
-			"Brighten up the picture from before a little.",
-			"Give the image you just made a night-time look.",
-		},
+		grammar: imageEditGrammar,
 	},
 	{
 		// Job-vs-workflow trap: phrased like a one-off background job, but the goal
@@ -333,14 +318,7 @@ var categories = []category{
 		// keyword router solved this category at floor 1.0. The pair ID is still
 		// the pinned argument; the intent must be read, not string-matched.
 		name: "memory_fetch", wrap: true, tool: "fetch_memories", argKey: "pairIds",
-		templates: []string{
-			"Pull up the whole exchange saved under %s.",
-			"Show me everything we said in %s.",
-			"I need the complete record behind %s — bring it up.",
-			"Open up %s and show me the entire thing.",
-			"What exactly is stored under %s? Show me all of it.",
-			"Bring back the entire thread for %s.",
-		},
+		grammar: memoryFetchGrammar,
 	},
 	{
 		name: "agent_workflow", tool: "execute_agent_workflow", argKey: "goal",
@@ -408,17 +386,7 @@ var categories = []category{
 	},
 	{
 		name: "automation_list", wrap: true, tool: "list_automations",
-		templates: []string{
-			"What automations do I have set up?",
-			"Show me my scheduled automations.",
-			"List the recurring tasks I've created.",
-			"Which scheduled jobs are active for me right now?",
-			"Remind me what I've got running on a schedule.",
-			"Do I have any recurring automations at the moment?",
-			"Pull up everything I've set to run automatically.",
-			"What's on my automation roster these days?",
-			"Show which tasks run for me on a timer.",
-		},
+		grammar: automationListGrammar,
 	},
 	{
 		name: "recipe_create", tool: "create_recipe", argKey: "name",
@@ -440,17 +408,7 @@ var categories = []category{
 		// Capability discovery: "what can you do / where is X" routes to
 		// discover_capabilities, not a guess from memory or the web.
 		name: "capability_discovery", wrap: true, tool: "discover_capabilities",
-		templates: []string{
-			"What can you actually do?",
-			"How do I turn on dark mode in this app?",
-			"Where do I find the setting to connect my calendar?",
-			"What kinds of things can I ask you for?",
-			"Is there a way to change how the app looks?",
-			"Walk me through what this assistant is able to do.",
-			"How would I set up a recurring reminder in here?",
-			"What features do you have for working with images?",
-			"Where do I manage which tools you're allowed to use?",
-		},
+		grammar: capabilityGrammar,
 	},
 	{
 		// Save-vs-search trap: a STATEMENT of a new fact is a memory WRITE, not a
@@ -791,7 +749,12 @@ func GenerateCasesWithFillers(r *rand.Rand, seed int64, n int) ([]protocol.ToolC
 	fillers := make([]string, 0, n)
 	for i := 0; i < n; i++ {
 		cat := categories[order[i]]
-		tmpl := cat.templates[r.Intn(len(cat.templates))]
+		var tmpl string
+		if cat.grammar != nil {
+			tmpl = persona.Expand(r, cat.grammar, "root")
+		} else {
+			tmpl = cat.templates[r.Intn(len(cat.templates))]
+		}
 		caseID := protocol.OpaqueCaseID(seed, "tool", i)
 		// Result-usage cases: the filler is the fixture needle's Subject, derived
 		// from the SAME (seed, caseID) the mock server uses to serve the answer, so
