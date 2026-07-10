@@ -322,6 +322,15 @@ type RunDetails struct {
 	// Tokens is the total OpenRouter tokens the judge spent: budget telemetry
 	// (kept out of the composite). Generation is non-LLM and spends none.
 	Tokens int64 `json:"tokens,omitempty"`
+	// JudgeAudited / JudgeDisagreed report the second-judge audit slice: how
+	// many judged cases both judge models graded, and on how many their
+	// verdicts diverged (any correctness/grounding flip on a memory case, or a
+	// tool-quality gap past the scorer's disagreement threshold). This is the
+	// live measure of residual judge noise the k=3 median is exposed to; it
+	// should sit near 0 on a pinned self-hosted judge. Both are 0 when no
+	// second judge model is configured. Advisory telemetry only.
+	JudgeAudited   int `json:"judge_audited,omitempty"`
+	JudgeDisagreed int `json:"judge_disagreed,omitempty"`
 	// SeedingWaves is how many staged /seed waves the memory haystack was split
 	// into (Tier C; 1 = single seed). RawPairsCases is how many memory cases were
 	// Tier B (raw-pairs seeding: their evidence was seeded WITHOUT prepared
