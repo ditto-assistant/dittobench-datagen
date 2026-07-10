@@ -104,3 +104,25 @@ func TestMemoryFetchPromptNotVerbatim(t *testing.T) {
 		}
 	}
 }
+
+// TestAutomationListPromptNotRoutable pins the leak fix for the automation_list
+// grammar: the prompt must not state list_automations' own name/description
+// content words ("list", "scheduled", "automations"). The no-model reference
+// router (refharness) signals on those tokens, so reusing any of them lets it
+// solve the read-vs-create trap with no retrieval (a grammar production once
+// stacked all three and drove the benchcal floor to 1.0 on a seed).
+func TestAutomationListPromptNotRoutable(t *testing.T) {
+	for seed := int64(1); seed <= 40; seed++ {
+		for _, c := range Generate(seed, 60).ToolCases {
+			if c.Category != "automation_list" {
+				continue
+			}
+			p := strings.ToLower(c.Prompt)
+			for _, kw := range []string{"list", "scheduled", "automations"} {
+				if strings.Contains(p, kw) {
+					t.Fatalf("seed %d: automation_list prompt states router keyword %q: %q", seed, kw, c.Prompt)
+				}
+			}
+		}
+	}
+}
