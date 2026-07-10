@@ -92,7 +92,7 @@ func TestMemoryFetchPromptNotVerbatim(t *testing.T) {
 				continue
 			}
 			p := strings.ToLower(c.Prompt)
-			for _, kw := range []string{"fetch", "memory", "memories", "pair"} {
+			for _, kw := range []string{"fetch", "memory", "memories", "pair", "conversation"} {
 				if strings.Contains(p, kw) {
 					t.Fatalf("seed %d: memory_fetch prompt states tool keyword %q verbatim: %q", seed, kw, c.Prompt)
 				}

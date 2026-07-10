@@ -99,18 +99,21 @@ var automationListGrammar = persona.Grammar{
 		"Remind me what I've got #onschedule#.",
 		"What's #onmyroster# these days?",
 	},
+	// showverb deliberately avoids the tool-name word "list": the no-model
+	// router signals list_automations on {list, existing, scheduled,
+	// automations}, and stacking those words hands the trap a free solve.
 	"showverb": {
-		"Show me", "List", "Pull up", "Lay out", "Walk me through",
-		"Give me a list of",
+		"Show me", "Pull up", "Lay out", "Walk me through", "Bring up",
+		"Run down",
 	},
 	"autoref": {
-		"my scheduled automations", "the recurring tasks I've set up",
+		"my automation roster", "the recurring tasks I've set up",
 		"everything I've set to run automatically",
-		"my standing scheduled jobs", "whatever runs for me on a timer",
-		"my automation roster",
+		"my standing routines", "whatever runs for me on a timer",
+		"the stuff I've got on repeat",
 	},
 	"autothings": {
-		"automations", "recurring tasks", "scheduled jobs",
+		"recurring routines", "recurring tasks", "repeating jobs",
 		"timed routines", "standing tasks",
 	},
 	"inplace": {"set up", "configured", "in place", "on the books"},
@@ -121,9 +124,10 @@ var automationListGrammar = persona.Grammar{
 	},
 	"onmyroster": {
 		"on my automation roster", "set to run on its own",
-		"scheduled to fire for me", "running automatically for me",
+		"going off on a timer", "running automatically for me",
 	},
-	"tail": {"", "", "", " Just the list.", " Everything counts."},
+	// tail avoids the tool-name word "list" for the same reason as showverb.
+	"tail": {"", "", "", " Just the rundown.", " Everything counts."},
 }
 
 // capabilityGrammar covers discover_capabilities: "what can you do / where is
@@ -184,9 +188,12 @@ var memoryFetchGrammar = persona.Grammar{
 	"pullverb": {
 		"Pull up", "Open up", "Bring back", "Bring up", "Dig out",
 	},
+	// wholething avoids "full" and "conversation": both are content words in
+	// the fetch_memories description, so reusing them lets the no-model router
+	// route the case with no retrieval (raised the floor 0.20 -> 0.275).
 	"wholething": {
 		"whole exchange", "entire thread", "complete record",
-		"full conversation", "whole back-and-forth", "full transcript",
+		"entire history", "whole back-and-forth", "whole log",
 	},
 	"savedunder": {
 		"saved under", "filed under", "stored under", "kept under",
