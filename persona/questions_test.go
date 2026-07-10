@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 func TestDeriveQuestionsDeterministic(t *testing.T) {
@@ -516,5 +518,57 @@ func TestComputedAndDrmModalities(t *testing.T) {
 	}
 	if !sawDRM || !sawFiltAgg {
 		t.Fatalf("expected both modalities across seeds: drm=%v filtagg=%v", sawDRM, sawFiltAgg)
+	}
+}
+
+// TestAnswerKindsAndDistractors pins the judge-free grading contract: every
+// question carries the grading data its AnswerKind needs, decline questions
+// carry fabrication distractors, and a user's own superseded chain values are
+// never distractors (mentioning old state next to the current answer is
+// correct, not confusion).
+func TestAnswerKindsAndDistractors(t *testing.T) {
+	for _, seed := range []int64{7, 42, 123456789} {
+		p := BuildPlan(seed, DefaultOpts())
+		selfVals := map[string]map[string]bool{} // attr -> own values (whole chain)
+		for _, f := range p.Facts {
+			if f.Entity == "self" {
+				if selfVals[f.Attribute] == nil {
+					selfVals[f.Attribute] = map[string]bool{}
+				}
+				selfVals[f.Attribute][f.Value] = true
+			}
+		}
+		for _, q := range DeriveQuestions(p) {
+			switch q.Kind {
+			case protocol.AnswerList, protocol.AnswerOrderedList:
+				if len(q.Items) == 0 {
+					t.Fatalf("seed %d %s: %s kind without items", seed, q.ID, q.Kind)
+				}
+			case protocol.AnswerReversal:
+				if len(q.Items) != 1 {
+					t.Fatalf("seed %d %s: reversal must carry the bare value in Items", seed, q.ID)
+				}
+			case protocol.AnswerDecline:
+				if q.ID != "q-drm-trip" && len(q.Distractors) == 0 {
+					t.Fatalf("seed %d %s: decline question without fabrication distractors", seed, q.ID)
+				}
+			case protocol.AnswerNumber:
+				if !q.Numeric {
+					t.Fatalf("seed %d %s: number kind on a non-numeric question", seed, q.ID)
+				}
+			}
+			for _, d := range q.Distractors {
+				if d == q.Answer {
+					t.Fatalf("seed %d %s: the expected answer is its own distractor", seed, q.ID)
+				}
+				// Chain exclusion: no distractor is one of the user's own values
+				// for the question's attribute (the id suffix names it).
+				for attr, vals := range selfVals {
+					if vals[d] && strings.Contains(q.ID, attr) {
+						t.Fatalf("seed %d %s: distractor %q is the user's own %s value", seed, q.ID, d, attr)
+					}
+				}
+			}
+		}
 	}
 }

@@ -33,16 +33,57 @@ type ToolCase struct {
 }
 
 // MemoryCase is one memory-recall benchmark case. The harness is
+// AnswerKind values: how a memory case is graded deterministically. Grading is
+// fully non-LLM; each kind names the check the scorer runs against the
+// response's answer slot (RunResponse.Answer, falling back to FinalText).
+const (
+	// AnswerValue: the expected value must be present (normalized bounded
+	// containment); any DistractorAnswers value present scores 0.
+	AnswerValue = "value"
+	// AnswerNumber: exact number-token match (digits or the English word).
+	AnswerNumber = "number"
+	// AnswerList: every AnswerItems element present, any order; credit is the
+	// fraction present. A DistractorAnswers value present scores 0.
+	AnswerList = "list"
+	// AnswerOrderedList: every AnswerItems element present AND in order;
+	// an out-of-order or missing element scores 0.
+	AnswerOrderedList = "ordered_list"
+	// AnswerDuration: the response's duration (number + day/week/month unit)
+	// must fall within tolerance of the expected duration.
+	AnswerDuration = "duration"
+	// AnswerReversal: the expected value must be present together with a
+	// cessation phrase (no longer / gave up / stopped ...).
+	AnswerReversal = "reversal"
+	// AnswerDecline: correct behavior is a grounded decline: RunResponse.Abstain,
+	// or a decline phrase, and NO DistractorAnswers value (a named value is a
+	// fabrication and scores 0).
+	AnswerDecline = "decline"
+)
+
 // first seeded with a fresh haystack (see SeedRequest); then for each case the
 // validator POSTs a normal RunRequest whose user_input is Question, and the
-// agent must answer from its seeded memory. ExpectedAnswer is the oracle answer
-// (judged for containment, not exact match).
+// agent must answer from its seeded memory. ExpectedAnswer is the oracle answer,
+// graded deterministically per AnswerKind.
 type MemoryCase struct {
 	ID             string `json:"id"`
 	QuestionID     string `json:"question_id"`
 	QuestionType   string `json:"question_type"`
 	Question       string `json:"question"`
 	ExpectedAnswer string `json:"expected_answer"`
+	// AnswerKind selects the deterministic grading check (AnswerValue when
+	// empty; see the AnswerKind constants). Validator-internal, like
+	// ExpectedAnswer.
+	AnswerKind string `json:"answer_kind,omitempty"`
+	// AnswerItems are the elements of a list/ordered_list answer (ordered for
+	// ordered_list). Validator-internal.
+	AnswerItems []string `json:"answer_items,omitempty"`
+	// DistractorAnswers are same-attribute confusable values (another entity's
+	// value in the haystack, or pool values for a decline case). A response that
+	// surfaces one has retrieved or fabricated the wrong fact and scores 0.
+	// Superseded values of the user's own update chain are deliberately NOT
+	// distractors: mentioning old state alongside the current answer is correct.
+	// Validator-internal.
+	DistractorAnswers []string `json:"distractor_answers,omitempty"`
 	// ForbiddenAnswer is the conflicting value another user's memory graph holds
 	// for this attribute on an isolation case: the queried user's own answer is
 	// ExpectedAnswer, and a response that instead surfaces ForbiddenAnswer has
@@ -191,6 +232,17 @@ type RunResponse struct {
 	PromptTokens int64              `json:"prompt_tokens"`
 	OutputTokens int64              `json:"output_tokens"`
 	LatencyMs    int64              `json:"latency_ms"`
+	// Answer is the harness's OPTIONAL short answer slot: the bare value the
+	// FinalText prose asserts (a name, a number, a comma-separated list). The
+	// deterministic grader matches the slot when present and falls back to
+	// FinalText containment when absent, so populating it removes prose-phrasing
+	// risk from grading. Additive-optional.
+	Answer string `json:"answer,omitempty"`
+	// Abstain marks a grounded decline: the harness is stating the asked fact is
+	// not in memory. The correct response to a needle-absent (decline) case;
+	// abstaining on an answerable case scores 0. Additive-optional (decline
+	// phrasing in FinalText is the fallback).
+	Abstain bool `json:"abstain,omitempty"`
 	// Confidence (Ideas #6) is the harness's OPTIONAL self-reported confidence in
 	// [0,1] that its answer is correct. When present the validator scores a
 	// Brier calibration metric (advisory telemetry): honest confidence minimizes
@@ -207,9 +259,10 @@ const (
 
 // CaseScore is the score for one case (tool OR memory).
 //
-// For a tool case: Score = 0.5*ToolAccuracy + 0.5*Quality (the LLM judge half).
-// For a memory case: Score is 1.0 or 0.0 from the yes/no memory judge, and
-// ToolAccuracy/Quality are unused.
+// For a tool case: Score = ToolAccuracy (deterministic trajectory + args;
+// Quality is legacy and unused in judge-free scoring).
+// For a memory case: Score in [0,1] from the deterministic per-AnswerKind
+// grader, and ToolAccuracy/Quality are unused.
 type CaseScore struct {
 	CaseID    string  `json:"case_id"`
 	Category  string  `json:"category"`
@@ -319,18 +372,13 @@ type RunDetails struct {
 	// attempts (each scored 0). A non-zero value is moderation-relevant evidence,
 	// the same policy channel as plagiarism.
 	InjectionAttempts int `json:"injection_attempts,omitempty"`
-	// Tokens is the total OpenRouter tokens the judge spent: budget telemetry
-	// (kept out of the composite). Generation is non-LLM and spends none.
-	Tokens int64 `json:"tokens,omitempty"`
-	// JudgeAudited / JudgeDisagreed report the second-judge audit slice: how
-	// many judged cases both judge models graded, and on how many their
-	// verdicts diverged (any correctness/grounding flip on a memory case, or a
-	// tool-quality gap past the scorer's disagreement threshold). This is the
-	// live measure of residual judge noise the k=3 median is exposed to; it
-	// should sit near 0 on a pinned self-hosted judge. Both are 0 when no
-	// second judge model is configured. Advisory telemetry only.
-	JudgeAudited   int `json:"judge_audited,omitempty"`
-	JudgeDisagreed int `json:"judge_disagreed,omitempty"`
+	// Tokens, JudgeAudited, and JudgeDisagreed are legacy judge-era telemetry.
+	// Scoring is judge-free and spends no validator-side tokens, so current
+	// runs emit zeros (the omitempty drops them); the fields stay for old
+	// report compatibility.
+	Tokens         int64 `json:"tokens,omitempty"`
+	JudgeAudited   int   `json:"judge_audited,omitempty"`
+	JudgeDisagreed int   `json:"judge_disagreed,omitempty"`
 	// SeedingWaves is how many staged /seed waves the memory haystack was split
 	// into (Tier C; 1 = single seed). RawPairsCases is how many memory cases were
 	// Tier B (raw-pairs seeding: their evidence was seeded WITHOUT prepared
@@ -391,13 +439,11 @@ type RunDetails struct {
 // ModelInfo is the set of LLM model ids a run was produced with (RunDetails.models).
 // All fields are advisory transparency metadata, never scored or signed.
 type ModelInfo struct {
-	// Generator is the model id used in generation, if any. Generation is non-LLM,
-	// so this is normally empty.
-	Generator string `json:"generator,omitempty"`
-	// Judge is the primary scoring/judge model.
-	Judge string `json:"judge,omitempty"`
-	// JudgeAudit is the optional second judge model used for the audit ensemble
-	// (empty when SCORER_MODEL_B is unset).
+	// Generator, Judge, and JudgeAudit are legacy fields: generation is non-LLM
+	// and scoring is judge-free, so current runs leave them empty. They stay
+	// for old report compatibility.
+	Generator  string `json:"generator,omitempty"`
+	Judge      string `json:"judge,omitempty"`
 	JudgeAudit string `json:"judge_audit,omitempty"`
 	// Harness is the miner harness's chat model when the operator forces it via
 	// DITTOBENCH_HARNESS_MODEL; empty when the harness used its own default (the

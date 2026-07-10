@@ -11,7 +11,10 @@ import "testing"
 func TestKnownVector(t *testing.T) {
 	const (
 		seed = int64(123456789)
-		want = "d7e042d1749a08c2ea3a186b9f5bceccaba2985173cb1a2a1ea549d2ceac7c53"
+		// Deliberate change (judge-free grading): MemoryCase gained
+		// answer_kind/answer_items/distractor_answers and the binary temporal
+		// leftover question was dropped, both of which move the artifact bytes.
+		want = "73781f0f59c1e5bc0864463ff3e2f658d6f3d525923324d2add73b88351f323d"
 	)
 	prof, _ := ProfileFor("full")
 	got, _, err := GenerateDataset(seed, prof).SHA256Hex()

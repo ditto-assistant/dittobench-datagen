@@ -193,13 +193,16 @@ func GenerateMemorySuite(r *rand.Rand, seed int64, n int, nWaves int, rawPairsFr
 		}
 		staged = append(staged, StagedCase{
 			Case: protocol.MemoryCase{
-				ID:              protocol.OpaqueCaseID(seed, "mem", i),
-				QuestionID:      q.ID,
-				QuestionType:    q.Type,
-				Question:        realizeQuestion(q),
-				ExpectedAnswer:  expected,
-				ForbiddenAnswer: q.Forbidden,
-				TwinGroup:       q.TwinGroup,
+				ID:                protocol.OpaqueCaseID(seed, "mem", i),
+				QuestionID:        q.ID,
+				QuestionType:      q.Type,
+				Question:          realizeQuestion(q),
+				ExpectedAnswer:    expected,
+				AnswerKind:        q.Kind,
+				AnswerItems:       q.Items,
+				DistractorAnswers: q.Distractors,
+				ForbiddenAnswer:   q.Forbidden,
+				TwinGroup:         q.TwinGroup,
 			},
 			RunAfterWave: caseUnlockWave(q, fw),
 		})

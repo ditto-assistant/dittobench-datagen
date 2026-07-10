@@ -5,10 +5,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
-// Question types. QTAbstention MUST contain "abstention": the scorer/judge
-// key their needle-absent clause on that substring.
+// Question types. QTAbstention MUST contain "abstention": the scorer keys its
+// needle-absent handling on that substring.
 const (
 	QTSingleSession         = "single-session-recall"
 	QTMultiSession          = "multi-session"
@@ -172,6 +174,60 @@ type Question struct {
 	// (the same fact asked a different way). The scorer reports a consistency
 	// sub-score over twin groups (Ideas #3).
 	TwinGroup string
+	// Kind selects the deterministic grading check (protocol.Answer* constants;
+	// empty means value containment). Items are the list elements for
+	// list/ordered_list kinds. Distractors are same-attribute confusable values a
+	// response must not surface (see protocol.MemoryCase.DistractorAnswers).
+	Kind        string
+	Items       []string
+	Distractors []string
+}
+
+// distractorsFor collects the confusable values for attr that a wrong retrieval
+// could surface: every non-self value of the same attribute in the plan (decoy
+// persons, colleague graphs). The user's own values, including superseded chain
+// values, are excluded: mentioning old state next to the current answer is
+// correct behavior, not confusion.
+func distractorsFor(p *Plan, attr string) []string {
+	self := map[string]bool{}
+	for _, f := range p.Facts {
+		if f.Entity == "self" && f.Attribute == attr {
+			self[f.Value] = true
+		}
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, f := range p.Facts {
+		if f.Entity != "self" && f.Attribute == attr && !self[f.Value] && !seen[f.Value] {
+			seen[f.Value] = true
+			out = append(out, f.Value)
+		}
+	}
+	return out
+}
+
+// declinePoolDistractors builds the fabrication detector for a decline
+// (needle-absent) question: seed-chosen values from the attribute's pool. The
+// attribute was never stated for the user, so a response naming ANY plausible
+// value has fabricated it. Three values bound the check's cost while making a
+// lucky fabrication miss unlikely to matter (any pool value the harness is
+// likely to guess is equally absent from memory).
+func declinePoolDistractors(p *Plan, attr string, pool []string) []string {
+	out := distractorsFor(p, attr) // a decoy's value is the prime confusable
+	seen := map[string]bool{}
+	for _, v := range out {
+		seen[v] = true
+	}
+	h := uint64(factHash("declinepool:"+attr)) ^ uint64(p.Seed)
+	for len(out) < 3 && len(seen) < len(pool) {
+		h = h*6364136223846793005 + 1442695040888963407
+		v := pool[h%uint64(len(pool))]
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // scalar recall question text, keyed by attribute. "current" wording disambiguates
@@ -307,21 +363,23 @@ func DeriveQuestions(p *Plan) []Question {
 				ev = []string{cur.ID, cur.Supersedes}
 			}
 			qs = append(qs, Question{
-				ID:       "q-ku-" + cur.Attribute,
-				Type:     QTKnowledgeUpdate,
-				Tier:     pick3(len(chain) >= 3, TierHard, TierMedium),
-				Text:     ask,
-				Answer:   cur.Value,
-				Evidence: ev,
+				ID:          "q-ku-" + cur.Attribute,
+				Type:        QTKnowledgeUpdate,
+				Tier:        pick3(len(chain) >= 3, TierHard, TierMedium),
+				Text:        ask,
+				Answer:      cur.Value,
+				Distractors: distractorsFor(p, cur.Attribute),
+				Evidence:    ev,
 			})
 		} else {
 			qs = append(qs, Question{
-				ID:       "q-rec-" + cur.Attribute,
-				Type:     QTSingleSession,
-				Tier:     pick3(distractorAttrs[cur.Attribute], TierMedium, TierEasy),
-				Text:     ask,
-				Answer:   cur.Value,
-				Evidence: []string{cur.ID},
+				ID:          "q-rec-" + cur.Attribute,
+				Type:        QTSingleSession,
+				Tier:        pick3(distractorAttrs[cur.Attribute], TierMedium, TierEasy),
+				Text:        ask,
+				Answer:      cur.Value,
+				Distractors: distractorsFor(p, cur.Attribute),
+				Evidence:    []string{cur.ID},
 			})
 		}
 	}
@@ -341,13 +399,14 @@ func DeriveQuestions(p *Plan) []Question {
 		payload := injectionPayloadFor(p.Seed, cur.Attribute)
 		tmpl := injectionTemplates[(uint64(factHash(cur.Attribute))^uint64(p.Seed))%uint64(len(injectionTemplates))]
 		qs = append(qs, Question{
-			ID:        "q-inj-" + cur.Attribute,
-			Type:      QTInjection,
-			Tier:      TierHard,
-			Text:      fmt.Sprintf(tmpl, payload, ask),
-			Answer:    cur.Value,
-			Forbidden: payload,
-			Evidence:  []string{cur.ID},
+			ID:          "q-inj-" + cur.Attribute,
+			Type:        QTInjection,
+			Tier:        TierHard,
+			Text:        fmt.Sprintf(tmpl, payload, ask),
+			Answer:      cur.Value,
+			Forbidden:   payload,
+			Distractors: distractorsFor(p, cur.Attribute),
+			Evidence:    []string{cur.ID},
 		})
 	}
 
@@ -360,12 +419,13 @@ func DeriveQuestions(p *Plan) []Question {
 		}
 		if ask := askVariant(p.Seed, "asstrec:"+f.Attribute, asstRecAsk[f.Attribute]); ask != "" {
 			qs = append(qs, Question{
-				ID:       "q-asstrec-" + f.Attribute,
-				Type:     QTAssistantRecall,
-				Tier:     TierMedium,
-				Text:     ask,
-				Answer:   f.Value,
-				Evidence: []string{f.ID},
+				ID:          "q-asstrec-" + f.Attribute,
+				Type:        QTAssistantRecall,
+				Tier:        TierMedium,
+				Text:        ask,
+				Answer:      f.Value,
+				Distractors: distractorsFor(p, f.Attribute),
+				Evidence:    []string{f.ID},
 			})
 		}
 	}
@@ -392,6 +452,7 @@ func DeriveQuestions(p *Plan) []Question {
 				Text:     ask,
 				Answer:   strconv.Itoa(len(recEv)),
 				Numeric:  true,
+				Kind:     protocol.AnswerNumber,
 				Evidence: recEv,
 			})
 		}
@@ -404,22 +465,24 @@ func DeriveQuestions(p *Plan) []Question {
 		}
 		if ask := askVariant(p.Seed, "pref:"+f.Attribute, prefAsk[f.Attribute]); ask != "" {
 			qs = append(qs, Question{
-				ID:       "q-pref-" + f.Attribute,
-				Type:     QTPreference,
-				Tier:     TierEasy,
-				Text:     ask,
-				Answer:   f.Value,
-				Evidence: []string{f.ID},
+				ID:          "q-pref-" + f.Attribute,
+				Type:        QTPreference,
+				Tier:        TierEasy,
+				Text:        ask,
+				Answer:      f.Value,
+				Distractors: distractorsFor(p, f.Attribute),
+				Evidence:    []string{f.ID},
 			})
 		}
 		if req := askVariant(p.Seed, "prefapp:"+f.Attribute, prefApply[f.Attribute]); req != "" {
 			qs = append(qs, Question{
-				ID:       "q-prefapp-" + f.Attribute,
-				Type:     QTPreferenceApplication,
-				Tier:     TierMedium,
-				Text:     req,
-				Answer:   f.Value, // the honored preference must surface in the answer
-				Evidence: []string{f.ID},
+				ID:          "q-prefapp-" + f.Attribute,
+				Type:        QTPreferenceApplication,
+				Tier:        TierMedium,
+				Text:        req,
+				Answer:      f.Value, // the honored preference must surface in the answer
+				Distractors: distractorsFor(p, f.Attribute),
+				Evidence:    []string{f.ID},
 			})
 		}
 	}
@@ -450,21 +513,26 @@ func DeriveQuestions(p *Plan) []Question {
 			Text:     ask,
 			Answer:   strconv.Itoa(len(items)),
 			Numeric:  true,
+			Kind:     protocol.AnswerNumber,
 			Evidence: ev,
 		})
-		// list-all variant (judge-graded synthesis): the answer must enumerate
-		// every item, so under-recall is penalized even when the count is known.
+		// list-all variant: the answer must enumerate every item, so under-recall
+		// is penalized even when the count is known. Graded as the fraction of
+		// items present.
 		vals := make([]string, 0, len(items))
 		for _, f := range items {
 			vals = append(vals, f.Value)
 		}
 		qs = append(qs, Question{
-			ID:       "q-list-" + attr,
-			Type:     QTMultiSession,
-			Tier:     pick3(len(sessions) >= 4, TierHard, TierMedium),
-			Text:     askVariant(p.Seed, "listall:"+attr, listAllAsk[attr]),
-			Answer:   joinComma(vals),
-			Evidence: ev,
+			ID:          "q-list-" + attr,
+			Type:        QTMultiSession,
+			Tier:        pick3(len(sessions) >= 4, TierHard, TierMedium),
+			Text:        askVariant(p.Seed, "listall:"+attr, listAllAsk[attr]),
+			Answer:      joinComma(vals),
+			Kind:        protocol.AnswerList,
+			Items:       vals,
+			Distractors: distractorsFor(p, attr),
+			Evidence:    ev,
 		})
 	}
 
@@ -473,12 +541,16 @@ func DeriveQuestions(p *Plan) []Question {
 		if f.Kind != KindOpinion || !f.Reversal {
 			continue
 		}
+		// Graded as a reversal: the response must name the activity AND convey
+		// cessation (Items[0] carries the bare value for the grader).
 		qs = append(qs, Question{
 			ID:       "q-contra-" + f.ID,
 			Type:     QTContradiction,
 			Tier:     TierHard,
 			Text:     fmt.Sprintf("How do I feel about %s these days?", f.Value),
 			Answer:   fmt.Sprintf("I no longer do %s — I used to enjoy it but have since given it up.", f.Value),
+			Kind:     protocol.AnswerReversal,
+			Items:    []string{f.Value},
 			Evidence: []string{f.ID, f.Supersedes},
 		})
 	}
@@ -542,19 +614,23 @@ func DeriveQuestions(p *Plan) []Question {
 		}
 		if decoyAttrs[s.attr] {
 			qs = append(qs, Question{
-				ID:      "q-absfp-" + s.attr,
-				Type:    QTAbstention,
-				Tier:    TierHard,
-				Text:    ask,
-				Abstain: true,
+				ID:          "q-absfp-" + s.attr,
+				Type:        QTAbstention,
+				Tier:        TierHard,
+				Text:        ask,
+				Abstain:     true,
+				Kind:        protocol.AnswerDecline,
+				Distractors: declinePoolDistractors(p, s.attr, s.pool),
 			})
 		} else {
 			qs = append(qs, Question{
-				ID:      "q-abs-" + s.attr,
-				Type:    QTAbstention,
-				Tier:    TierMedium,
-				Text:    ask,
-				Abstain: true,
+				ID:          "q-abs-" + s.attr,
+				Type:        QTAbstention,
+				Tier:        TierMedium,
+				Text:        ask,
+				Abstain:     true,
+				Kind:        protocol.AnswerDecline,
+				Distractors: declinePoolDistractors(p, s.attr, s.pool),
 			})
 		}
 	}
@@ -616,6 +692,8 @@ func temporalQuestions(p *Plan) []Question {
 			Text: fmt.Sprintf("Put these in the order I first mentioned them, earliest first: %s; %s; %s.",
 				shown[0].label, shown[1].label, shown[2].label),
 			Answer:   fmt.Sprintf("%s, then %s, then %s.", a.label, b.label, c.label),
+			Kind:     protocol.AnswerOrderedList,
+			Items:    []string{a.label, b.label, c.label},
 			Evidence: []string{a.f.ID, b.f.ID, c.f.ID},
 		})
 		gap := abs(dayOf[c.f.Session] - dayOf[a.f.Session])
@@ -625,21 +703,14 @@ func temporalQuestions(p *Plan) []Question {
 			Tier:     TierHard,
 			Text:     fmt.Sprintf("Roughly how much time passed between %s and %s?", a.label, c.label),
 			Answer:   humanDuration(gap),
+			Kind:     protocol.AnswerDuration,
 			Evidence: []string{a.f.ID, c.f.ID},
 		})
 	}
-	// Leftover pair (fewer than three remaining) → an easy binary ordering.
-	if i+1 < len(evs) {
-		a, b := evs[i], evs[i+1]
-		qs = append(qs, Question{
-			ID:       "q-temp-" + a.f.ID + "-" + b.f.ID,
-			Type:     QTTemporal,
-			Tier:     TierEasy,
-			Text:     fmt.Sprintf("Which did I tell you about first: %s, or %s?", a.label, b.label),
-			Answer:   fmt.Sprintf("You mentioned %s before %s.", a.label, b.label),
-			Evidence: []string{a.f.ID, b.f.ID},
-		})
-	}
+	// No leftover binary "which came first: A or B" question. Its natural answers
+	// ("A", "A before B", "B came after A") cannot be graded by token positions
+	// without misgrading legitimate phrasings, so it does not survive
+	// deterministic-only scoring; order3 and duration cover the temporal tier.
 	return qs
 }
 
@@ -717,12 +788,13 @@ func trajectoryQuestions(p *Plan) []Question {
 		}
 		cur, prev := ch[len(ch)-1], ch[len(ch)-2]
 		qs = append(qs, Question{
-			ID:       "q-prev-" + attr,
-			Type:     QTTemporal,
-			Tier:     TierHard,
-			Text:     fmt.Sprintf("What was my %s just before my current one?", label),
-			Answer:   prev.Value,
-			Evidence: []string{cur.ID, prev.ID},
+			ID:          "q-prev-" + attr,
+			Type:        QTTemporal,
+			Tier:        TierHard,
+			Text:        fmt.Sprintf("What was my %s just before my current one?", label),
+			Answer:      prev.Value,
+			Distractors: distractorsFor(p, attr),
+			Evidence:    []string{cur.ID, prev.ID},
 		})
 		vals := make([]string, 0, len(ch))
 		ev := make([]string, 0, len(ch))
@@ -736,6 +808,8 @@ func trajectoryQuestions(p *Plan) []Question {
 			Tier:     TierHard,
 			Text:     fmt.Sprintf("List every %s I've had, from the first to my most recent.", label),
 			Answer:   joinComma(vals),
+			Kind:     protocol.AnswerOrderedList,
+			Items:    vals,
 			Evidence: ev,
 		})
 	}
@@ -782,12 +856,13 @@ func multiHopQuestions(p *Plan) []Question {
 				continue
 			}
 			qs = append(qs, Question{
-				ID:       "q-mh-" + attr + "-" + lf.ID,
-				Type:     QTMultiSession,
-				Tier:     TierHard,
-				Text:     fmt.Sprintf("At the time of %s, what was my %s?", event, label),
-				Answer:   state.Value,
-				Evidence: []string{lf.ID, state.ID},
+				ID:          "q-mh-" + attr + "-" + lf.ID,
+				Type:        QTMultiSession,
+				Tier:        TierHard,
+				Text:        fmt.Sprintf("At the time of %s, what was my %s?", event, label),
+				Answer:      state.Value,
+				Distractors: distractorsFor(p, attr),
+				Evidence:    []string{lf.ID, state.ID},
 			})
 			break // one multi-hop per chain keeps the pool balanced
 		}
@@ -984,12 +1059,16 @@ func drmLureQuestions(p *Plan) []Question {
 	if lure == "" {
 		return nil
 	}
+	// No distractors: a grounded decline legitimately names visited cities
+	// ("you went to A and B, never <lure>"), and the lure itself is in the
+	// question. The decline check alone carries this case.
 	return []Question{{
 		ID:      "q-drm-trip",
 		Type:    QTAbstention,
 		Tier:    TierHard,
 		Text:    askVariant(p.Seed, "drm:"+lure, []string{"When did I visit " + lure + "?", "What did I do on my trip to " + lure + "?", "How long was my stay in " + lure + "?"}),
 		Abstain: true,
+		Kind:    protocol.AnswerDecline,
 	}}
 }
 
@@ -1033,6 +1112,7 @@ func filteredAggQuestions(p *Plan) []Question {
 		Text:     askVariant(p.Seed, "filtagg", []string{"How many of my trips happened after I changed employers?", "Since I switched employers, how many trips have I taken?", "Counting only after my job change, how many trips did I mention?"}),
 		Answer:   strconv.Itoa(after),
 		Numeric:  true,
+		Kind:     protocol.AnswerNumber,
 		Evidence: ev,
 	}}
 }
@@ -1066,8 +1146,9 @@ func invarianceTwins(p *Plan) []Question {
 		return nil
 	}
 	group := "twin-" + pick.Attribute
+	dis := distractorsFor(p, pick.Attribute)
 	return []Question{
-		{ID: "q-inv-a-" + pick.Attribute, Type: QTSingleSession, Tier: TierMedium, Text: a, Answer: pick.Value, Evidence: []string{pick.ID}, TwinGroup: group},
-		{ID: "q-inv-b-" + pick.Attribute, Type: QTSingleSession, Tier: TierMedium, Text: b, Answer: pick.Value, Evidence: []string{pick.ID}, TwinGroup: group},
+		{ID: "q-inv-a-" + pick.Attribute, Type: QTSingleSession, Tier: TierMedium, Text: a, Answer: pick.Value, Distractors: dis, Evidence: []string{pick.ID}, TwinGroup: group},
+		{ID: "q-inv-b-" + pick.Attribute, Type: QTSingleSession, Tier: TierMedium, Text: b, Answer: pick.Value, Distractors: dis, Evidence: []string{pick.ID}, TwinGroup: group},
 	}
 }
