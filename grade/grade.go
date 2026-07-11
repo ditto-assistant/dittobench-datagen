@@ -287,6 +287,10 @@ var declinePhrases = []string{
 	"haven't mentioned", "never mentioned", "haven't told", "never told",
 	"no information", "not in my memory", "can't find", "cannot find",
 	"don't recall", "do not recall", "unable to find", "not something i know",
+	// Post-deletion declines (write-then-read lifecycle): the natural phrasing
+	// after honoring a delete instruction. Multi-word so they never fire on an
+	// incidental verb.
+	"no longer have", "no longer stored", "removed it", "has been deleted",
 	"i'm not sure", "i am not sure", "not stated", "haven't shared", "never shared",
 }
 

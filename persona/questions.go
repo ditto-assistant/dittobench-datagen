@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ditto-assistant/dittobench-datagen/grade"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
@@ -28,6 +29,12 @@ const (
 	// seeded facts (a filtered count, a temporal delta), not a lookup, so it
 	// cannot be answered by lexical overlap or single-fact retrieval.
 	QTComputed = "computed-answer"
+	// QTPointInTime asks which value an update chain held AS OF an explicit
+	// calendar date that falls strictly between two chain changes. The answer is
+	// a superseded value, so current-state recall fails; resolving it requires
+	// comparing the printed date against pair timestamps (the date derives from
+	// the same TimeAnchor the renderer uses, so the two always agree).
+	QTPointInTime = "point-in-time"
 	// QTCanary MUST contain "canary": the scorer keys its integrity disqualifier
 	// on that substring. The answer is a per-seed high-entropy nonce seeded into
 	// the conversation: un-memorizable across runs, so a correct answer proves
@@ -81,7 +88,7 @@ func askVariant(seed int64, key string, options []string) string {
 // variantIndex is THE seed-keyed selection primitive: it mixes the key hash
 // with the seed (odd multiplier + golden-ratio constant) so distinct keys
 // decorrelate and the same key varies across seeds, then reduces mod n. Every
-// stable per-(seed, key) choice (ask phrasings, twin pair, twin attribute)
+// stable per-(seed, key) choice (ask phrasings, twin family, twin attribute)
 // goes through here so a future change to the keying scheme lands everywhere.
 func variantIndex(seed int64, key string, n int) int {
 	h := uint64(factHash(key)) ^ (uint64(seed)*0x100000001b3 + 0x9e3779b97f4a7c15)
@@ -178,9 +185,9 @@ type Question struct {
 	// to elicit. The gen layer copies it to MemoryCase.ForbiddenAnswer, where a
 	// containing response scores 0.
 	Forbidden string
-	// TwinGroup, when set, ties this question to its metamorphic invariance twin
-	// (the same fact asked a different way). The scorer reports a consistency
-	// sub-score over twin groups (Ideas #3).
+	// TwinGroup, when set, ties this question to the other metamorphic invariance
+	// questions for the same fact (asked different ways). The scorer folds their
+	// agreement into the composite as a consistency factor.
 	TwinGroup string
 	// Kind selects the deterministic grading check (protocol.Answer* constants;
 	// empty means value containment). Items are the list elements for
@@ -665,11 +672,14 @@ func DeriveQuestions(p *Plan) []Question {
 	qs = append(qs, trajectoryQuestions(p)...)
 	qs = append(qs, multiHopQuestions(p)...)
 
+	// --- point-in-time state resolution by explicit date ---
+	qs = append(qs, pointInTimeQuestions(p)...)
+
 	// --- DRM false-memory lure + computed-answer modalities ---
 	qs = append(qs, drmLureQuestions(p)...)
 	qs = append(qs, filteredAggQuestions(p)...)
 
-	// --- metamorphic invariance twin (Ideas #3) ---
+	// --- metamorphic invariance family ---
 	qs = append(qs, invarianceTwins(p)...)
 
 	// --- canary integrity probe ---
@@ -753,8 +763,8 @@ type dated struct {
 // offsets. It takes one representative event per session (in timeline order) so
 // ordering is unambiguous, forms disjoint triples for the harder questions, and
 // falls back to a binary ordering for any leftover pair. All answers are derived
-// purely from the seeded timeline; duration answers are approximate (judge-graded
-// with day-count tolerance).
+// purely from the seeded timeline; duration answers are approximate (graded
+// deterministically with day-count tolerance).
 func temporalQuestions(p *Plan) []Question {
 	dayOf := make(map[int]int, len(p.Sessions))
 	for _, s := range p.Sessions {
@@ -827,8 +837,8 @@ func temporalQuestions(p *Plan) []Question {
 	return qs
 }
 
-// humanDuration renders a day count as an approximate phrase the temporal judge
-// grades with tolerance ("about 3 weeks", "about 2 months").
+// humanDuration renders a day count as an approximate phrase the duration grader
+// matches with tolerance ("about 3 weeks", "about 2 months").
 func humanDuration(days int) string {
 	switch {
 	case days <= 1:
@@ -979,6 +989,69 @@ func multiHopQuestions(p *Plan) []Question {
 			})
 			break // one multi-hop per chain keeps the pool balanced
 		}
+	}
+	return qs
+}
+
+// pointInTimeQuestions derives "as of <date>" state questions from update
+// chains (prod hardening P6). The printed date falls strictly between two
+// chain changes, so the answer is the value in force THEN, a superseded one:
+// current-state recall fails, and lexical overlap carries nothing because the
+// date appears in no pair text. The harness must compare the date against
+// pair timestamps, which agree with the question's date by construction (both
+// derive from TimeAnchor). Goes beyond ordering/duration temporal questions:
+// this is state resolution at an arbitrary instant.
+func pointInTimeQuestions(p *Plan) []Question {
+	dayOf := make(map[int]int, len(p.Sessions))
+	for _, s := range p.Sessions {
+		dayOf[s.Index] = s.DayOffset
+	}
+	anchor := TimeAnchor(p)
+	var qs []Question
+	for _, ch := range scalarChains(p, 2) {
+		attr := ch[0].Attribute
+		noun := attrNoun[attr]
+		if noun == "" {
+			continue
+		}
+		// The harness reads the timeline from pair timestamps, i.e. session
+		// order; ground truth must sort the same way (see temporalQuestions).
+		sc := append([]Fact(nil), ch...)
+		sort.Slice(sc, func(i, j int) bool {
+			if sc[i].Session != sc[j].Session {
+				return sc[i].Session < sc[j].Session
+			}
+			return sc[i].Seq < sc[j].Seq
+		})
+		// Eligible boundaries: consecutive states at least two days apart, so a
+		// mid-gap date is strictly after one session and strictly before the next.
+		type boundary struct{ i, midDay int }
+		var bs []boundary
+		for i := 0; i+1 < len(sc); i++ {
+			d0, d1 := dayOf[sc[i].Session], dayOf[sc[i+1].Session]
+			if d1-d0 >= 2 {
+				bs = append(bs, boundary{i, d0 + (d1-d0)/2})
+			}
+		}
+		if len(bs) == 0 {
+			continue
+		}
+		b := bs[variantIndex(p.Seed, "pit:"+attr, len(bs))]
+		state := sc[b.i]
+		ds := anchor.Add(time.Duration(b.midDay) * 24 * time.Hour).Format("January 2, 2006")
+		qs = append(qs, Question{
+			ID:   "q-pit-" + attr,
+			Type: QTPointInTime,
+			Tier: TierHard,
+			Text: askVariant(p.Seed, "pit-ask:"+attr, []string{
+				fmt.Sprintf("As of %s, what was my %s?", ds, noun),
+				fmt.Sprintf("Back on %s, what was my %s at the time?", ds, noun),
+				fmt.Sprintf("If you check your notes for %s, what was my %s then?", ds, noun),
+			}),
+			Answer:      state.Value,
+			Distractors: distractorsFor(p, attr),
+			Evidence:    []string{state.ID, sc[b.i+1].ID},
+		})
 	}
 	return qs
 }
@@ -1280,7 +1353,7 @@ func filteredAggQuestions(p *Plan) []Question {
 // attribute actually has (every scalar attribute currently has exactly 3).
 const twinSiblings = 3
 
-// invarianceTwins emits a metamorphic invariance FAMILY (Ideas #3, N2): the
+// invarianceTwins emits a metamorphic invariance family: the
 // same current-scalar fact asked j (twinSiblings) different ways, all sharing a
 // TwinGroup. A robust harness answers every sibling identically; a
 // phrasing-brittle one splits the family, which the scorer folds into the

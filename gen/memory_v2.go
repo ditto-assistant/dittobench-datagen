@@ -31,6 +31,9 @@ type MemorySuite struct {
 	Stats        protocol.ParaphraseStats
 	TierBCases   int
 	SeedingWaves int
+	// LifecycleCases counts the write-then-read lifecycle cases in the suite
+	// (instruction + read halves; see gen/lifecycle.go). Advisory telemetry.
+	LifecycleCases int
 	// LexicalGap is the query↔needle overlap telemetry (NoLiMa): how much
 	// content wording the emitted questions share with their evidence, before and
 	// after the low-overlap rewrite.
@@ -90,9 +93,13 @@ func GenerateMemorySuite(r *rand.Rand, seed int64, n int, nWaves int, rawPairsFr
 	if nAbs > len(absPool) {
 		nAbs = len(absPool)
 	}
-	// Reserve room for the always-included canary and twin cases so the total
-	// case count stays at n.
-	mainQuota := n - nAbs - len(canaryPool) - len(twinPool)
+	// Write-then-read lifecycle chains (gen/lifecycle.go): like the canary,
+	// they are never sampled out; their count is seed-independent per run size.
+	lc := buildLifecycle(r, seed, plan, lifecycleChainsFor(n, nWaves), nWaves)
+	suite.LifecycleCases = len(lc.Cases)
+	// Reserve room for the always-included canary, twin, and lifecycle cases so
+	// the total case count stays at n.
+	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(lc.Cases)
 	if mainQuota < 0 {
 		mainQuota = 0
 	}
@@ -211,12 +218,18 @@ func GenerateMemorySuite(r *rand.Rand, seed int64, n int, nWaves int, rawPairsFr
 		suite.LexicalGap.MeanBefore = gapBeforeSum / float64(suite.LexicalGap.Questions)
 		suite.LexicalGap.MeanAfter = gapAfterSum / float64(suite.LexicalGap.Questions)
 	}
+	staged = append(staged, lc.Cases...)
 	r.Shuffle(len(staged), func(i, j int) { staged[i], staged[j] = staged[j], staged[i] })
 	suite.Cases = staged
 
 	// Subjects: synthesize for every self fact EXCEPT the raw-pairs slice.
 	subjects, links := synthesizeSubjects(plan, evidence, rawFacts)
 	suite.Waves = partitionWaves(plan, pairs, subjects, links, evidence, fw, nWaves)
+	// Lifecycle seeded facts (update/delete chains) join wave 0 as raw pairs:
+	// no prepared subject, so the harness indexes them itself (Tier-B style).
+	if len(lc.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, lc.Pairs...)
+	}
 	return suite
 }
 
@@ -369,6 +382,7 @@ var memoryTypeWeight = map[string]int{
 	persona.QTInjection:             2,
 	persona.QTAssistantRecall:       2,
 	persona.QTAggregation:           2,
+	persona.QTPointInTime:           2,
 	persona.QTSingleSession:         1,
 	persona.QTPreference:            1,
 }

@@ -1,9 +1,10 @@
 // Package protocol defines the shared wire types exchanged between the
 // DittoBench validator (on Bittensor subnet 118) and a miner's agent harness.
 //
-// These types MUST stay byte-compatible with the dittobench-api. They are
-// reproduced here verbatim so miners can build and test a harness offline
-// without any private dependency.
+// The validator imports this package, so it is the single source of these
+// shapes; a harness in any language matches the JSON field names and types
+// here. Published so a harness can be built and tested against the exact
+// contract offline, with no private dependency.
 package protocol
 
 import "encoding/json"
@@ -32,7 +33,6 @@ type ToolCase struct {
 	ExpectedBehavior string     `json:"expected_behavior,omitempty"`
 }
 
-// MemoryCase is one memory-recall benchmark case. The harness is
 // AnswerKind values: how a memory case is graded deterministically. Grading is
 // fully non-LLM; each kind names the check the scorer runs against the
 // response's answer slot (RunResponse.Answer, falling back to FinalText).
@@ -65,10 +65,11 @@ const (
 	AnswerDecline = "decline"
 )
 
-// first seeded with a fresh haystack (see SeedRequest); then for each case the
-// validator POSTs a normal RunRequest whose user_input is Question, and the
-// agent must answer from its seeded memory. ExpectedAnswer is the oracle answer,
-// graded deterministically per AnswerKind.
+// MemoryCase is one memory-recall benchmark case. The harness is first seeded
+// with a fresh haystack (see SeedRequest); then for each case the validator
+// POSTs a normal RunRequest whose user_input is Question, and the agent must
+// answer from its seeded memory. ExpectedAnswer is the oracle answer, graded
+// deterministically per AnswerKind.
 type MemoryCase struct {
 	ID             string `json:"id"`
 	QuestionID     string `json:"question_id"`
@@ -96,11 +97,11 @@ type MemoryCase struct {
 	// ExpectedAnswer it is validator-internal grading data and is never sent to
 	// the harness (only Question is).
 	ForbiddenAnswer string `json:"forbidden_answer,omitempty"`
-	// TwinGroup ties metamorphic twin cases together (Ideas #3, invariance): two
-	// cases that ask for the SAME fact in different phrasings share a TwinGroup id,
-	// so the scorer can report a consistency sub-score (a robust harness answers
-	// both the same way; a phrasing-brittle one disagrees). Validator-internal
-	// grouping, never sent to the harness. Empty for ungrouped cases.
+	// TwinGroup ties metamorphic invariance cases together: the cases that ask for
+	// the SAME fact in different phrasings share a TwinGroup id. The scorer folds
+	// their agreement into the composite (a robust harness answers every member the
+	// same way; a phrasing-brittle one disagrees). Validator-internal grouping,
+	// never sent to the harness. Empty for ungrouped cases.
 	TwinGroup string `json:"twin_group,omitempty"`
 }
 
@@ -248,7 +249,7 @@ type RunResponse struct {
 	// abstaining on an answerable case scores 0. Additive-optional (decline
 	// phrasing in FinalText is the fallback).
 	Abstain bool `json:"abstain,omitempty"`
-	// Confidence (Ideas #6) is the harness's OPTIONAL self-reported confidence in
+	// Confidence is the harness's OPTIONAL self-reported confidence in
 	// [0,1] that its answer is correct. When present the validator scores a
 	// Brier calibration metric (advisory telemetry): honest confidence minimizes
 	// it, always-100% does not. A pointer so "not reported" is distinct from 0.0;
@@ -265,7 +266,7 @@ const (
 // CaseScore is the score for one case (tool OR memory).
 //
 // For a tool case: Score = ToolAccuracy (deterministic trajectory + args;
-// Quality is legacy and unused in judge-free scoring).
+// Quality is legacy and unused).
 // For a memory case: Score in [0,1] from the deterministic per-AnswerKind
 // grader, and ToolAccuracy/Quality are unused.
 type CaseScore struct {
@@ -274,17 +275,17 @@ type CaseScore struct {
 	Kind      string  `json:"kind"`              // "tool" | "memory"
 	Score     float64 `json:"score"`             // 0..1 composite for this case
 	ToolScore float64 `json:"tool_score"`        // 0..1 deterministic tool accuracy (tool cases)
-	Quality   float64 `json:"quality,omitempty"` // 0..1 LLM response-quality judge (tool cases)
+	Quality   float64 `json:"quality,omitempty"` // legacy, unused in deterministic scoring
 	// ResultUsage is 0..1 for a result-usage tool case: whether the final answer
-	// incorporated the distinctive value the executed tool returned. For those
-	// cases it is the deterministic substitute for the LLM quality judge.
+	// incorporated the distinctive value the executed tool returned, checked
+	// deterministically.
 	ResultUsage float64 `json:"result_usage,omitempty"`
-	Correct     bool    `json:"correct,omitempty"` // memory judge verdict (memory cases)
-	// TwinGroup, when set, ties this case to its metamorphic invariance twin so the
-	// aggregate can compute a phrasing-consistency sub-score (Ideas #3).
+	Correct     bool    `json:"correct,omitempty"` // deterministic memory grade verdict (memory cases)
+	// TwinGroup, when set, ties this case to the other metamorphic invariance cases
+	// for the same fact, so the aggregate can score phrasing consistency.
 	TwinGroup string `json:"twin_group,omitempty"`
-	// Confidence echoes the harness's self-reported confidence for this case (Ideas
-	// #6), when it reported one, so the aggregate can Brier-score calibration.
+	// Confidence echoes the harness's self-reported confidence for this case, when
+	// it reported one, so the aggregate can Brier-score calibration.
 	Confidence *float64 `json:"confidence,omitempty"`
 	LatencyMs  int64    `json:"latency_ms"`
 	// Observed is true when the harness routed this tool case's calls through the
@@ -294,9 +295,9 @@ type CaseScore struct {
 	Called   []string `json:"called"`
 	Expected []string `json:"expected"`
 	Notes    []string `json:"notes,omitempty"`
-	// Injection is true when a judge flagged the harness output as an attempt to
-	// manipulate the judge (prompt injection). Such a case is scored 0 and the
-	// run is flagged for moderation review.
+	// Injection is true when the deterministic grader flags the harness output as
+	// prompt-injection compliance (it surfaced the embedded injection payload).
+	// Such a case is scored 0 and the run is flagged for moderation review.
 	Injection bool `json:"injection,omitempty"`
 }
 
@@ -359,7 +360,7 @@ type LexicalGapStats struct {
 
 // RunDetails is the opaque, additive telemetry blob for a run.
 // It is NOT part of the platform's DB/signature contract, so new fields may be
-// added freely (for example bench_version, judge-audit stats, token totals).
+// added freely (for example bench_version, seeding-wave counts, token totals).
 // Serialized under ScoreReport.details.
 type RunDetails struct {
 	// BenchVersion is the scoring benchmark version (see protocol.BenchVersion).
@@ -373,14 +374,13 @@ type RunDetails struct {
 	// (seed, bench_version).
 	DatasetSHA256 string           `json:"dataset_sha256,omitempty"`
 	Paraphrase    *ParaphraseStats `json:"paraphrase,omitempty"`
-	// InjectionAttempts counts cases a judge flagged as judge-manipulation
-	// attempts (each scored 0). A non-zero value is moderation-relevant evidence,
-	// the same policy channel as plagiarism.
+	// InjectionAttempts counts cases the deterministic grader flagged as
+	// prompt-injection compliance (each scored 0). A non-zero value is
+	// moderation-relevant evidence, the same policy channel as plagiarism.
 	InjectionAttempts int `json:"injection_attempts,omitempty"`
-	// Tokens, JudgeAudited, and JudgeDisagreed are legacy judge-era telemetry.
-	// Scoring is judge-free and spends no validator-side tokens, so current
-	// runs emit zeros (the omitempty drops them); the fields stay for old
-	// report compatibility.
+	// Tokens, JudgeAudited, and JudgeDisagreed are legacy telemetry fields, unused
+	// by the deterministic scorer. Current runs emit zeros (the omitempty drops
+	// them); the fields stay for old-report wire compatibility.
 	Tokens         int64 `json:"tokens,omitempty"`
 	JudgeAudited   int   `json:"judge_audited,omitempty"`
 	JudgeDisagreed int   `json:"judge_disagreed,omitempty"`
@@ -398,17 +398,17 @@ type RunDetails struct {
 	// LexicalGap is the query↔needle overlap telemetry for the memory suite (the
 	// NoLiMa literal-match signal). Advisory only.
 	LexicalGap *LexicalGapStats `json:"lexical_gap,omitempty"`
-	// MetamorphicConsistency is the fraction of invariance twin groups (Ideas #3)
-	// whose members the harness answered consistently (all correct or all
-	// incorrect). A phrasing-brittle harness scores below 1.0. The validator folds
-	// this into the composite as a bounded factor over the SPLIT groups only
-	// (anti-gaming addendum N2: MetamorphicConsistencyFactor multiplies the
-	// composite by 1 - maxPenalty*(1 - this rate)); the rate reported here is the
-	// pre-fold advisory value, so the applied factor stays reconstructable. nil
-	// when no twin groups ran.
+	// MetamorphicConsistency is the fraction of invariance twin groups whose
+	// members the harness answered consistently (all correct or all incorrect). A
+	// phrasing-brittle harness scores below 1.0. The validator folds this into the
+	// composite as a bounded factor over the split groups only
+	// (MetamorphicConsistencyFactor multiplies the composite by
+	// 1 - maxPenalty*(1 - this rate)); the rate reported here is the pre-fold
+	// value, so the applied factor stays reconstructable. nil when no twin groups
+	// ran.
 	MetamorphicConsistency *float64 `json:"metamorphic_consistency,omitempty"`
 	// CalibrationBrier is the mean Brier score over cases where the harness
-	// reported a confidence (Ideas #6): mean((confidence - correct)^2), lower is
+	// reported a confidence: mean((confidence - correct)^2), lower is
 	// better. Honest confidence minimizes it; always-100% does not. CalibrationN
 	// is how many cases carried a confidence. Advisory only, never folded into the
 	// composite (so a harness that omits confidence is unaffected). nil when no
@@ -426,17 +426,21 @@ type RunDetails struct {
 	// persona seeded under a different user_id with a conflicting value, so a
 	// cross-graph memory leak scores wrong. Advisory telemetry.
 	IsolationCases int `json:"isolation_cases,omitempty"`
+	// LifecycleCases is how many write-then-read lifecycle cases ran: an
+	// instruction case asks the harness to save/update/delete a fact through
+	// its own memory tools, and a later-wave read case is only answerable if
+	// the write actually landed in the harness's store. Advisory telemetry.
+	LifecycleCases int `json:"lifecycle_cases,omitempty"`
 	// ToolEfficiency is the run's observed tool-efficiency factor (0..1) folded
 	// into the composite as a bounded multiplier: 1.0 when harnesses reached
 	// correct answers within their expected tool budget, dropping toward the floor
 	// as observed trajectories overshot. 1.0 (no effect) when no tool case ran
 	// under observed execution. Advisory: the composite already reflects it.
 	ToolEfficiency float64 `json:"tool_efficiency,omitempty"`
-	// Models records the LLM model ids that produced this run: the datagen
-	// generator, the judge(s), and (when the operator forces it) the miner's
-	// harness chat model. Advisory transparency metadata for the public
-	// leaderboard: it makes a composite reproducible/comparable (a score is only
-	// meaningful alongside the models that produced the dataset + graded it).
+	// Models records the LLM model id that produced this run: only the miner's
+	// harness chat model, and only when the operator forces it. Generation is
+	// non-LLM and scoring is deterministic, so no generator or judge model
+	// applies. Advisory transparency metadata for the public leaderboard.
 	Models *ModelInfo `json:"models,omitempty"`
 	// PerCategory echoes ScoreReport.PerCategory into the details blob so the
 	// per-category breakdown (per tool / per memory-question-type mean) survives
@@ -448,9 +452,9 @@ type RunDetails struct {
 // ModelInfo is the set of LLM model ids a run was produced with (RunDetails.models).
 // All fields are advisory transparency metadata, never scored or signed.
 type ModelInfo struct {
-	// Generator, Judge, and JudgeAudit are legacy fields: generation is non-LLM
-	// and scoring is judge-free, so current runs leave them empty. They stay
-	// for old report compatibility.
+	// Generator, Judge, and JudgeAudit are legacy fields, unused: generation is
+	// non-LLM and scoring is deterministic, so current runs leave them empty.
+	// They stay for old-report wire compatibility.
 	Generator  string `json:"generator,omitempty"`
 	Judge      string `json:"judge,omitempty"`
 	JudgeAudit string `json:"judge_audit,omitempty"`

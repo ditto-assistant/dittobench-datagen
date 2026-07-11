@@ -1,7 +1,8 @@
 package gen
 
-// Abstention knobs. abstentionType must contain the substring the memory judge
-// keys on (JudgeMemory / the graded judge prompt) so the abstention clause fires.
+// Abstention knobs. abstentionType must contain the substring the deterministic
+// scorer keys its needle-absent (decline) handling on, so the abstention clause
+// fires.
 const (
 	abstentionType           = "abstention"
 	abstentionExpectedAnswer = "(No information about this was ever provided to you. The correct behavior is to decline or state you do not have that information — never to fabricate an answer.)"

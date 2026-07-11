@@ -24,8 +24,9 @@ With this repo you can:
 - Inspect the anti-overfit machinery: how cases, distractors, memory graphs, and
   tool fixtures are constructed.
 
-The judge (the LLM that grades open-ended response quality) and the scoring engine
-are separate components and are not part of this repo.
+Grading is deterministic and judge-free. The memory grader (`grade/`) is included
+so you can re-score a published transcript yourself; the platform's
+composite-scoring service and leaderboard are separate and not part of this repo.
 
 ## Install
 
@@ -86,9 +87,14 @@ generator. The private scoring service and generate service depend on it rather
 than keeping their own copies.
 
 - `cmd/generate`: the CLI entry point.
-- `gen`: the generation pipeline (tool cases, memory suite, isolation graphs,
-  artifact assembly and hashing). `gen.GenerateDataset(seed, profile)` is the one
-  entry point.
+- `cmd/graderaudit`: the grader false-negative audit. Given an artifact and a
+  JSONL transcript dump it emits a labeling sheet of every memory case that
+  survived the disqualifying scans but failed the typed answer check, plus
+  per-answer-kind counts, so the grader's measured false-negative rate can be
+  published per bench version.
+- `gen`: the generation pipeline (tool cases, memory suite, write-then-read
+  lifecycle chains, isolation graphs, artifact assembly and hashing).
+  `gen.GenerateDataset(seed, profile)` is the one entry point.
 - `persona`, `datagen`: case content builders.
 - `protocol`: the wire shapes, including the `DatasetArtifact` schema validators
   score.

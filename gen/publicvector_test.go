@@ -20,7 +20,12 @@ func TestKnownVector(t *testing.T) {
 		// invariance twin became a j=3 sibling FAMILY (invarianceTwins) instead of
 		// a seed-selected pair, so the run emits one more consistency case and the
 		// twin phrasing-set selection changed.
-		want = "c80b6ceb0251f8867da6d17dc472406466aa407f440e04bb803dd0c359bdb805"
+		//
+		// Moved again (prod hardening P1+P6, bench_version 2): write-then-read
+		// lifecycle chains joined the memory suite (gen/lifecycle.go) and the
+		// point-in-time modality joined question derivation, changing the case
+		// mix, wave-0 pairs, and RNG draw counts.
+		want = "2c22245af2bab581bb93a0a2287e18ae1a1e8893ac2105c9538f5761ff7c8e90"
 	)
 	prof, _ := ProfileFor("full")
 	got, _, err := GenerateDataset(seed, prof).SHA256Hex()

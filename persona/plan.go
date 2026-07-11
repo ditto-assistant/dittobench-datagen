@@ -129,7 +129,7 @@ func (p *Plan) FactByID(id string) (Fact, bool) {
 }
 
 // Opts are the deterministic size knobs for a plan. They are part of the
-// plan's identity alongside the seed: same (seed, Opts) ⇒ identical plan.
+// plan's identity alongside the seed: the same (seed, Opts) yields an identical plan.
 // The list-family sizes (Projects/Trips/Pets/DomainItems) and LongChain are
 // CENTERS of seeded ranges, not exact counts: BuildPlan jitters each around its
 // knob so count/list-all/history answers vary per seed (a constant count is a

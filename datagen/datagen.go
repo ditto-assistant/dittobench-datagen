@@ -528,7 +528,7 @@ var categories = []category{
 	// model knowledge; the harness must actually execute the tool and USE the
 	// result. The %s is the needle's Subject (filled below), keeping the question
 	// and the served fact coherent. Scored deterministically (trajectory + needle-
-	// in-answer), no LLM quality judge.
+	// in-answer).
 	{
 		name: "web_result_usage", tool: "search_web",
 		templates: []string{
@@ -597,8 +597,8 @@ var promptTrailers = []string{
 const resultUsageSuffix = "_result_usage"
 
 // IsResultUsage reports whether a case category is a result-usage category. The
-// pipeline scores these on trajectory + answer-incorporates-needle rather than
-// the LLM quality judge.
+// pipeline scores these deterministically on trajectory + answer-incorporates-
+// needle.
 func IsResultUsage(category string) bool { return strings.HasSuffix(category, resultUsageSuffix) }
 
 // fillerFor returns a random entity string appropriate for a category.

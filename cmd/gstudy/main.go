@@ -208,7 +208,7 @@ func adviceFor(facet string) string {
 	case "item":
 		return "item-dominated: increase cases per run or drop low-information (saturated/floor) categories (buy items)"
 	default:
-		return "residual-dominated: seed×item interaction or grading noise dominates; check judge reliability and per-category stability"
+		return "residual-dominated: seed×item interaction or grading noise dominates; check grader reliability and per-category stability"
 	}
 }
 

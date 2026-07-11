@@ -21,10 +21,6 @@ import (
 // beats' timestamps (deterministic ordering within a session).
 const beatSpacingMinutes = 7
 
-// personaTimeSlackDays keeps every rendered timestamp strictly before the pinned
-// dataset epoch (the haystack is "the past" as of the epoch).
-const personaTimeSlackDays = 7
-
 // RenderHaystack realizes a persona plan into a haystack of MemoryPairs (one per
 // beat) and returns the fact→pair evidence map so the question-derivation layer
 // can locate (or, for abstention, withhold) a fact's evidence. Every beat is
@@ -35,13 +31,9 @@ const personaTimeSlackDays = 7
 func RenderHaystack(plan *persona.Plan) ([]protocol.MemoryPair, map[string]string) {
 	evidence := make(map[string]string)
 
-	maxDay := 0
-	for _, s := range plan.Sessions {
-		if s.DayOffset > maxDay {
-			maxDay = s.DayOffset
-		}
-	}
-	anchor := protocol.DatasetEpoch.Add(-time.Duration(maxDay+personaTimeSlackDays) * 24 * time.Hour)
+	// Anchoring is shared with persona.TimeAnchor so any date a question
+	// renders (point-in-time) agrees with these pair timestamps exactly.
+	anchor := persona.TimeAnchor(plan)
 
 	pairs := make([]protocol.MemoryPair, 0)
 	for _, s := range plan.Sessions {

@@ -1,15 +1,14 @@
 // Package persona is the DittoBench v2 plan layer. It
 // generates a fresh, procedural "persona universe" (a fact graph plus the
 // session scripts that introduce those facts) as a PURE function of a single
-// int64 seed. No wall clock, no crypto-rand, no map-iteration order: same seed
-// ⇒ byte-identical plan (the reproducibility contract).
+// int64 seed. No wall clock, no crypto-rand, no map-iteration order: the same
+// seed yields a byte-identical plan (the reproducibility contract).
 //
 // The plan is Layer 1 of the two-layer engine: the deterministic ground truth.
-// Layer 2 (surface realization) renders each beat into a natural
-// user/assistant pair with an LLM, verified against the plan's canonical
-// values; question derivation and difficulty tiers read the plan to
-// build the memory suite. This package intentionally has NO LLM dependency:
-// it is the thing everything else is checked against.
+// Layer 2 (surface realization) renders each beat into a natural user/assistant
+// pair from deterministic template surfaces; question derivation and difficulty
+// tiers read the plan to build the memory suite. This package intentionally has
+// NO LLM dependency: it is the thing everything else is checked against.
 //
 // # Combinatorics (≥10⁹ distinct universes)
 //
