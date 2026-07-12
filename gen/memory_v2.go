@@ -89,6 +89,11 @@ func GenerateMemorySuite(r *rand.Rand, seed int64, n int, nWaves int, rawPairsFr
 			mainPool = append(mainPool, q)
 		}
 	}
+	// Keep a run-size-appropriate number of whole metamorphic families. More
+	// families for larger runs smooth the metamorphic-consistency factor (a single
+	// family makes it a per-run coin flip); small/medium keep one to stay in
+	// budget. Selected before mainQuota so the twin reservation is exact.
+	twinPool = selectTwinFamilies(twinPool, twinFamiliesFor(n))
 	nAbs := abstentionQuota(n)
 	if nAbs > len(absPool) {
 		nAbs = len(absPool)
@@ -513,6 +518,51 @@ func synthesizeSubjects(plan *persona.Plan, evidence map[string]string, rawFacts
 		links = append(links, linksByAttr[attr]...)
 	}
 	return subjects, links
+}
+
+// twinFamiliesFor returns how many metamorphic invariance families a run of n
+// memory cases carries. One family makes the metamorphic-consistency factor a
+// per-run coin flip (a single split flips the whole rate); several let the factor
+// average, cutting its run-to-run noise ~1/sqrt(families). Scaled so twin cases
+// stay a bounded share of the budget (~n/16: full=3, medium/small=1).
+func twinFamiliesFor(n int) int {
+	g := n / 16
+	if g < 1 {
+		g = 1
+	}
+	return g
+}
+
+// selectTwinFamilies keeps the first g whole families (grouped by TwinGroup, in
+// first-seen order) from the pool and drops the rest. Families are kept intact so
+// every sibling of a scored group is present; first-seen order is the seed-keyed
+// attribute order invarianceTwins emitted.
+func selectTwinFamilies(pool []persona.Question, g int) []persona.Question {
+	if g <= 0 {
+		return nil
+	}
+	order := make([]string, 0)
+	seen := map[string]bool{}
+	for _, q := range pool {
+		if !seen[q.TwinGroup] {
+			seen[q.TwinGroup] = true
+			order = append(order, q.TwinGroup)
+		}
+	}
+	if g >= len(order) {
+		return pool
+	}
+	keep := map[string]bool{}
+	for _, grp := range order[:g] {
+		keep[grp] = true
+	}
+	out := make([]persona.Question, 0, len(pool))
+	for _, q := range pool {
+		if keep[q.TwinGroup] {
+			out = append(out, q)
+		}
+	}
+	return out
 }
 
 // titleAttr renders an attribute key ("favorite_cuisine") as a subject label

@@ -1353,17 +1353,26 @@ func filteredAggQuestions(p *Plan) []Question {
 // attribute actually has (every scalar attribute currently has exactly 3).
 const twinSiblings = 3
 
-// invarianceTwins emits a metamorphic invariance family: the
-// same current-scalar fact asked j (twinSiblings) different ways, all sharing a
-// TwinGroup. A robust harness answers every sibling identically; a
-// phrasing-brittle one splits the family, which the scorer folds into the
-// composite as a consistency factor. One family per run keeps the case budget in
-// check. Both the attribute and the phrasing SET are seed-keyed: a fixed pick
-// would make the twin surface a memorizable constant.
+// maxInvarianceFamilies caps how many metamorphic families question derivation
+// generates; the memory suite (twinFamiliesFor) selects a run-size-appropriate
+// subset. More than one family is what keeps the metamorphic-consistency rate
+// (and its composite factor) from being a per-run coin flip: with a single family
+// a lone split flips the whole rate 1<->0, so on a nondeterministic model the
+// factor is pure noise. Averaging over G families cuts its run-to-run variance
+// ~1/sqrt(G). Capped by the eligible attributes a plan actually has.
+const maxInvarianceFamilies = 6
+
+// invarianceTwins emits up to maxInvarianceFamilies metamorphic invariance
+// families. Each family is one current-scalar fact asked j (twinSiblings)
+// different ways, all sharing a TwinGroup. A robust harness answers every sibling
+// identically; a phrasing-brittle one splits a family, which the scorer folds
+// into the composite as a consistency factor averaged over the run's families.
+// Both which attributes become families and each family's phrasing SET are
+// seed-keyed: a fixed pick would make the twins a memorizable constant.
 func invarianceTwins(p *Plan) []Question {
 	scalars := currentScalarFacts(p)
-	// Only non-updated scalars, so the twin tests phrasing invariance, not
-	// update handling (which knowledge-update already covers).
+	// Only non-updated scalars, so a twin tests phrasing invariance, not update
+	// handling (which knowledge-update already covers).
 	var elig []Fact
 	for _, f := range scalars {
 		if f.Supersedes == "" && len(scalarAsk[f.Attribute]) >= 2 {
@@ -1373,31 +1382,40 @@ func invarianceTwins(p *Plan) []Question {
 	if len(elig) == 0 {
 		return nil
 	}
-	pick := &elig[variantIndex(p.Seed, "twin-attr", len(elig))]
-	variants := scalarAsk[pick.Attribute]
-	// Up to twinSiblings distinct phrasings, seed-keyed and guaranteed distinct.
-	k := twinSiblings
-	if k > len(variants) {
-		k = len(variants)
+	nFam := maxInvarianceFamilies
+	if nFam > len(elig) {
+		nFam = len(elig)
 	}
-	idx := distinctVariantIndexes(p.Seed, "twin:"+pick.Attribute, len(variants), k)
-	if len(idx) < 2 {
-		return nil // a family needs at least two distinct surfaces
-	}
-	group := "twin-" + pick.Attribute
-	dis := distractorsFor(p, pick.Attribute)
-	out := make([]Question, 0, len(idx))
-	for n, vi := range idx {
-		out = append(out, Question{
-			ID:          fmt.Sprintf("q-inv-%c-%s", 'a'+n, pick.Attribute),
-			Type:        QTSingleSession,
-			Tier:        TierMedium,
-			Text:        variants[vi],
-			Answer:      pick.Value,
-			Distractors: dis,
-			Evidence:    []string{pick.ID},
-			TwinGroup:   group,
-		})
+	// Seed-keyed distinct set of attributes, so which facts become twins varies
+	// per seed. The memory suite keeps the first twinFamiliesFor(n) of these.
+	attrIdx := distinctVariantIndexes(p.Seed, "twin-attrs", len(elig), nFam)
+	var out []Question
+	for _, ai := range attrIdx {
+		pick := &elig[ai]
+		variants := scalarAsk[pick.Attribute]
+		// Up to twinSiblings distinct phrasings, seed-keyed and guaranteed distinct.
+		k := twinSiblings
+		if k > len(variants) {
+			k = len(variants)
+		}
+		idx := distinctVariantIndexes(p.Seed, "twin:"+pick.Attribute, len(variants), k)
+		if len(idx) < 2 {
+			continue // a family needs at least two distinct surfaces
+		}
+		group := "twin-" + pick.Attribute
+		dis := distractorsFor(p, pick.Attribute)
+		for n, vi := range idx {
+			out = append(out, Question{
+				ID:          fmt.Sprintf("q-inv-%c-%s", 'a'+n, pick.Attribute),
+				Type:        QTSingleSession,
+				Tier:        TierMedium,
+				Text:        variants[vi],
+				Answer:      pick.Value,
+				Distractors: dis,
+				Evidence:    []string{pick.ID},
+				TwinGroup:   group,
+			})
+		}
 	}
 	return out
 }

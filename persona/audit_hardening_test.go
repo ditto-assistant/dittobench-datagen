@@ -1,6 +1,7 @@
 package persona
 
 import (
+	"sort"
 	"strings"
 	"testing"
 
@@ -155,35 +156,44 @@ func TestDurationAnswersReachMonthScale(t *testing.T) {
 	}
 }
 
-// TestInvarianceTwinsSeedKeyed pins the P1 fix and the N2 family extension: the
-// twin family (attribute and phrasing set) varies across seeds, has at least the
-// pair minimum, and every sibling surface is distinct within a family.
+// TestInvarianceTwinsSeedKeyed pins the P1 fix and the N2 family extension: a run
+// derives MULTIPLE metamorphic families (so the consistency factor averages
+// rather than coin-flips), each family is exactly twinSiblings distinct surfaces
+// of one attribute, and which families a seed produces varies across seeds.
 func TestInvarianceTwinsSeedKeyed(t *testing.T) {
-	families := map[string]bool{}
+	familySets := map[string]bool{}
 	for seed := int64(1); seed <= 40; seed++ {
 		p := BuildPlan(seed, fullOpts())
-		var texts []string
-		seen := map[string]bool{}
+		byGroup := map[string][]string{}
 		for _, q := range DeriveQuestions(p) {
 			if q.TwinGroup == "" {
 				continue
 			}
-			if seen[q.Text] {
-				t.Fatalf("seed %d: twin family has a duplicate surface %q", seed, q.Text)
+			byGroup[q.TwinGroup] = append(byGroup[q.TwinGroup], q.Text)
+		}
+		if len(byGroup) < 2 {
+			t.Fatalf("seed %d: expected multiple metamorphic families, got %d", seed, len(byGroup))
+		}
+		keys := make([]string, 0, len(byGroup))
+		for grp, texts := range byGroup {
+			seen := map[string]bool{}
+			for _, tx := range texts {
+				if seen[tx] {
+					t.Fatalf("seed %d family %s: duplicate surface %q", seed, grp, tx)
+				}
+				seen[tx] = true
 			}
-			seen[q.Text] = true
-			texts = append(texts, q.Text)
+			if len(texts) != twinSiblings {
+				t.Fatalf("seed %d family %s: expected %d siblings, got %d", seed, grp, twinSiblings, len(texts))
+			}
+			sort.Strings(texts)
+			keys = append(keys, grp+":"+strings.Join(texts, "|"))
 		}
-		if len(texts) < 2 {
-			t.Fatalf("seed %d: expected a twin family of >= 2 distinct phrasings, got %v", seed, texts)
-		}
-		if len(texts) != twinSiblings {
-			t.Fatalf("seed %d: expected a family of %d siblings (every scalar has 3 phrasings), got %d", seed, twinSiblings, len(texts))
-		}
-		families[strings.Join(texts, " || ")] = true
+		sort.Strings(keys)
+		familySets[strings.Join(keys, " || ")] = true
 	}
-	if len(families) < 8 {
-		t.Fatalf("twin families take only %d distinct forms across 40 seeds — not seed-keyed", len(families))
+	if len(familySets) < 8 {
+		t.Fatalf("twin family sets take only %d distinct forms across 40 seeds — not seed-keyed", len(familySets))
 	}
 }
 

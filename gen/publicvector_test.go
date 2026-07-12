@@ -25,7 +25,13 @@ func TestKnownVector(t *testing.T) {
 		// lifecycle chains joined the memory suite (gen/lifecycle.go) and the
 		// point-in-time modality joined question derivation, changing the case
 		// mix, wave-0 pairs, and RNG draw counts.
-		want = "2c22245af2bab581bb93a0a2287e18ae1a1e8893ac2105c9538f5761ff7c8e90"
+		//
+		// Moved again (metamorphic multi-family, bench_version 2): question
+		// derivation now emits several invariance families (invarianceTwins) and
+		// the memory suite selects twinFamiliesFor(n) of them (full=3), so the twin
+		// case count and attribute selection changed. This smooths the
+		// metamorphic-consistency composite factor from a per-run coin flip.
+		want = "dfb4fc243d7d3e84bb4e896d5873bbc9bda114e16f5215f913c13adbfbc4a7fe"
 	)
 	prof, _ := ProfileFor("full")
 	got, _, err := GenerateDataset(seed, prof).SHA256Hex()
