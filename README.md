@@ -92,6 +92,10 @@ than keeping their own copies.
   survived the disqualifying scans but failed the typed answer check, plus
   per-answer-kind counts, so the grader's measured false-negative rate can be
   published per bench version.
+- `cmd/gstudy`: the offline reliability analyzer. Given a JSONL of scored runs
+  it reports a G-study variance decomposition (seed vs. item vs. residual) and
+  per-category difficulty/discrimination estimates, flagging saturated and floor
+  categories; pure analysis, no LLM.
 - `gen`: the generation pipeline (tool cases, memory suite, write-then-read
   lifecycle chains, isolation graphs, artifact assembly and hashing).
   `gen.GenerateDataset(seed, profile)` is the one entry point.
