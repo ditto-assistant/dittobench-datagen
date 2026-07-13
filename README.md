@@ -83,7 +83,7 @@ you get the same bytes every time.
 ## Layout
 
 Every package is importable, so this module is the single source of truth for the
-generator. The private scoring service and generate service depend on it rather
+generator. The scoring and generation services depend on it rather
 than keeping their own copies.
 
 - `cmd/generate`: the CLI entry point.
