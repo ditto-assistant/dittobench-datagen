@@ -87,6 +87,12 @@ generator. The scoring and generation services depend on it rather
 than keeping their own copies.
 
 - `cmd/generate`: the CLI entry point.
+- `cmd/generate-service`: the same generation behind HTTP
+  (`POST /generate?seed=&run_size=` → DatasetArtifact JSON + `X-Dataset-SHA256`
+  header), with the `Dockerfile`/`cloudbuild.yaml` the SN118 platform deploys it
+  from. The deployment is private (IAM-gated) so platform infrastructure cannot
+  be farmed for generation, but there is no secret in the code — it computes
+  exactly what `cmd/generate` computes for the same `(seed, run_size)`.
 - `cmd/graderaudit`: the grader false-negative audit. Given an artifact and a
   JSONL transcript dump it emits a labeling sheet of every memory case that
   survived the disqualifying scans but failed the typed answer check, plus
