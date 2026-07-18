@@ -29,3 +29,5 @@ jobs:
           echo "run1=$a"
           echo "run2=$b"
           if [ "$a" != "$b" ]; then echo "generator is not deterministic"; exit 1; fi
+      - name: Cross-architecture reproducibility (GOARCH=386 known vector)
+        run: GOARCH=386 go test ./gen -run TestKnownVector -count=1

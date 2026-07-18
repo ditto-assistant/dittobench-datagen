@@ -21,6 +21,7 @@ func evidenceCarriesValue(t *testing.T, plan *persona.Plan, pairs []protocol.Mem
 	for _, p := range pairs {
 		byID[p.PairID] = p
 	}
+	recurGrounded := map[string]bool{} // attr -> label seen in at least one mention
 	for _, f := range plan.Facts {
 		pid, ok := evidence[f.ID]
 		if !ok {
@@ -31,8 +32,25 @@ func evidenceCarriesValue(t *testing.T, plan *persona.Plan, pairs []protocol.Mem
 			t.Fatalf("evidence pair %s for fact %s missing from haystack", pid, f.ID)
 		}
 		joined := strings.ToLower(pair.Prompt + " " + pair.Response)
+		if f.Kind == persona.KindRecurring {
+			// Coreference (anti-gaming V4): only the anchor mention names the topic
+			// in full; follow-ups refer to it obliquely, so the label appears once,
+			// not K times. Grounding (the label present in >=1 mention) is checked
+			// after the loop; per-mention containment does not hold by design.
+			if strings.Contains(joined, strings.ToLower(f.Value)) {
+				recurGrounded[f.Attribute] = true
+			}
+			continue
+		}
 		if !strings.Contains(joined, strings.ToLower(f.Value)) {
 			t.Fatalf("fact %s value %q not present in its evidence pair %q", f.ID, f.Value, joined)
+		}
+	}
+	// Every recurring topic must be grounded by its full label in at least one
+	// mention, so the coreference chain has an anchor a reader can resolve.
+	for _, f := range plan.Facts {
+		if f.Kind == persona.KindRecurring && !recurGrounded[f.Attribute] {
+			t.Fatalf("recurring topic %q never grounded by its full label in any mention", f.Attribute)
 		}
 	}
 }

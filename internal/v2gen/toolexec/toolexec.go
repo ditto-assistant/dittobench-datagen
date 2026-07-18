@@ -100,8 +100,6 @@ type Fixture struct {
 	seed      int64
 	needle    Needle
 	has       bool
-	bearer    string // the ONE expected content tool that serves the needle (see needleBearer)
-	decoy     string // a seed-derived number != needle.Value, served by non-bearer content tools
 	jobID     string // the stable job id execute_agent_job serves for this case
 	dependent bool   // a dependent-arg chain: get_agent_job_status gates the needle on jobID
 	recovery  bool   // an error-recovery case: the first content-tool call returns a transient error
@@ -134,44 +132,8 @@ func BuildFixture(masterSeed int64, c protocol.ToolCase) Fixture {
 	if caseCarriesNeedle(c) {
 		f.needle = NeedleFor(masterSeed, c.ID)
 		f.has = true
-		f.bearer = needleBearer(c)
-		f.decoy = decoyValue(f.seed, f.needle.Value)
 	}
 	return f
-}
-
-// needleBearer returns the ONE tool that serves the answer needle for a case:
-// the LAST content tool in the expected trajectory, i.e. the tool whose result a
-// correct answer actually USES. For a single-tool web case that is search_web;
-// for a search-then-read case it is read_links (so a harness must genuinely read
-// the page, not fish the number out of the search snippet); for a job chain it
-// is get_agent_job_status. Serving the needle only from the bearer (Result)
-// closes the AV-1 hole where search_web handed out the needle regardless of what
-// the case actually expected, and where any content tool could fish it.
-func needleBearer(c protocol.ToolCase) string {
-	bearer := ""
-	for _, t := range c.ExpectedTools {
-		if contentTools[t.Name] {
-			bearer = t.Name
-		}
-	}
-	return bearer
-}
-
-// decoyValue derives a plausible wrong number (formatted like the needle but
-// never equal to it) that non-bearer content tools serve. A harness that greps a
-// number out of the wrong tool's result gets this instead of the answer, so the
-// "call the easiest content tool and echo any number" strategy fails. Pure
-// function of (seed, needle value).
-func decoyValue(seed int64, needleValue string) string {
-	r := rand.New(rand.NewSource(seed ^ int64(fnv1a("decoy|"+needleValue))))
-	for i := 0; i < 8; i++ {
-		v := commaNumber(100 + r.Intn(99900))
-		if v != needleValue {
-			return v
-		}
-	}
-	return commaNumber(1) // unreachable in practice
 }
 
 // Subject is the needle's subject ("the Veltrix index"), or "" when the fixture
@@ -196,24 +158,8 @@ func (f Fixture) NeedleText() string {
 	if !f.has {
 		return ""
 	}
-	return f.servedNeedleSentence()
+	return f.needle.Sentence()
 }
-
-// DecoyValue is the plausible wrong number non-bearer content tools serve for
-// this case (empty when the fixture carries no needle). It is validator-internal
-// grading material: the scorer treats it as a result-usage distractor, so a
-// harness that echoes a number fished from the wrong tool is penalized rather
-// than merely uncredited.
-func (f Fixture) DecoyValue() string {
-	if !f.has {
-		return ""
-	}
-	return f.decoy
-}
-
-// Bearer is the tool that serves the answer needle for this case (empty when the
-// fixture carries no needle). Exported for tests and scorer diagnostics.
-func (f Fixture) Bearer() string { return f.bearer }
 
 // caseCarriesNeedle reports whether any of a case's expected tools returns
 // answer-bearing content (a web result, a page, a job status/result): the tools
@@ -249,24 +195,12 @@ func (f Fixture) Result(name string, args json.RawMessage) (string, bool) {
 	// trajectory (e.g. two read_links on different URLs) get distinct-but-stable
 	// text, without any shared mutable state.
 	r := rand.New(rand.NewSource(f.seed ^ int64(fnv1a(name+"|"+argsKey(args)))))
-	// A content tool serves the answer needle ONLY when it is this case's needle
-	// bearer; every other content tool serves a plausible decoy (a wrong number),
-	// so a harness cannot fish the answer from the easiest/wrong tool.
-	serveNeedle := f.has && name == f.bearer
 	switch name {
 	case "search_web":
 		src := webSources[r.Intn(len(webSources))]
-		body := f.decoySentence(r)
-		if serveNeedle {
-			body = f.needleSentence()
-		}
-		return fmt.Sprintf("Top result from %s: %s More at %s.", src, body, coinedURL(r)), true
+		return fmt.Sprintf("Top result from %s: %s More at %s.", src, f.needleSentence(), coinedURL(r)), true
 	case "read_links":
-		body := f.decoySentence(r)
-		if serveNeedle {
-			body = f.needleSentence()
-		}
-		return fmt.Sprintf("%s\n\n%s", coinedTitle(r), body), true
+		return fmt.Sprintf("%s\n\n%s", coinedTitle(r), f.needleSentence()), true
 	case "execute_agent_job":
 		// Serve the case's STABLE job id (not an args-derived one) so a dependent
 		// chain has a fixed value to thread into get_agent_job_status.
@@ -279,20 +213,13 @@ func (f Fixture) Result(name string, args json.RawMessage) (string, bool) {
 			if calledJobID(args) != f.jobID {
 				return fmt.Sprintf("Job %s: not found.", calledJobID(args)), true
 			}
+			return fmt.Sprintf("Job %s: completed. Result: %s", f.jobID, f.needleSentence()), true
 		}
-		body := f.decoySentence(r)
-		if serveNeedle {
-			body = f.needleSentence()
-		}
-		return fmt.Sprintf("Job %s: completed. Result: %s", f.jobID, body), true
+		return fmt.Sprintf("Job %s: completed. Result: %s", f.jobID, f.needleSentence()), true
 	case "list_agent_jobs":
 		return fmt.Sprintf("Recent jobs: %s (completed), %s (running).", jobID(r), jobID(r)), true
 	case "execute_agent_workflow":
-		body := f.decoySentence(r)
-		if serveNeedle {
-			body = f.needleSentence()
-		}
-		return fmt.Sprintf("Workflow run %s finished. %s", jobID(r), body), true
+		return fmt.Sprintf("Workflow run %s finished. %s", jobID(r), f.needleSentence()), true
 	case "create_image", "edit_image":
 		return fmt.Sprintf("Image generated: %s", coinedURL(r)), true
 	case "artifacts":
@@ -307,151 +234,13 @@ func (f Fixture) Result(name string, args json.RawMessage) (string, bool) {
 }
 
 // needleSentence renders the fixture's coined fact as a sentence, or a neutral
-// filler when the fixture carries no needle. It is a pure function of the fixture
-// (no per-call randomness), so the served needle text is stable per case and
-// equals NeedleText() for the auditable artifact.
+// filler when the fixture carries no needle (a served tool called on a case that
+// did not expect a content tool).
 func (f Fixture) needleSentence() string {
 	if !f.has {
 		return "No notable details were found."
 	}
-	return f.servedNeedleSentence() + "."
-}
-
-// needleTemplates render the coined fact several ways (%[1]s=subject,
-// %[2]s=value, %[3]s=unit), so the served needle is not a single fixed
-// "<subject> reached <value> <unit>" string a public regex can anchor on. A
-// harness must locate the value by MEANING (the subject it was asked about), not
-// by a constant surface pattern.
-var needleTemplates = []string{
-	"%[1]s reached %[2]s %[3]s",
-	"%[1]s currently stands at %[2]s %[3]s",
-	"%[1]s was last measured at %[2]s %[3]s",
-	"the latest figure for %[1]s is %[2]s %[3]s",
-	"%[1]s climbed to %[2]s %[3]s in the newest reading",
-	"analysts put %[1]s at %[2]s %[3]s",
-}
-
-// needleConnectives join a needle clause and a decoy clause into one served
-// sentence (%[1]s=first clause, %[2]s=second clause). The set is deliberately
-// NOT a single fixed "(separately," marker: both the connective AND the clause
-// order are varied per seed (joinClauses), so a parser cannot bank the needle by
-// taking "the first number" or "the number before a fixed marker" — the decoy
-// clause leads on a per-seed fraction of cases and the marker rotates. The SAME
-// family builds the non-bearer decoy sentence, so the bearer is not identifiable
-// by the presence of a connective/parenthetical alone. Each clause still names
-// its subject next to its value, so a reading harness that keys on the ASKED
-// subject answers correctly without knowing the seed.
-var needleConnectives = []string{
-	"%[1]s; separately, %[2]s",
-	"%[1]s, while %[2]s",
-	"%[1]s; meanwhile, %[2]s",
-	"%[1]s, whereas %[2]s",
-	"%[1]s; in unrelated reporting, %[2]s",
-	"%[1]s, and in a separate note, %[2]s",
-}
-
-// clauseFor renders one "<subject> <verb-phrase> <value> <unit>" clause with a
-// per-(seed,salt) template from needleTemplates. Distinct salts give the two
-// clauses of a sentence independent templates while staying deterministic.
-// Reduce modulo in uint64 space so the selection is identical on every GOARCH (a
-// prior int-truncated modulo picked a different template on 32-bit builds).
-func (f Fixture) clauseFor(salt, subject, value string) string {
-	ti := int((uint64(fnv1a(salt)) ^ uint64(f.seed)) % uint64(len(needleTemplates)))
-	return fmt.Sprintf(needleTemplates[ti], subject, value, f.needle.Unit)
-}
-
-// joinClauses links a needle clause and a decoy clause with a per-seed connective
-// in a per-seed order. Neither is fixed: the connective is chosen from
-// needleConnectives and, on ~half of seeds, the decoy clause LEADS. So "the first
-// number" and "the number before a fixed marker" each yield the decoy on a
-// meaningful fraction of seeds, defeating a pure position/marker grep. The needle
-// clause always names the asked subject next to its value, preserving readability.
-func (f Fixture) joinClauses(needleClause, decoyClause string) string {
-	h := uint64(fnv1a("needle-join")) ^ uint64(f.seed)
-	conn := needleConnectives[int(h%uint64(len(needleConnectives)))]
-	first, second := needleClause, decoyClause
-	if (h/uint64(len(needleConnectives)))&1 == 1 {
-		first, second = decoyClause, needleClause
-	}
-	return fmt.Sprintf(conn, first, second)
-}
-
-// servedNeedleSentence renders the needle clause plus an inline DECOY clause,
-// joined by a per-seed connective in a per-seed order (see joinClauses). Only a
-// harness that reads WHICH figure belongs to the asked subject answers correctly;
-// a "grab the first/any/pre-marker number" parser picks the decoy on a meaningful
-// fraction of seeds.
-func (f Fixture) servedNeedleSentence() string {
-	if !f.has {
-		return ""
-	}
-	needleClause := f.clauseFor("needle-tmpl", f.needle.Subject, f.needle.Value)
-	decoyClause := f.clauseFor("needle-decoy-tmpl", f.decoySubject(), f.decoy)
-	return f.joinClauses(needleClause, decoyClause)
-}
-
-// decoySentence renders a plausible result that carries the DECOY number but NOT
-// the answer needle: what a non-bearer content tool serves. It is built from the
-// SAME two-clause + connective family as the bearer's sentence (a scored-decoy
-// clause plus a second unrelated decoy clause), so the bearer cannot be told apart
-// by the presence of a connective/parenthetical or by clause count alone. The
-// scored DecoyValue is always present, so a harness that fishes a number from the
-// wrong tool still surfaces the penalized decoy.
-func (f Fixture) decoySentence(r *rand.Rand) string {
-	if !f.has {
-		return "No notable details were found."
-	}
-	primary := fmt.Sprintf(needleTemplates[r.Intn(len(needleTemplates))], f.decoySubject(), f.decoy, f.needle.Unit)
-	sSubj, sVal := f.secondDecoy(r)
-	secondary := fmt.Sprintf(needleTemplates[r.Intn(len(needleTemplates))], sSubj, sVal, f.needle.Unit)
-	first, second := primary, secondary
-	if r.Intn(2) == 1 {
-		first, second = secondary, primary
-	}
-	conn := needleConnectives[r.Intn(len(needleConnectives))]
-	return fmt.Sprintf(conn, first, second) + "."
-}
-
-// secondDecoy draws a second coined subject and wrong value for the decoy
-// sentence's secondary clause, distinct from the needle and the primary decoy so
-// the non-bearer sentence is a genuine two-clause statement. Pure in r (which the
-// caller derives from the fixture seed), so the served text stays deterministic.
-func (f Fixture) secondDecoy(r *rand.Rand) (string, string) {
-	primary := f.decoySubject()
-	subj := primary
-	for i := 0; i < 8; i++ {
-		name := coinedNames[r.Intn(len(coinedNames))]
-		noun := coinedNouns[r.Intn(len(coinedNouns))]
-		subj = "the " + name + " " + noun
-		if subj != f.needle.Subject && subj != primary {
-			break
-		}
-	}
-	val := f.decoy
-	for i := 0; i < 8; i++ {
-		val = commaNumber(100 + r.Intn(99900))
-		if val != f.needle.Value && val != f.decoy {
-			break
-		}
-	}
-	return subj, val
-}
-
-// decoySubject derives a coined subject distinct from the needle's, for the decoy
-// clause/result. Deterministic in the fixture seed.
-func (f Fixture) decoySubject() string {
-	r := rand.New(rand.NewSource(f.seed ^ int64(fnv1a("decoy-subj"))))
-	name := coinedNames[r.Intn(len(coinedNames))]
-	nounIdx := r.Intn(len(coinedNouns))
-	subj := fmt.Sprintf("the %s %s", name, coinedNouns[nounIdx])
-	if subj == f.needle.Subject { // avoid colliding with the real subject
-		// Step to a GUARANTEED different noun (the previous retry drew a fresh
-		// random index that could land on the original noun again, so ~1 in 1700
-		// fixtures still collided and served two clauses with the same subject).
-		nounIdx = (nounIdx + 1) % len(coinedNouns)
-		subj = fmt.Sprintf("the %s %s", name, coinedNouns[nounIdx])
-	}
-	return subj
+	return f.needle.Sentence() + "."
 }
 
 // --- content pools (fabricated so results can't be answered from base-model

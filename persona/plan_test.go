@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // TestBuildPlanDeterministic is the golden test: same (seed, opts) ⇒
@@ -164,6 +166,14 @@ func TestFactValuePreservedInBeat(t *testing.T) {
 		// Assistant-side recommendations put the value ONLY in the assistant turn
 		// (the user request names no value); that is what makes them assistant-side
 		// recall. Every other fact is user-stated.
+		// Coreference (anti-gaming V4): recurring-topic follow-up mentions refer to
+		// the topic obliquely and deliberately do NOT carry the full label, so the
+		// per-beat containment invariant does not apply to them. The topic is still
+		// grounded by its label in the anchor mention (verified in
+		// evidenceCarriesValue). Skip recurring facts here.
+		if f.Kind == KindRecurring {
+			continue
+		}
 		side, sideName := b.UserText, "user"
 		if f.Kind == KindAsstRec {
 			side, sideName = b.AsstText, "assistant"
@@ -184,4 +194,56 @@ func marshal(t *testing.T, v any) string {
 		t.Fatalf("marshal: %v", err)
 	}
 	return string(b)
+}
+
+// TestNegatedDistractorBecomesConfusable verifies the NoOp/knowledge-conflict
+// distractor: each run seeds a "considered but rejected" mention whose value
+// becomes a distractor for that attribute's recall question, so a retriever that
+// surfaces it is scored 0 while a reader honoring the negation is unaffected.
+// Every plan is guaranteed one: BuildPlan always emits current self scalars for
+// every universal scalarSpec, all of whose pools hold more than one value, so
+// addNegatedDistractor never hits its empty-candidate early return (its only
+// other bail-out, eight straight rng draws of the user's own value, is a
+// deterministic per-seed event that never occurs; probed across 500 seeds).
+// A missing negated fact on ANY seed is therefore a generator regression.
+func TestNegatedDistractorBecomesConfusable(t *testing.T) {
+	for seed := int64(1); seed <= 30; seed++ {
+		// The adversarial NoOp distractor is v3-only: v2 is a frozen contract, so
+		// adding a fact to it would change bytes already scored against.
+		p, err := BuildPlanForVersion(seed, fullOpts(), protocol.BenchVersionV3)
+		if err != nil {
+			t.Fatalf("plan: %v", err)
+		}
+		var neg *Fact
+		for i := range p.Facts {
+			if p.Facts[i].Kind == KindNegated {
+				neg = &p.Facts[i]
+				break
+			}
+		}
+		if neg == nil {
+			t.Fatalf("seed %d: no KindNegated fact in the plan (the negated distractor family regressed)", seed)
+		}
+		// The rejected value must be first-person in the haystack.
+		if !strings.Contains(neg.UserText, neg.Value) {
+			t.Fatalf("seed %d: negated value %q not in its mention %q", seed, neg.Value, neg.UserText)
+		}
+		// It must NOT be a current self value.
+		for _, f := range p.Facts {
+			if f.Kind == KindScalar && f.Entity == "self" && f.Current && f.Attribute == neg.Attribute && f.Value == neg.Value {
+				t.Fatalf("seed %d: negated value %q equals the real self value", seed, neg.Value)
+			}
+		}
+		// It must appear as a distractor for that attribute's recall question.
+		dis := distractorsFor(p, neg.Attribute)
+		found := false
+		for _, d := range dis {
+			if d == neg.Value {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("seed %d: negated value %q not in distractorsFor(%q)=%v", seed, neg.Value, neg.Attribute, dis)
+		}
+	}
 }

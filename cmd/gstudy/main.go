@@ -30,12 +30,14 @@ import (
 )
 
 type perCase struct {
-	Category string  `json:"category"`
-	Score    float64 `json:"score"`
+	Category  string  `json:"category"`
+	Score     float64 `json:"score"`
+	LatencyMs float64 `json:"latency_ms,omitempty"` // optional; enables latency-flatness signal
 }
 
 type run struct {
 	Seed    int64     `json:"seed"`
+	Harness string    `json:"harness,omitempty"` // optional harness/miner id; groups the parser signal
 	PerCase []perCase `json:"per_case"`
 }
 
@@ -95,6 +97,7 @@ type Report struct {
 	Variance      VarianceComponents    `json:"variance_components"`
 	DominantFacet string                `json:"dominant_facet"`
 	Categories    []CategoryReliability `json:"categories"`
+	ParserSignals ParserSignals         `json:"parser_signals"`
 	Advice        string                `json:"advice"`
 }
 
@@ -197,8 +200,149 @@ func analyze(runs []run) Report {
 		Variance:      vc,
 		DominantFacet: facet,
 		Categories:    cats,
+		ParserSignals: parserSignals(runs),
 		Advice:        advice,
 	}
+}
+
+// plainRecallCats are the categories a deterministic parser answers by verbatim
+// routing (the value is in the haystack); synthesisCats require aggregation,
+// temporal/state reasoning, contradiction resolution, or grounded abstention —
+// answers that are NOT a verbatim substring and that the v3 hardening made
+// resistant to lexical shortcuts. A harness that aces the former and fails the
+// latter has the parser signature: it retrieves but does not reason.
+var plainRecallCats = map[string]bool{
+	"single-session-recall": true, "preference": true, "assistant-recall": true,
+	"preference-application": true,
+}
+
+var synthesisCats = map[string]bool{
+	"aggregation-count": true, "computed-answer": true, "temporal-reasoning": true,
+	"point-in-time": true, "multi-session": true, "contradiction": true,
+	"abstention": true, "knowledge-update": true,
+}
+
+// ParserSignals is ADVISORY-ONLY telemetry that separates a deterministic
+// string-table/regex harness from a genuine reasoner. It is deliberately NOT
+// folded into any score: the composite must stay a pure, reproducible function
+// of (dataset, transcript) — trustless — so these signals only route a harness
+// to screening / audit, never change its number. The primary discriminator is
+// the trap-conditioned accuracy GAP: a parser is near-perfect on plain recall
+// and collapses on synthesis/trap families, while a reasoner degrades
+// gracefully. LatencyFlatness (when latencies are present) is a secondary tell:
+// a lookup returns in ~constant time regardless of difficulty.
+type ParserSignals struct {
+	Harnesses []HarnessSignal `json:"harnesses"`
+	Note      string          `json:"note"`
+}
+
+// HarnessSignal is the per-harness (or whole-population when no harness id was
+// supplied) parser-vs-reasoner summary.
+type HarnessSignal struct {
+	Harness        string  `json:"harness"`
+	Runs           int     `json:"runs"`
+	PlainRecallAcc float64 `json:"plain_recall_acc"`
+	SynthesisAcc   float64 `json:"synthesis_acc"`
+	TrapGap        float64 `json:"trap_gap"` // plain - synthesis; large positive = parser-like
+	LatencyFlat    *bool   `json:"latency_flat,omitempty"`
+	Flag           string  `json:"flag,omitempty"` // "parser-like" | ""
+}
+
+// parserLikeGap is the trap-gap above which, combined with high plain-recall
+// accuracy, a harness is flagged parser-like for audit routing. This is advisory
+// telemetry only and never enters the composite; it is a threshold in public
+// code, not a secret.
+const parserLikeGap = 0.35
+
+// parserMinSamples is the minimum cases in EACH of the plain and synthesis
+// buckets before the parser-like flag may be set, so a tiny sample cannot mint a
+// spurious accuracy gap.
+const parserMinSamples = 3
+
+func parserSignals(runs []run) ParserSignals {
+	type acc struct {
+		plainSum, plainN float64
+		synthSum, synthN float64
+		runs             int
+		easyLat, hardLat []float64 // plain vs synthesis latencies (difficulty proxy)
+		sawLatency       bool
+	}
+	by := map[string]*acc{}
+	for _, rn := range runs {
+		a := by[rn.Harness]
+		if a == nil {
+			a = &acc{}
+			by[rn.Harness] = a
+		}
+		a.runs++
+		for _, c := range rn.PerCase {
+			switch {
+			case plainRecallCats[c.Category]:
+				a.plainSum += c.Score
+				a.plainN++
+				if c.LatencyMs > 0 {
+					a.easyLat = append(a.easyLat, c.LatencyMs)
+					a.sawLatency = true
+				}
+			case synthesisCats[c.Category]:
+				a.synthSum += c.Score
+				a.synthN++
+				if c.LatencyMs > 0 {
+					a.hardLat = append(a.hardLat, c.LatencyMs)
+					a.sawLatency = true
+				}
+			}
+		}
+	}
+	ids := make([]string, 0, len(by))
+	for id := range by {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	var out []HarnessSignal
+	for _, id := range ids {
+		a := by[id]
+		if a.plainN == 0 || a.synthN == 0 {
+			continue // need both buckets to compute a gap
+		}
+		plain := a.plainSum / a.plainN
+		synth := a.synthSum / a.synthN
+		gap := plain - synth
+		hs := HarnessSignal{
+			Harness:        id,
+			Runs:           a.runs,
+			PlainRecallAcc: r6(plain),
+			SynthesisAcc:   r6(synth),
+			TrapGap:        r6(gap),
+		}
+		// A parser aces plain recall AND collapses on synthesis. The flag REQUIRES
+		// that accuracy gap on a sufficient sample. Latency flatness is recorded as
+		// corroborating telemetry but is NOT sufficient on its own: a genuine
+		// reasoner that answers plain and synthesis equally well at constant time
+		// has a zero gap and must not be flagged.
+		if a.plainN >= parserMinSamples && a.synthN >= parserMinSamples &&
+			plain >= 0.8 && gap >= parserLikeGap {
+			hs.Flag = "parser-like"
+		}
+		if a.sawLatency && len(a.easyLat) > 0 && len(a.hardLat) > 0 {
+			flat := latencyFlat(mean(a.easyLat), mean(a.hardLat))
+			hs.LatencyFlat = &flat
+		}
+		out = append(out, hs)
+	}
+	note := "advisory only: never folded into the composite; routes flagged harnesses to screening/audit"
+	return ParserSignals{Harnesses: out, Note: note}
+}
+
+// latencyFlat reports whether synthesis-case latency is not meaningfully higher
+// than plain-recall latency: a reasoner spends more on harder cases, a lookup
+// returns in ~constant time. Flat when the harder bucket is within 20% of the
+// easy bucket.
+func latencyFlat(easyMean, hardMean float64) bool {
+	if easyMean <= 0 {
+		return false
+	}
+	return hardMean <= easyMean*1.2
 }
 
 func adviceFor(facet string) string {

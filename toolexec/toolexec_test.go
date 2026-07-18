@@ -3,6 +3,7 @@ package toolexec
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -237,5 +238,89 @@ func TestErrorRecoveryGate(t *testing.T) {
 	nv := BuildFixture(99, c).NeedleValue()
 	if !strings.Contains(second.Result, nv) {
 		t.Fatalf("retry should serve the needle %q, got %q", nv, second.Result)
+	}
+}
+
+// TestNeedleGatedToBearer proves the AV-1 fix: the answer needle is served ONLY
+// by the case's needle-bearing tool (the last expected content tool); other
+// content tools serve a decoy number, never the needle.
+func TestNeedleGatedToBearer(t *testing.T) {
+	// A search-then-read case: read_links is the bearer, search_web must NOT leak.
+	c := protocol.ToolCase{
+		ID:            "mw",
+		Category:      "multi_web_result_usage",
+		ExpectedTools: []protocol.ToolSpec{{Name: "search_web"}, {Name: "read_links"}},
+	}
+	f := BuildFixture(7, c)
+	if f.Bearer() != "read_links" {
+		t.Fatalf("bearer should be the last content tool read_links, got %q", f.Bearer())
+	}
+	nv, dv := f.NeedleValue(), f.DecoyValue()
+	if nv == "" || dv == "" || nv == dv {
+		t.Fatalf("needle/decoy must be non-empty and distinct: needle=%q decoy=%q", nv, dv)
+	}
+	// The bearer serves the needle value.
+	read, _ := f.Result("read_links", json.RawMessage(`{"url":"https://x.example"}`))
+	if !strings.Contains(read, nv) {
+		t.Fatalf("bearer read_links must serve the needle value %q: %q", nv, read)
+	}
+	// A non-bearer content tool serves the decoy, NOT the needle.
+	web, _ := f.Result("search_web", json.RawMessage(`{"query":"anything"}`))
+	if strings.Contains(web, nv) {
+		t.Fatalf("non-bearer search_web must NOT serve the needle value %q: %q", nv, web)
+	}
+	if !strings.Contains(web, dv) {
+		t.Fatalf("non-bearer search_web should serve the decoy value %q: %q", dv, web)
+	}
+}
+
+// TestNeedleTemplateVariesBySeed proves the served needle is not a single fixed
+// public template a lone regex can anchor on. The subject/value/unit and decoy
+// clause fillers vary per seed regardless of template, so they are normalized to
+// placeholders first: the diversity assertion is about the TEMPLATE pool itself,
+// and a regression to one fixed sentence template fails even though the coined
+// fillers still differ.
+func TestNeedleTemplateVariesBySeed(t *testing.T) {
+	c := protocol.ToolCase{ID: "w", Category: "web_result_usage", ExpectedTools: []protocol.ToolSpec{{Name: "search_web"}}}
+	seen := map[string]bool{}
+	for s := int64(0); s < 40; s++ {
+		f := BuildFixture(s, c)
+		tmpl := f.NeedleText()
+		for _, sub := range [][2]string{
+			{f.Subject(), "<subject>"},
+			{f.decoySubject(), "<decoy-subject>"},
+			{f.NeedleValue(), "<value>"},
+			{f.DecoyValue(), "<decoy>"},
+			{f.needle.Unit, "<unit>"},
+		} {
+			tmpl = strings.ReplaceAll(tmpl, sub[0], sub[1])
+		}
+		if strings.ContainsAny(tmpl, "0123456789") {
+			t.Fatalf("seed %d: normalization left a dynamic value in %q", s, tmpl)
+		}
+		seen[tmpl] = true
+	}
+	// The pool holds len(needleTemplates) (6) shapes; 40 seeds hash across all of
+	// them, so fewer than 5 distinct normalized shapes means the pool shrank or
+	// selection collapsed.
+	if len(seen) < 5 {
+		t.Fatalf("needle template should vary across seeds, only %d distinct: %v", len(seen), seen)
+	}
+}
+
+func TestDecoySubjectNeverCollidesWithNeedle(t *testing.T) {
+	collisions := 0
+	for s := int64(1); s <= 100000; s++ {
+		id := "c" + fmt.Sprintf("%016x", uint64(s)*0x9e3779b97f4a7c15)
+		f := Fixture{seed: caseSeed(s, id), needle: NeedleFor(s, id), has: true}
+		if f.decoySubject() == f.needle.Subject {
+			collisions++
+			if collisions <= 3 {
+				t.Errorf("seed %d: decoy subject collides with needle subject %q", s, f.needle.Subject)
+			}
+		}
+	}
+	if collisions > 0 {
+		t.Fatalf("%d/100000 fixtures had a decoy subject equal to the needle subject", collisions)
 	}
 }

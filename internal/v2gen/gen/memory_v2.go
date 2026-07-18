@@ -6,8 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ditto-assistant/dittobench-datagen/grade"
-	"github.com/ditto-assistant/dittobench-datagen/persona"
+	"github.com/ditto-assistant/dittobench-datagen/internal/v2gen/persona"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
@@ -84,50 +83,21 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 
 	questions := persona.DeriveQuestions(plan)
 
-	// B1 candidate salt: plant plausible same-attribute values that the rendered
-	// conversation never says, so a harness that narrows to a few candidates and
-	// emits them all trips the distractor scan regardless of the dump floor. This
-	// runs HERE, not in DeriveQuestions, because soundness depends on the rendered
-	// haystack: some people in it are named during rendering and never appear in
-	// the plan, and planting one of those names would zero an honest reader.
-	var hay strings.Builder
-	for _, pr := range pairs {
-		hay.WriteString(pr.Prompt)
-		hay.WriteString(" ")
-		hay.WriteString(pr.Response)
-		hay.WriteString(" ")
-	}
-	haystack := hay.String()
-	persona.ApplyCandidateSalt(plan, questions, func(v string) bool {
-		return grade.Hit(v, haystack)
-	})
-
 	// Split into: the always-included canary integrity probe, the abstention
 	// share, and the main pool stratified by type. The canary is never sampled
 	// out: its whole point is a guaranteed per-run integrity check.
-	var absPool, mainPool, canaryPool, twinPool, injTwinPool []persona.Question
+	var absPool, mainPool, canaryPool, twinPool []persona.Question
 	for _, q := range questions {
 		switch {
 		case q.Type == persona.QTCanary:
 			canaryPool = append(canaryPool, q)
-		case strings.HasPrefix(q.TwinGroup, persona.InjectionTwinPrefix):
-			injTwinPool = append(injTwinPool, q) // injection-framing family, reserved separately
 		case q.TwinGroup != "":
-			twinPool = append(twinPool, q) // phrasing-invariance twins kept together
+			twinPool = append(twinPool, q) // both invariance twins kept together
 		case q.Abstain:
 			absPool = append(absPool, q)
 		default:
 			mainPool = append(mainPool, q)
 		}
-	}
-	// The injection-framing family is reserved separately from the phrasing
-	// families so it is never crowded out by them, but it is a bounded share of
-	// the run: include it only when the budget comfortably holds a whole family
-	// (n >= injTwinMinCases), mirroring the twinFamiliesFor(n) sizing. A tiny run
-	// keeps the single broad injection case in mainPool for base coverage.
-	injTwinPool = selectTwinFamilies(injTwinPool, 1)
-	if n < injTwinMinCases {
-		injTwinPool = nil
 	}
 	// Keep a run-size-appropriate number of whole metamorphic families. More
 	// families for larger runs smooth the metamorphic-consistency factor (a single
@@ -144,64 +114,13 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	suite.LifecycleCases = len(lc.Cases)
 	// Reserve room for the always-included canary, twin, and lifecycle cases so
 	// the total case count stays at n.
-	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(lc.Cases)
+	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(lc.Cases)
 	if mainQuota < 0 {
 		mainQuota = 0
 	}
-	mainSel := stratifyByType(r, mainPool, mainQuota)
-	selected := append([]persona.Question(nil), mainSel...)
+	selected := stratifyByType(r, mainPool, mainQuota)
 	selected = append(selected, canaryPool...)
 	selected = append(selected, twinPool...)
-	selected = append(selected, injTwinPool...)
-	// Reproduce-under-transform audit (persona/transform.go): a public,
-	// seed-keyed share of the selected cases is re-asked under a transform the
-	// harness could not see coming, because the seed postdates its commit. The
-	// transformed cases are ordinary graded cases and are wire-indistinguishable
-	// from the rest; only the shared TwinGroup pairs each with its base, which is
-	// what lets the scorer (and any third party) derive transform robustness.
-	//
-	// Audits are computed against the FULL selection and then paid for out of it,
-	// rather than reserved up front: the eligible-base rate is well below the
-	// nominal draw (twins, abstentions, and injection cases are all excluded), so
-	// an up-front reservation would leave the run short of n. Trimming afterward
-	// keeps the count exact AND keeps every audited base in the run, which the
-	// robustness pairing requires.
-	audits := persona.SelectAudits(plan, selected, persona.AuditQuota(n))
-	if len(audits) > 0 {
-		bases := make(map[string]bool, len(audits))
-		for _, a := range audits {
-			bases[strings.TrimPrefix(a.TwinGroup, persona.AuditTwinPrefix)] = true
-		}
-		// Give back one main-pool slot per audit case, from the tail, never
-		// dropping a case an audit is derived from.
-		drop := len(audits)
-		kept := make([]persona.Question, 0, len(mainSel))
-		for i := len(mainSel) - 1; i >= 0; i-- {
-			if drop > 0 && !bases[mainSel[i].ID] {
-				drop--
-				continue
-			}
-			kept = append(kept, mainSel[i])
-		}
-		for l, rr := 0, len(kept)-1; l < rr; l, rr = l+1, rr-1 {
-			kept[l], kept[rr] = kept[rr], kept[l] // restore original order
-		}
-		selected = append([]persona.Question(nil), kept...)
-		selected = append(selected, canaryPool...)
-		selected = append(selected, twinPool...)
-		selected = append(selected, injTwinPool...)
-		selected = append(selected, audits...)
-		// Tag each audited BASE with the same TwinGroup as its transform. Without
-		// this the pair is unrecoverable downstream: the scorer (and any third
-		// party re-deriving the verdict from the published dataset) pairs base to
-		// transform through TwinGroup alone, and a group holding only the transform
-		// would trivially look self-consistent.
-		for i := range selected {
-			if bases[selected[i].ID] {
-				selected[i].TwinGroup = persona.AuditTwinPrefix + selected[i].ID
-			}
-		}
-	}
 	if nAbs > 0 {
 		perm := r.Perm(len(absPool))
 		for i := 0; i < nAbs; i++ {
@@ -306,8 +225,6 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 				DistractorAnswers: q.Distractors,
 				ForbiddenAnswer:   q.Forbidden,
 				TwinGroup:         q.TwinGroup,
-				DumpGuard:         q.DumpGuard,
-				BaitTool:          q.BaitTool,
 			},
 			RunAfterWave: caseUnlockWave(q, fw),
 		})
@@ -612,14 +529,6 @@ func synthesizeSubjects(plan *persona.Plan, evidence map[string]string, rawFacts
 	}
 	return subjects, links
 }
-
-// injTwinMinCases is the smallest run (in memory cases) that carries the
-// injection-framing family. Below it, a 3-case family is too large a share of
-// the budget (a 6-case run would be half injection twins), so only the single
-// broad injection case in the main pool covers injection resistance. Matches the
-// medium profile's floor, so medium and full runs carry the family, small does
-// not.
-const injTwinMinCases = 16
 
 // twinFamiliesFor returns how many metamorphic invariance families a run of n
 // memory cases carries. One family makes the metamorphic-consistency factor a

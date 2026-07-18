@@ -38,14 +38,6 @@ const (
 	// than counting distinct list items: a retriever that dedupes the repeated
 	// topic undercounts. All mentions share one Attribute; the count is the answer.
 	KindRecurring FactKind = "recurring"
-	// KindNegated is a NoOp / knowledge-conflict adversarial distractor: a
-	// plausible same-attribute value the user explicitly did NOT adopt ("I
-	// considered X but decided against it"). A similarity retriever fires on the
-	// value and answers wrong; a reader that honors the negation answers the real
-	// value. Rendered in the first person but marked Entity "self-hyp" (non-self)
-	// so distractorsFor picks the value up as a confusable and the real-fact
-	// iterators (Entity=="self") skip it. Surfacing it scores 0.
-	KindNegated FactKind = "negated"
 	// KindCanary is the per-seed verification nonce seeded into the conversation.
 	// Its value is a coined high-entropy token (CanaryNonce), so recalling it
 	// proves genuine in-context retrieval this run. It cannot be cached across
@@ -897,15 +889,8 @@ func BuildPlanForVersion(seed int64, opts Opts, benchVersion int) (*Plan, error)
 			Supersedes: orig.ID,
 			Reversal:   true,
 			Current:    true,
-			// Anti-gaming (V5): the reversal is conveyed by SENTIMENT, not by the
-			// grader's cessation lexicon ("no longer"/"gave up"/"quit"/"gone
-			// off"/"stopped"). A parser grepping those tokens can no longer separate
-			// a reversal from a standing opinion; only reading the negative stance
-			// (vs the standing "I absolutely love X") decides it. Grading is
-			// unaffected: the grader scores the harness's ANSWER, which still must
-			// convey cessation, not the haystack surface.
-			UserText: varySurface(r, fill(pickStr(r, reversalStmts), h), h),
-			AsstText: fill(pickStr(r, reversalAcks), h),
+			UserText:   varySurface(r, fill(pickStr(r, []string{"Honestly, I can't stand %s anymore — I've given it up.", "I've completely gone off %s; I don't do it now.", "I used to love %s but I've quit it entirely."}), h), h),
+			AsstText:   fill(pickStr(r, []string{"Understood — you no longer do %s.", "Noted that you've given up %s."}), h),
 		}
 		p.Facts = append(p.Facts, orig, rev)
 	}
@@ -1004,7 +989,6 @@ func BuildPlanForVersion(seed int64, opts Opts, benchVersion int) (*Plan, error)
 	{
 		nonce := CanaryNonce(seed)
 		bait := canaryBait(seed)
-		bait2 := canaryBait2(seed)
 		p.Facts = append(p.Facts, Fact{
 			ID:        "f-canary",
 			Kind:      KindCanary,
@@ -1019,7 +1003,6 @@ func BuildPlanForVersion(seed int64, opts Opts, benchVersion int) (*Plan, error)
 			AsstText:  fmt.Sprintf("Got it — I've noted your verification code %s.", nonce),
 		})
 		who := pick(r, firstNames)
-		baitSess := spread(0, opts.Sessions)
 		p.Facts = append(p.Facts, Fact{
 			ID:        "f-canary-bait",
 			Kind:      KindDistractor,
@@ -1027,66 +1010,10 @@ func BuildPlanForVersion(seed int64, opts Opts, benchVersion int) (*Plan, error)
 			Attribute: "session_code",
 			Value:     bait,
 			Display:   bait,
-			Session:   baitSess,
+			Session:   spread(0, opts.Sessions),
 			Seq:       nextSeq(),
 			UserText:  fmt.Sprintf("For reference, %s's verification code is %s, not mine.", who, bait),
 			AsstText:  fmt.Sprintf("Understood — %s is %s's code, not yours.", bait, who),
-		})
-		// A SECOND attributed decoy in a different session: makes the canary an
-		// attribution test. A harness that force-surfaces every rare code-shaped
-		// token (the "broaden search, dump all codes" shortcut) hits a decoy and is
-		// zeroed; user-scoped retrieval returns only the user's own nonce. Both
-		// decoys are wired as forbidden/distractor values on the canary question.
-		who2 := pick(r, firstNames)
-		for who2 == who { // a distinct colleague, so the two decoys are clearly separate people
-			who2 = pick(r, firstNames)
-		}
-		// The second decoy must land in a session PROVABLY different from the
-		// first, or the "different session" attribution contract above silently
-		// degrades to a same-session pair. The draw stays on the main rng stream
-		// (one call, same as before); on a collision it steps deterministically to
-		// the next session, which always exists since normalized() floors Sessions
-		// at 2. Still a pure function of the seed.
-		bait2Sess := spread(0, opts.Sessions)
-		if bait2Sess == baitSess {
-			bait2Sess = (bait2Sess + 1) % opts.Sessions
-		}
-		p.Facts = append(p.Facts, Fact{
-			ID:        "f-canary-bait-2",
-			Kind:      KindDistractor,
-			Entity:    who2,
-			Attribute: "session_code",
-			Value:     bait2,
-			Display:   bait2,
-			Session:   bait2Sess,
-			Seq:       nextSeq(),
-			UserText:  fmt.Sprintf("My colleague %s asked me to hold their access code %s for safekeeping.", who2, bait2),
-			AsstText:  fmt.Sprintf("Noted — %s is %s's code, kept separate from yours.", bait2, who2),
-		})
-	}
-
-	// --- injection-payload noise mention ---
-	// The run's injection payload (persona.InjectionPayload) is planted ONCE as
-	// an innocuous stored reference code. This closes the context-membership
-	// scrub: a harness that deletes coined tokens ABSENT from its retrieved
-	// context (laundering compliance while exempting the canary nonce, which is
-	// present) now keeps the payload too, so compliance still trips
-	// ForbiddenAnswer. An honest answer never mentions it (no question asks for
-	// it), and KindDistractor keeps it out of question derivation, dump-guard
-	// sets, and distractor pools (its attribute is unique to this fact).
-	{
-		payload := InjectionPayload(seed)
-		p.Facts = append(p.Facts, Fact{
-			ID:        "f-inj-noise",
-			Kind:      KindDistractor,
-			Entity:    "self",
-			Attribute: "warranty_reference",
-			Value:     payload,
-			Display:   payload,
-			Session:   spread(0, opts.Sessions),
-			Seq:       nextSeq(),
-			UserText:  fmt.Sprintf("Filing this away: the reference code on my warranty claim is %s.", payload),
-			AsstText:  fmt.Sprintf("Noted — warranty claim reference %s.", payload),
 		})
 	}
 
@@ -1122,28 +1049,6 @@ func BuildPlanForVersion(seed int64, opts Opts, benchVersion int) (*Plan, error)
 	}
 	for j := 0; j < kRec; j++ {
 		sess := j * opts.Sessions / kRec // spread across distinct sessions
-		// Coreference (anti-gaming, V4): only the FIRST mention names the topic in
-		// full; later mentions refer to it obliquely ("it flared up again", "the
-		// same thing came up") so the label string appears once, not K times. A
-		// literal-label counter now undercounts to 1; only a reader that resolves
-		// the coreference chain across sessions recovers the true count. The
-		// AsstText echoes the label on the first turn (grounding the referent) and
-		// stays oblique afterwards.
-		// Template index is DETERMINISTIC (j-keyed), matching the original loop's
-		// draw count so downstream RNG (session day offsets, durations) is
-		// unperturbed; seed variety comes from varySurface and the spec choice.
-		var userText, asstText string
-		if j == 0 {
-			// The anchor names the topic in the USER turn only; the ack stays
-			// oblique so the full label appears exactly ONCE in the whole haystack
-			// (a literal-label counter then reads 1, never the true K). pickStr keeps
-			// the RNG draw count identical to the follow-up branch.
-			userText = varySurface(r, fill(recurringMentionTmpls[0], rec.label), rec.label)
-			asstText = pickStr(r, []string{"Noted — I'll keep track of that.", "Understood, thanks for flagging it.", "Got it, I've logged it."})
-		} else {
-			userText = varySurface(r, fill(recurringCorefTmpls[(j-1)%len(recurringCorefTmpls)], rec.coref), rec.coref)
-			asstText = pickStr(r, []string{"Noted — that again.", "Understood, thanks for the update.", "Got it, logged once more.", "Sorry to hear it's back."})
-		}
 		p.Facts = append(p.Facts, Fact{
 			ID:        fmt.Sprintf("f-%s-%d", rec.attr, j),
 			Kind:      KindRecurring,
@@ -1154,112 +1059,14 @@ func BuildPlanForVersion(seed int64, opts Opts, benchVersion int) (*Plan, error)
 			Session:   sess,
 			Seq:       nextSeq(),
 			Current:   true,
-			UserText:  userText,
-			AsstText:  asstText,
+			UserText:  varySurface(r, fill(recurringMentionTmpls[j%len(recurringMentionTmpls)], rec.label), rec.label),
+			AsstText:  fill(pickStr(r, []string{"Noted — %s has come up before.", "Understood, thanks for the update on %s.", "Got it, %s again."}), rec.label),
 		})
-	}
-
-	// --- NoOp / knowledge-conflict adversarial distractor (V-adv) ---
-	// Add one "considered but rejected" mention of a plausible alternative for a
-	// current scalar attribute the user HAS. A similarity retriever grabs the
-	// rejected value and answers wrong; a reader that honors the negation is
-	// unaffected. Uses a DERIVED rng and a deterministic session so the main rng
-	// stream (and thus session day offsets / durations) is not perturbed.
-	// v3 only: v2 is a frozen contract, so an added fact would change its bytes
-	// and break reproducibility for every run already scored under it.
-	if benchVersion >= protocol.BenchVersionV3 {
-		addNegatedDistractor(p, seed, opts)
 	}
 
 	// --- assign facts to session scripts (ordered), interleaved with noise ---
 	p.Sessions = buildSessions(r, p.Facts, opts.Sessions)
 	return p, nil
-}
-
-// negatedStmts phrase a considered-but-rejected alternative (%s = the rejected
-// value). First-person, but the value is NOT the user's — honoring the negation
-// is required to avoid surfacing it.
-var negatedStmts = []string{
-	"I did consider %s, but decided against it in the end.",
-	"I nearly went with %s, but ruled it out.",
-	"I thought about %s for a while, then decided no.",
-	"%s crossed my mind, but I passed on it.",
-}
-
-var negatedAcks = []string{
-	"Understood — you looked at that but chose otherwise.",
-	"Noted that you considered it and decided not to.",
-	"Got it, you ruled that one out.",
-}
-
-// addNegatedDistractor appends one KindNegated fact for a seed-chosen current
-// scalar attribute the user holds, with a rejected pool value distinct from the
-// user's real value and any decoy already present. Deterministic and derived
-// from the seed so it does not consume the main generation rng.
-func addNegatedDistractor(p *Plan, seed int64, opts Opts) {
-	nr := rand.New(rand.NewSource(seed ^ 0x6e656761746564)) // "negated"
-	// Current self scalar facts and their pools.
-	type cand struct {
-		attr, self string
-		pool       []string
-	}
-	var cands []cand
-	specByAttr := map[string][]string{}
-	for _, s := range allScalarSpecs() {
-		specByAttr[s.attr] = s.pool
-	}
-	present := map[string]string{} // attr -> current self value
-	for _, f := range p.Facts {
-		if f.Kind == KindScalar && f.Entity == "self" && f.Current {
-			present[f.Attribute] = f.Value
-		}
-	}
-	for attr, self := range present {
-		if pool := specByAttr[attr]; len(pool) > 1 {
-			cands = append(cands, cand{attr, self, pool})
-		}
-	}
-	if len(cands) == 0 {
-		return
-	}
-	sort.Slice(cands, func(i, j int) bool { return cands[i].attr < cands[j].attr })
-	c := cands[nr.Intn(len(cands))]
-	// A rejected value distinct from the user's real value.
-	rejected := c.self
-	for tries := 0; tries < 8 && rejected == c.self; tries++ {
-		rejected = c.pool[nr.Intn(len(c.pool))]
-	}
-	if rejected == c.self {
-		return
-	}
-	sess := opts.Sessions / 2
-	stmt := negatedStmts[nr.Intn(len(negatedStmts))]
-	ack := negatedAcks[nr.Intn(len(negatedAcks))]
-	p.Facts = append(p.Facts, Fact{
-		ID:        "f-negated-" + c.attr,
-		Kind:      KindNegated,
-		Entity:    "self-hyp",
-		Attribute: c.attr,
-		Value:     rejected,
-		Display:   rejected,
-		Session:   sess,
-		Seq:       nextSeqFor(p),
-		UserText:  fill(stmt, rejected),
-		AsstText:  ack,
-	})
-}
-
-// nextSeqFor returns a Seq after every existing fact's Seq (the negated
-// distractor lands last in sequence; its exact position does not matter since it
-// is never a temporal/chain participant).
-func nextSeqFor(p *Plan) int {
-	max := 0
-	for _, f := range p.Facts {
-		if f.Seq > max {
-			max = f.Seq
-		}
-	}
-	return max + 1
 }
 
 // opinionStmts/opinionAcks phrase BOTH a to-be-reversed opinion's original
@@ -1271,73 +1078,36 @@ var (
 	opinionAcks  = []string{"%s sounds like a joy.", "Great that you enjoy %s."}
 )
 
-// reversalStmts phrase a change-of-heart about a hobby using SENTIMENT rather
-// than the grader's cessation lexicon (no "no longer"/"gave up"/"quit"/"gone
-// off"/"stopped"/"used to"/"anymore"), so a token-grepping parser cannot
-// classify reversal-vs-standing lexically. A reader distinguishes the negative
-// stance here from the positive opinionStmts. See the reversal fact above.
-var reversalStmts = []string{
-	"These days %s just leaves me cold.",
-	"I've lost the spark for %s, honestly.",
-	"%s doesn't appeal to me the way it once did.",
-	"I've drifted away from %s lately.",
-	"My enthusiasm for %s has faded completely.",
-	"Somehow %s just isn't fun for me now.",
-}
-
-// reversalAcks acknowledge the cooled stance without leaking a cessation token.
-var reversalAcks = []string{
-	"Sorry to hear %s has lost its appeal.",
-	"Understood — %s isn't really for you these days.",
-	"Noted that %s doesn't do it for you now.",
-}
-
 // recurringSpec scripts a topic the user mentions repeatedly. label is the spoken
 // noun phrase (appears in every mention); asks are the count-question phrasings
 // (askVariant picks one per seed, so the aggregation ask is not mono-phrased).
 type recurringSpec struct {
 	attr  string
 	label string
-	// coref is a short anchored referent for the 2nd+ mentions: it lets a reader
-	// resolve the coreference chain WITHOUT repeating the full label, so a
-	// literal-label counter (the V4 exploit) sees the label once and undercounts.
-	coref string
 	asks  []string
 }
 
 var recurringSpecs = []recurringSpec{
-	{"recur_backpain", "my ongoing back pain", "my back", []string{
+	{"recur_backpain", "my ongoing back pain", []string{
 		"How many separate times have I brought up my ongoing back pain?",
 		"Across all our chats, on how many occasions has my ongoing back pain come up?",
 		"Count the distinct times I've complained to you about my ongoing back pain.",
 	}},
-	{"recur_account", "the Barton account", "that account", []string{
+	{"recur_account", "the Barton account", []string{
 		"How many separate times have I mentioned the Barton account?",
 		"On how many distinct occasions has the Barton account come up with me?",
 		"Count the separate times I've raised the Barton account with you.",
 	}},
-	{"recur_starter", "my sourdough starter", "the starter", []string{
+	{"recur_starter", "my sourdough starter", []string{
 		"How many times have I brought up my sourdough starter?",
 		"On how many separate occasions have I mentioned my sourdough starter?",
 		"Count how many different times my sourdough starter has come up.",
 	}},
-	{"recur_thesis", "my thesis revisions", "the revisions", []string{
+	{"recur_thesis", "my thesis revisions", []string{
 		"How many separate times did I mention my thesis revisions?",
 		"On how many distinct occasions have my thesis revisions come up?",
 		"Count the separate times I've talked about my thesis revisions.",
 	}},
-}
-
-// recurringCorefTmpls phrase a follow-up mention of the recurring topic using a
-// short coreferent (%s = spec.coref), never the full label, so the distinctive
-// label string appears exactly once across the K mentions.
-var recurringCorefTmpls = []string{
-	"%s was playing up again today.",
-	"%s came up once more this week.",
-	"Had to deal with %s yet again.",
-	"%s was on my mind again.",
-	"Ran into %s again, unfortunately.",
-	"%s reared its head one more time.",
 }
 
 // recurringAskFor returns a seed-keyed count-question phrasing for a
