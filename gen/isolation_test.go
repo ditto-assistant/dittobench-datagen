@@ -23,6 +23,12 @@ func TestGenerateIsolationStructure(t *testing.T) {
 
 	sawA, sawB := false, false
 	for _, sc := range iso.Cases {
+		// The suite also carries the cross-user LIFECYCLE probe (B3), whose cases
+		// are lifecycle-typed by design: they mutate under A and read under B.
+		// They are covered by gen/crossuser_test.go.
+		if xuNoun(sc.Case.Question) != "" {
+			continue
+		}
 		if sc.Case.QuestionType != "isolation" {
 			t.Fatalf("case %s: want type isolation, got %q", sc.Case.ID, sc.Case.QuestionType)
 		}
@@ -53,6 +59,11 @@ func TestIsolationCasesHaveConflictingValue(t *testing.T) {
 	sCur := currentScalars(persona.BuildPlan(seed^isolationSalt, isolationOpts()))
 
 	for _, sc := range iso.Cases {
+		// Cross-user lifecycle cases (B3) key off a coined token, not a persona
+		// attribute, so the conflict-axis check below does not apply to them.
+		if xuNoun(sc.Case.Question) != "" {
+			continue
+		}
 		// The wire ID is opaque (no attribute); the validator-internal QuestionID
 		// still names the conflict axis ("iso-a-<attr>").
 		attr := attrFromISOQID(sc.Case.QuestionID)

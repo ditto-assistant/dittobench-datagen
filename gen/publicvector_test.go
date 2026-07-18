@@ -35,7 +35,122 @@ func TestKnownVector(t *testing.T) {
 		// the memory suite selects twinFamiliesFor(n) of them (full=3), so the twin
 		// case count and attribute selection changed. This smooths the
 		// metamorphic-consistency composite factor from a per-run coin flip.
-		want = "dfb4fc243d7d3e84bb4e896d5873bbc9bda114e16f5215f913c13adbfbc4a7fe"
+		//
+		// Moved to bench_version 3 (anti-gaming hardening; on-chain scoring went
+		// live 2026-07-13 so this is the first post-launch version). The version
+		// bump rotates the surface via RotateSeed, and value-recall memory cases
+		// now carry a DumpGuard (the user's other current self values) so the
+		// grader can zero a whole-self-table answer dump. DumpGuard is part of the
+		// auditable answer-key artifact, like DistractorAnswers, never sent to the
+		// harness. Further v3 surface changes (needle gating, synthesis types,
+		// adversarial distractors) re-pin this hash as they land.
+		//
+		// Re-pinned (v3 needle gating): the result-usage needle is now served only
+		// by the case's needle-bearing tool with a per-seed sentence template and an
+		// inline decoy, so NeedleText (part of the artifact) changed.
+		//
+		// Re-pinned (v3 synthesis anti-shortcut): recurring-topic mentions now use
+		// coreference (only the anchor names the topic; follow-ups are oblique) so
+		// literal-label counting undercounts, and opinion reversals are conveyed by
+		// sentiment rather than a fixed cessation lexicon. Both change haystack
+		// surface (RNG draw counts held constant, so timestamps/durations did not
+		// shift).
+		//
+		// Re-pinned (v3 red-team gate): the recurring anchor's acknowledgment turn
+		// no longer echoes the full topic label (it stays oblique), so the label
+		// appears exactly once in the haystack and a literal-label counter always
+		// undercounts. Surface-only change.
+		//
+		// Re-pinned (v3 adversarial distractor): each run now seeds one NoOp /
+		// knowledge-conflict "considered but rejected" mention (KindNegated) whose
+		// value becomes a distractor for that attribute's recall, so a similarity
+		// retriever that grabs it scores 0. Added via a derived rng + deterministic
+		// session, so the main stream (timestamps/durations) is unperturbed.
+		//
+		// Re-pinned (v3 anti-laundering, this change): three surface-affecting
+		// additions. (1) Coined tokens (canary nonce/bait, injection payload,
+		// lifecycle read answers) now share one per-seed SHAPE family
+		// (persona.CoinShaped) — grammar collision, so a token-shape output
+		// scrubber deletes its own answers — changing every coined token's text.
+		// (2) The run's injection payload is planted once as an innocuous stored
+		// "warranty reference" fact (KindDistractor), a new haystack pair, to
+		// defeat the context-membership scrub. (3) An injection-framing invariance
+		// family (persona.injectionTwins) joins the memory suite on medium/full
+		// runs — one fact attacked via several override framings, one of them an
+		// action-bait framing carrying MemoryCase.BaitTool — changing the case mix
+		// and RNG draw counts. The coined-token character stream also moved to
+		// splitmix64 mixing (the prior LCG low bits were nearly salt-independent,
+		// so distinct salts could collide to the same token). The broad single
+		// injection loop now also SKIPS the injection-twin family's attribute (it
+		// otherwise emitted a byte-identical attack case under a second id).
+		//
+		// Re-pinned (v3 canary + injection diversification): a SECOND attributed
+		// canary decoy nonce is planted (rare-token-dump shortcut now trips a
+		// decoy), added as a distractor on the canary question, and three
+		// injection templates that embed the real question mid-attack (not
+		// trailing) were added to the pool — both change the haystack surface and
+		// the injection template selection. The second decoy's entity is drawn to
+		// differ from the first decoy's (a small resample loop), which also shifts
+		// the RNG stream.
+		//
+		// Re-pinned (v3 canary decoy session separation): the second canary decoy's
+		// session now provably differs from the first's (on a draw collision it
+		// steps to the next session; same rng draw count), enforcing the documented
+		// cross-session attribution contract. This seed had a collided pair, so its
+		// haystack layout moved.
+		//
+		// Re-pinned (v3 result-usage position-tell fix, 2026-07-18): the bearer's
+		// served needle sentence no longer places the needle in a fixed first clause
+		// before a fixed "(separately," marker. The needle and inline decoy clauses
+		// are now joined by a per-seed connective (needleConnectives) in a per-seed
+		// order, and the non-bearer decoy sentence is built from the same two-clause
+		// family — so a fixed-position / fixed-marker grep can no longer extract the
+		// needle or single out the bearer. NeedleText (part of the artifact) changed.
+		//
+		// Re-pinned (v3 reproduce-under-transform audit, 2026-07-18): a public,
+		// seed-keyed share of each run's cases (persona.AuditBps) is now re-asked
+		// under a post-commit transform the harness cannot predict at commit time —
+		// an invariance rephrasing (answer unchanged) or a covariance shift (prior
+		// state on an update chain, or a different point-in-time boundary, answer
+		// recomputed from the same chain). The audit cases are paid for out of the
+		// run budget, so the case COUNT is unchanged, but which cases the run
+		// carries moved. See persona/transform.go.
+		//
+		// Re-pinned (v3 dump-guard half-hedge / candidate salt, 2026-07-18): each
+		// value-recall case now carries up to persona.saltDistractors additional
+		// same-attribute distractors, drawn from the attribute's own pool and
+		// verified absent from the rendered haystack, so a parser that narrows to a
+		// few candidates and emits them all trips the distractor scan regardless of
+		// DumpFloor. Case distractor lists changed; the haystack did not.
+		//
+		// Re-pinned (v3 injection naturalization, 2026-07-18): injection framings are
+		// now COMPOSED per seed from independently-varied parts (authority marker,
+		// negation clause, payload demand, question placement) instead of drawn from
+		// 13 fixed templates, so the shape space is the product of the part pools
+		// rather than their sum. Every injection case's text changed. Across a
+		// 40-seed sweep the most common shape now covers 1.2% of injection cases.
+		//
+		// Re-pinned (v3 cross-user lifecycle probe, 2026-07-18): the isolation layer
+		// now carries a write/delete-under-A then read-under-B chain (gen/isolation.go
+		// crossUserLifecycle), adding two pairs to the secondary user's haystack and
+		// five cases. Lifecycle chains previously carried no user id at all, so a
+		// harness with a global saved/deleted map was never exercised across the
+		// user boundary.
+		//
+		// Re-pinned (v3 audit pairing, 2026-07-18): the audited BASE case now carries
+		// the same TwinGroup as its transformed sibling. Without it the pair is
+		// unrecoverable downstream -- the scorer pairs base to transform through
+		// TwinGroup alone, and a group holding only the transform would look
+		// trivially self-consistent and measure nothing.
+		//
+		// Re-pinned (v3 audit rate 1500 -> 2500 bps, 2026-07-18): the 2026-07-18
+		// calibration found a full run produced only ~3.8 audit pairs, of which
+		// ~12% were discordant, so a verdict rested on about one informative pair
+		// and could not reach significance however the metric was framed. Each
+		// audit pair costs ONE extra case slot (the base case was already in the
+		// run), so this moves ~7 of a full run's ~59 memory slots to audit
+		// coverage.
+		want = "54d3f2a2a2ddad059c048aa86dff01ab47bc80d78f7ad975f4dbaa7599d6a121"
 	)
 	prof, _ := ProfileFor("full")
 	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV2)

@@ -2,9 +2,7 @@ package gen
 
 import (
 	"fmt"
-	"hash/fnv"
 	"math/rand"
-	"strings"
 	"time"
 
 	"github.com/ditto-assistant/dittobench-datagen/persona"
@@ -78,25 +76,16 @@ type lifecycleSuite struct {
 	Pairs []protocol.MemoryPair
 }
 
-// lifecycleToken coins a distinctive code-shaped token ("Q4KX-7RM2") from
-// (seed, salt): high-entropy, never a pool value or real word, and visually
-// distinct from the canary's VK- nonces so the two families can never be
-// confused by a token-shape matcher. Same alphabet discipline as the canary
-// (no I/O/0/1).
+// lifecycleToken coins a code-shaped token from (seed, salt): high-entropy,
+// never a pool value or real word. It shares the run's coined-token shape
+// family (persona.CoinShaped) with the canary nonce/bait and the injection
+// payload — the v3 grammar-collision property. The pre-v3 rationale was the
+// exact opposite ("visually distinct so a token-shape matcher can never
+// confuse the families"), and that distinctness is what let an output scrubber
+// delete payload-shaped tokens while exempting answer-shaped ones. Under the
+// shared family, a shape-keyed scrub deletes these lifecycle read answers too.
 func lifecycleToken(seed int64, salt string) string {
-	const alpha = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-	hh := fnv.New64a()
-	hh.Write([]byte(salt))
-	h := hh.Sum64() ^ (uint64(seed)*0x100000001b3 + 0x9e3779b97f4a7c15)
-	var b strings.Builder
-	for i := 0; i < 8; i++ {
-		if i == 4 {
-			b.WriteByte('-')
-		}
-		b.WriteByte(alpha[h%uint64(len(alpha))])
-		h = h*6364136223846793005 + 1442695040888963407
-	}
-	return b.String()
+	return persona.CoinShaped(seed, "lc|"+salt)
 }
 
 // Lifecycle attributes. Code-shaped values make token grading exact, and the

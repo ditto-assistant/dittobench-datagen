@@ -9,6 +9,13 @@ import (
 // used only for display and release metadata; canonical generation must always
 // receive an explicit version so historical datasets remain reproducible after
 // a release advances.
+//
+// v2 is frozen: it is what on-chain scoring has been running since 2026-07-13,
+// and its bytes must keep regenerating identically so any already-scored run
+// stays auditable. v3 is the ANTI-GAMING release -- dump-guard grading, needle
+// gating, adversarial distractors, composed injection framings, the cross-user
+// lifecycle probe, and the reproduce-under-transform audit. Every one of those
+// is gated on the version, so adding hardening never disturbs v2's bytes.
 const (
 	BenchVersionV2      = 2
 	BenchVersionV3      = 3

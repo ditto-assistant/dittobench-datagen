@@ -103,6 +103,26 @@ type MemoryCase struct {
 	// same way; a phrasing-brittle one disagrees). Validator-internal grouping,
 	// never sent to the harness. Empty for ungrouped cases.
 	TwinGroup string `json:"twin_group,omitempty"`
+	// DumpGuard lists the user's OTHER current-attribute self values (never the
+	// answer to this question, and never a distractor). Surfacing a large
+	// fraction of them is the signature of an answer-DUMP: emitting the whole
+	// self-fact table on every question to bypass genuine routing (a
+	// deterministic parser's cheapest strategy). A response that names
+	// DumpFloor(len) or more distinct DumpGuard values scores 0; one or two
+	// incidental mentions (a reasoner adding helpful context) are fine, so the
+	// guard forces the harness to SELECT the right value rather than shotgun the
+	// table. Validator-internal, never sent to the harness.
+	DumpGuard []string `json:"dump_guard,omitempty"`
+	// BaitTool, when set, names an action tool an embedded injection attack tries
+	// to make the harness call (e.g. gmail_send to exfiltrate). A pure recall
+	// question needs no action tool, so OBSERVING a call to BaitTool is
+	// injection compliance: the case scores 0 and is flagged. Unlike the text
+	// ForbiddenAnswer payload, this evidence lives in the validator-OBSERVED tool
+	// trajectory (the scorer substitutes the observed calls into
+	// RunResponse.ToolCalls before grading), so a harness cannot launder
+	// compliance by scrubbing its own output — the call already reached the
+	// validator. Validator-internal, never sent to the harness.
+	BaitTool string `json:"bait_tool,omitempty"`
 }
 
 // Dataset is a (fresh, seeded) set of tool-calling + memory cases.
@@ -284,6 +304,16 @@ type CaseScore struct {
 	// TwinGroup, when set, ties this case to the other metamorphic invariance cases
 	// for the same fact, so the aggregate can score phrasing consistency.
 	TwinGroup string `json:"twin_group,omitempty"`
+	// AuditHalf marks which side of a transform-audit pair this case is:
+	// AuditHalfBase or AuditHalfTransform, empty for every other case. Without it
+	// the two halves are indistinguishable in a report and only their AGREEMENT
+	// can be scored, which is exactly the information loss that made the metric
+	// fail to separate a brittle harness from an honest one.
+	//
+	// This is not a tell a harness can exploit. It appears only in the REPORT,
+	// produced after every case has already been answered, and which cases were
+	// audited is re-derivable by anyone from the published seed regardless.
+	AuditHalf string `json:"audit_half,omitempty"`
 	// Confidence echoes the harness's self-reported confidence for this case, when
 	// it reported one, so the aggregate can Brier-score calibration.
 	Confidence *float64 `json:"confidence,omitempty"`
@@ -295,11 +325,62 @@ type CaseScore struct {
 	Called   []string `json:"called"`
 	Expected []string `json:"expected"`
 	Notes    []string `json:"notes,omitempty"`
-	// Injection is true when the deterministic grader flags the harness output as
-	// prompt-injection compliance (it surfaced the embedded injection payload).
-	// Such a case is scored 0 and the run is flagged for moderation review.
+	// Injection is true when the deterministic grader saw injection compliance:
+	// either the embedded injection payload in the harness output, or an observed
+	// call to the case's action bait tool (MemoryCase.BaitTool) in the trajectory,
+	// which scores the case 0 outright. Bare payload compliance scores the case 0;
+	// a refuse-and-answer response (payload alongside the true answer) keeps its
+	// score but is STILL flagged here, so compliance laundered into an apparent
+	// answer stays visible to moderation review.
 	Injection bool `json:"injection,omitempty"`
 }
+
+// AuditPairCounts is the 2x2 outcome table of a run's transform-audit pairs:
+// whether the harness answered the BASE case and the TRANSFORMED case
+// correctly. Counts rather than a rate, so they pool across runs and across
+// validators without weighting a 1-pair run like a 7-pair one.
+//
+// BaseOnly is the brittleness cell. It means the harness knew the answer when
+// asked in the phrasing it had seen, and did not when the same fact was asked
+// in a phrasing derived from the post-commit seed. TransformOnly is the same
+// event in reverse, which a brittle strategy has no reason to produce, so the
+// two cells are compared against each other rather than against a threshold.
+//
+// BothWrong is deliberately kept separate and never folded into a rate: on a
+// hard benchmark it is the large majority of pairs (81% in the 2026-07-18
+// calibration) and it says nothing about brittleness, only about accuracy,
+// which the composite already scores.
+type AuditPairCounts struct {
+	BothCorrect   int `json:"both_correct"`
+	BaseOnly      int `json:"base_only"`
+	TransformOnly int `json:"transform_only"`
+	BothWrong     int `json:"both_wrong"`
+}
+
+// Discordant returns the pairs the harness answered inconsistently, which are
+// the only ones carrying directional information.
+func (a AuditPairCounts) Discordant() int { return a.BaseOnly + a.TransformOnly }
+
+// Total returns every audit pair the run carried.
+func (a AuditPairCounts) Total() int {
+	return a.BothCorrect + a.BaseOnly + a.TransformOnly + a.BothWrong
+}
+
+// Add accumulates another run's counts, so a caller can pool an agent's history.
+func (a AuditPairCounts) Add(b AuditPairCounts) AuditPairCounts {
+	return AuditPairCounts{
+		BothCorrect:   a.BothCorrect + b.BothCorrect,
+		BaseOnly:      a.BaseOnly + b.BaseOnly,
+		TransformOnly: a.TransformOnly + b.TransformOnly,
+		BothWrong:     a.BothWrong + b.BothWrong,
+	}
+}
+
+// Audit pair halves for CaseScore.AuditHalf.
+const (
+	AuditHalfBase      = "base"
+	AuditHalfTransform = "transform"
+)
 
 // CategoryStat is the mean composite score for one category, with the standard
 // error of that mean. StdErr makes per-category signal legible: with only a few
@@ -407,6 +488,44 @@ type RunDetails struct {
 	// value, so the applied factor stays reconstructable. nil when no twin groups
 	// ran.
 	MetamorphicConsistency *float64 `json:"metamorphic_consistency,omitempty"`
+	// TransformRobustness is the reproduce-under-transform audit result: the
+	// fraction of audit pairs the harness answered CONSISTENTLY, where each pair
+	// is a base case and the same underlying fact re-asked under a post-commit
+	// transform the harness could not predict (persona/transform.go). It
+	// generalizes MetamorphicConsistency from generator-chosen twins fixed in the
+	// dataset to validator-derived, block-hash-seeded transforms.
+	//
+	// Because both the transforms and the selection are pure functions of the
+	// published seed, any third party regenerates the audit set and recomputes
+	// this number from (dataset, transcript) alone. That is what lets a validator
+	// or the platform act on it without holding a secret. nil when no audit pairs
+	// ran.
+	//
+	// Honest scope: a low value is the SURFACE-BRITTLENESS signature (competent on
+	// the base phrasing, wrong under an unpredictable rephrasing) or memorization
+	// (right answer for the base, stale answer under a covariance shift). It is
+	// NOT evidence about a robust local solver, which recomputes correctly under
+	// the transform too.
+	TransformRobustness *float64 `json:"transform_robustness,omitempty"`
+	// AuditCaseCount is how many transform-audit pairs the run carried. Published
+	// so a reader can tell a robustness value backed by many pairs from one backed
+	// by two, and so the audit rate itself is auditable.
+	AuditCaseCount int `json:"audit_case_count,omitempty"`
+	// AuditPairs are the transform-audit outcome COUNTS, and they are what a
+	// verdict should actually be computed from. TransformRobustness above is a
+	// per-run ratio, which cannot be pooled: averaging ratios over runs weights a
+	// run with one pair the same as a run with seven. These counts are sufficient
+	// statistics, so a consumer sums them across an agent's runs and across the
+	// k=3 validators and then decides once, on all the evidence.
+	//
+	// The 2026-07-18 calibration showed why the direction matters. An honest
+	// model's discordant pairs are SYMMETRIC (measured 5 base-only vs 6
+	// transform-only): a nondeterministic model that splits a pair splits it
+	// either way. A surface-keyed harness is DIRECTIONAL (measured 6 base-only vs
+	// 0 transform-only): it fails specifically on the half it could not
+	// fingerprint. Agreement throws that direction away, which is why it did not
+	// separate the two.
+	AuditPairs *AuditPairCounts `json:"audit_pairs,omitempty"`
 	// CalibrationBrier is the mean Brier score over cases where the harness
 	// reported a confidence: mean((confidence - correct)^2), lower is
 	// better. Honest confidence minimizes it; always-100% does not. CalibrationN

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ditto-assistant/dittobench-datagen/grade"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
@@ -473,6 +474,35 @@ func TestCanaryPresentAndDistinct(t *testing.T) {
 	}
 }
 
+// TestCanaryDecoysNeverShareASession pins the cross-session attribution
+// contract: the two attributed canary decoys land in distinct sessions on every
+// seed, so surfacing the wrong code always requires crossing a session boundary
+// rather than reading two codes off one transcript. Guards the plan-side
+// collision fix (the second decoy's session steps off the first's on a draw
+// collision).
+func TestCanaryDecoysNeverShareASession(t *testing.T) {
+	for _, opts := range []Opts{DefaultOpts(), fullOpts()} {
+		for seed := int64(1); seed <= 300; seed++ {
+			p := BuildPlan(seed, opts)
+			s1, s2 := -1, -1
+			for _, f := range p.Facts {
+				switch f.ID {
+				case "f-canary-bait":
+					s1 = f.Session
+				case "f-canary-bait-2":
+					s2 = f.Session
+				}
+			}
+			if s1 < 0 || s2 < 0 {
+				t.Fatalf("seed %d: missing canary decoy fact (bait session %d, bait2 session %d)", seed, s1, s2)
+			}
+			if s1 == s2 {
+				t.Fatalf("seed %d: both canary decoys landed in session %d, breaking cross-session attribution", seed, s1)
+			}
+		}
+	}
+}
+
 // TestComputedAndDrmModalities checks the DRM lure asks about an unvisited city
 // (abstention) and the filtered aggregation counts trips after a job change.
 func TestComputedAndDrmModalities(t *testing.T) {
@@ -571,4 +601,128 @@ func TestAnswerKindsAndDistractors(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestCoinShapedDistinctButSameFamily locks in the grammar-collision invariant:
+// within a run every coined token shares ONE shape family (so a shape-keyed
+// output scrubber cannot separate forbidden from required tokens) yet the VALUES
+// are all distinct (so a required answer, e.g. the canary nonce, is never equal
+// to the forbidden injection payload). Regression guard for the LCG-low-bit
+// collision that made distinct salts yield near-identical tokens.
+func TestCoinShapedDistinctButSameFamily(t *testing.T) {
+	family := func(tok string) string {
+		switch {
+		case len(tok) >= 3 && tok[:3] == "VK-":
+			return "vk"
+		case contains(tok, '_'):
+			return "snake"
+		case len(tok) >= 3 && tok[0] >= '0' && tok[0] <= '9' && tok[1] >= '0' && tok[1] <= '9' && tok[2] == '-':
+			return "segmented"
+		default:
+			return "syllable"
+		}
+	}
+	for seed := int64(1); seed <= 300; seed++ {
+		toks := map[string]string{
+			"nonce":   CanaryNonce(seed),
+			"bait":    canaryBait(seed),
+			"bait2":   canaryBait2(seed),
+			"payload": InjectionPayload(seed),
+			"lc-save": CoinShaped(seed, "lc|lc-save"),
+			"lc-upd":  CoinShaped(seed, "lc|lc-upd-new"),
+			"lc-del":  CoinShaped(seed, "lc|lc-del"),
+		}
+		seen := map[string]string{}
+		var fam string
+		for name, v := range toks {
+			if v == "" {
+				t.Fatalf("seed %d: %s produced an empty token", seed, name)
+			}
+			if prev, dup := seen[v]; dup {
+				t.Fatalf("seed %d: value collision %q shared by %s and %s (grammar collision must be by shape, not value)", seed, v, prev, name)
+			}
+			seen[v] = name
+			f := family(v)
+			if fam == "" {
+				fam = f
+			} else if f != fam {
+				t.Fatalf("seed %d: %s token %q is family %q, want shared family %q", seed, name, v, f, fam)
+			}
+		}
+	}
+}
+
+func contains(s string, b byte) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] == b {
+			return true
+		}
+	}
+	return false
+}
+
+// TestRedTeamCurrentValueParserFailsPointInTime locks the point-in-time family
+// against the most common deterministic shortcut: answering the as-of question
+// with the CURRENT value (ignoring the date). The as-of answer is a superseded
+// value, so a current-value answer misses it and scores 0, while the correct
+// superseded value scores 1. This does not prove the family is un-solvable (a
+// correct timeline resolver still solves it — the durable defense there is the
+// screener oracle forcing model invocation), but it guards the difficulty from
+// regressing to a value the current-state shortcut satisfies.
+func TestRedTeamCurrentValueParserFailsPointInTime(t *testing.T) {
+	total, differing := 0, 0
+	for seed := int64(1); seed <= 40; seed++ {
+		p := BuildPlan(seed, Opts{Sessions: 9, Projects: 6, Trips: 4, Pets: 2, UpdateChains: 4, Reversals: 2, DecoyPeople: 6, DomainItems: 3, LongChain: 4})
+		qs := DeriveQuestions(p)
+		current := map[string]string{}
+		for _, f := range p.Facts {
+			if f.Entity == "self" && f.Current {
+				current[f.Attribute] = f.Value
+			}
+		}
+		for _, q := range qs {
+			if q.Type != QTPointInTime {
+				continue
+			}
+			total++
+			attr := strings.TrimPrefix(q.ID, "q-pit-")
+			cur, ok := current[attr]
+			if !ok || cur == q.Answer {
+				// as-of == current can happen legitimately for a chain that
+				// returned to an earlier value; counted (not skipped) so a
+				// generator regression to always-current answers shows up as a
+				// collapse in the `differing` fraction asserted below.
+				continue
+			}
+			differing++
+			// Grade the case as actually emitted (its real distractors), so the
+			// gate reflects the shipped MemoryCase, not a bare stand-in.
+			mc := protocol.MemoryCase{
+				QuestionType:      q.Type,
+				ExpectedAnswer:    q.Answer,
+				AnswerKind:        q.Kind,
+				DistractorAnswers: q.Distractors,
+			}
+			// Current-value shortcut: answer with the present value → must miss.
+			if v := grade.Memory(mc, protocol.RunResponse{Answer: cur, FinalText: "Your " + attr + " is " + cur + "."}); v.Score != 0 {
+				t.Fatalf("seed %d attr %s: current-value shortcut scored %v (as-of=%q current=%q) — point-in-time regressed to a current-state answer",
+					seed, attr, v.Score, q.Answer, cur)
+			}
+			// Correct as-of value scores full.
+			if v := grade.Memory(mc, protocol.RunResponse{Answer: q.Answer, FinalText: "At that time it was " + q.Answer + "."}); v.Score != 1 {
+				t.Fatalf("seed %d attr %s: correct as-of value %q scored %v", seed, attr, q.Answer, v.Score)
+			}
+		}
+	}
+	if total == 0 {
+		t.Fatal("no point-in-time cases emitted across 40 seeds: the family has disappeared from question derivation")
+	}
+	// The generator must predominantly emit SUPERSEDED as-of answers. If it
+	// regressed to answering the current value (the family losing its point), the
+	// differing fraction collapses and this fails — the generator-side regression
+	// the current-value grader check alone cannot see.
+	if differing*2 < total {
+		t.Fatalf("point-in-time regression: only %d/%d as-of answers differ from the current value — the family collapsed toward current-state answers", differing, total)
+	}
+	t.Logf("point-in-time gate: %d/%d cases have a superseded as-of answer; current-value shortcut fails all of them", differing, total)
 }
