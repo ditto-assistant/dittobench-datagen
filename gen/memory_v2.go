@@ -59,16 +59,26 @@ type MemorySuite struct {
 // and questions come from the plan's deterministic template surfaces + seeded
 // phrasing variants, not a paraphrase pass.
 func GenerateMemorySuite(r *rand.Rand, seed int64, n int, nWaves int, rawPairsFrac float64) MemorySuite {
+	suite, _ := GenerateMemorySuiteForVersion(r, seed, n, nWaves, rawPairsFrac, protocol.BenchVersionV2)
+	return suite
+}
+
+// GenerateMemorySuiteForVersion generates memory data for an explicit
+// benchmark contract. The caller must seed r with the same version.
+func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, rawPairsFrac float64, benchVersion int) (MemorySuite, error) {
 	if nWaves < 1 {
 		nWaves = 1
 	}
 	suite := MemorySuite{SeedingWaves: nWaves}
 	if n <= 0 {
 		suite.Waves = []protocol.SeedRequest{{UserID: "miner"}}
-		return suite
+		return suite, nil
 	}
 
-	plan := persona.BuildPlan(seed, personaOptsFor(n))
+	plan, err := persona.BuildPlanForVersion(seed, personaOptsFor(n), benchVersion)
+	if err != nil {
+		return MemorySuite{}, err
+	}
 	pairs, evidence := RenderHaystack(plan)
 
 	questions := persona.DeriveQuestions(plan)
@@ -235,7 +245,7 @@ func GenerateMemorySuite(r *rand.Rand, seed int64, n int, nWaves int, rawPairsFr
 	if len(lc.Pairs) > 0 {
 		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, lc.Pairs...)
 	}
-	return suite
+	return suite, nil
 }
 
 // GenerateMemoryV2 is the single-wave, all-Tier-A view of the suite, retained

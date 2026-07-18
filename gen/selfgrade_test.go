@@ -16,7 +16,10 @@ import (
 func TestCanonicalAnswersSelfGrade(t *testing.T) {
 	prof, _ := ProfileFor("full")
 	for seed := int64(1); seed <= 30; seed++ {
-		a := GenerateDataset(seed, prof)
+		a, err := GenerateDataset(seed, prof, protocol.BenchVersionV2)
+		if err != nil {
+			t.Fatalf("generate: %v", err)
+		}
 		for _, c := range a.MemoryCases {
 			resp := protocol.RunResponse{FinalText: c.ExpectedAnswer}
 			if c.AnswerKind == protocol.AnswerDecline {

@@ -47,14 +47,27 @@ func isolationOpts() persona.Opts {
 // The secondary haystack is TEMPLATE-rendered (no LLM): it is contamination, so
 // it adds zero generator token cost. isoCases<=0 returns an empty suite.
 func GenerateIsolation(seed int64, primaryN, nWaves, isoCases int) IsolationSuite {
+	suite, _ := GenerateIsolationForVersion(seed, primaryN, nWaves, isoCases, protocol.BenchVersionV2)
+	return suite
+}
+
+// GenerateIsolationForVersion builds the isolation layer for an explicit
+// benchmark contract.
+func GenerateIsolationForVersion(seed int64, primaryN, nWaves, isoCases, benchVersion int) (IsolationSuite, error) {
 	if isoCases <= 0 {
-		return IsolationSuite{}
+		return IsolationSuite{}, nil
 	}
 	if nWaves < 1 {
 		nWaves = 1
 	}
-	pPlan := persona.BuildPlan(seed, personaOptsFor(primaryN))
-	sPlan := persona.BuildPlan(seed^isolationSalt, isolationOpts())
+	pPlan, err := persona.BuildPlanForVersion(seed, personaOptsFor(primaryN), benchVersion)
+	if err != nil {
+		return IsolationSuite{}, err
+	}
+	sPlan, err := persona.BuildPlanForVersion(seed^isolationSalt, isolationOpts(), benchVersion)
+	if err != nil {
+		return IsolationSuite{}, err
+	}
 
 	// Secondary haystack: template-rendered (non-LLM), fully Tier-A (prepared
 	// subjects) so it is retrievable: a cross-graph leak actually surfaces it.
@@ -127,7 +140,7 @@ func GenerateIsolation(seed int64, primaryN, nWaves, isoCases int) IsolationSuit
 		i++
 	}
 
-	return IsolationSuite{SecondaryWave: secondary, Cases: cases}
+	return IsolationSuite{SecondaryWave: secondary, Cases: cases}, nil
 }
 
 // currentScalars maps each current (latest-value-wins) scalar self attribute to

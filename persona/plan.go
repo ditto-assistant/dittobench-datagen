@@ -112,10 +112,11 @@ type Session struct {
 // the session scripts that introduce them. It is a pure function of (seed,
 // Opts); see BuildPlan.
 type Plan struct {
-	Seed     int64
-	Name     string
-	Facts    []Fact
-	Sessions []Session
+	Seed         int64
+	BenchVersion int
+	Name         string
+	Facts        []Fact
+	Sessions     []Session
 }
 
 // FactByID returns the fact with the given ID (and whether it was found).
@@ -530,11 +531,23 @@ func allScalarSpecs() []scalarSpec {
 // wall clock, no crypto-rand, and every iteration is over an ordered slice (no
 // Go map range), so the same inputs yield a byte-identical plan.
 func BuildPlan(seed int64, opts Opts) *Plan {
+	plan, _ := BuildPlanForVersion(seed, opts, protocol.BenchVersionV2)
+	return plan
+}
+
+// BuildPlanForVersion builds a plan using an explicit immutable generation
+// contract. Canonical generation uses this entry point; BuildPlan remains a v2
+// compatibility wrapper for existing library callers.
+func BuildPlanForVersion(seed int64, opts Opts, benchVersion int) (*Plan, error) {
 	opts = opts.normalized()
 	// Seed the plan RNG from the version-rotated seed so the persona surface
 	// rotates per bench_version (protocol.RotateSeed); still a pure function of
 	// (seed, bench_version). Seed-pure answer material keeps using the raw seed.
-	r := rand.New(rand.NewSource(protocol.RotateSeed(seed)))
+	rotated, err := protocol.RotateSeedForVersion(seed, benchVersion)
+	if err != nil {
+		return nil, err
+	}
+	r := rand.New(rand.NewSource(rotated))
 
 	// List sizes are drawn from a seeded range around each Opts knob so the
 	// count/list-all/history answers vary per seed instead of being one constant
@@ -552,7 +565,7 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 	}
 
 	name := pick(r, firstNames) + " " + pick(r, lastNames)
-	p := &Plan{Seed: seed, Name: name}
+	p := &Plan{Seed: seed, BenchVersion: benchVersion, Name: name}
 
 	// Assign one professional domain (seed-derived) and fold its scalar families
 	// into the universal registry, so scalar recall / update-chain / distractor
@@ -1053,7 +1066,7 @@ func BuildPlan(seed int64, opts Opts) *Plan {
 
 	// --- assign facts to session scripts (ordered), interleaved with noise ---
 	p.Sessions = buildSessions(r, p.Facts, opts.Sessions)
-	return p
+	return p, nil
 }
 
 // opinionStmts/opinionAcks phrase BOTH a to-be-reversed opinion's original

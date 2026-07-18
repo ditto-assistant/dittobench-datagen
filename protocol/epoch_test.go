@@ -27,3 +27,32 @@ func TestRotateSeedActiveAndInjective(t *testing.T) {
 		seen[r] = s
 	}
 }
+
+func TestVersionedRotationAndEpoch(t *testing.T) {
+	const seed = int64(123456789)
+	v2, err := RotateSeedForVersion(seed, BenchVersionV2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v3, err := RotateSeedForVersion(seed, BenchVersionV3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v2 != RotateSeed(seed) {
+		t.Fatal("legacy v2 rotation changed")
+	}
+	if v2 == v3 {
+		t.Fatal("version bump did not rotate seed")
+	}
+	e2, _ := DatasetEpochForVersion(BenchVersionV2)
+	e3, _ := DatasetEpochForVersion(BenchVersionV3)
+	if !e3.After(e2) {
+		t.Fatalf("v3 epoch %s must follow v2 %s", e3, e2)
+	}
+	if _, err := RotateSeedForVersion(seed, 99); err == nil {
+		t.Fatal("unsupported rotation version accepted")
+	}
+	if _, err := DatasetEpochForVersion(99); err == nil {
+		t.Fatal("unsupported epoch version accepted")
+	}
+}

@@ -90,6 +90,16 @@ func NewRNG(seed int64) *rand.Rand {
 	return rand.New(rand.NewSource(protocol.RotateSeed(seed)))
 }
 
+// NewRNGForVersion returns the generation stream for an explicit immutable
+// benchmark contract.
+func NewRNGForVersion(seed int64, benchVersion int) (*rand.Rand, error) {
+	rotated, err := protocol.RotateSeedForVersion(seed, benchVersion)
+	if err != nil {
+		return nil, err
+	}
+	return rand.New(rand.NewSource(rotated)), nil
+}
+
 // fmtErr wraps a stage error with package context.
 func fmtErr(stage string, err error) error {
 	return fmt.Errorf("gen %s: %w", stage, err)

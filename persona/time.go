@@ -23,7 +23,15 @@ func TimeAnchor(p *Plan) time.Time {
 			maxDay = s.DayOffset
 		}
 	}
-	return protocol.DatasetEpoch.Add(-time.Duration(maxDay+TimeSlackDays) * 24 * time.Hour)
+	version := p.BenchVersion
+	if version == 0 {
+		version = protocol.BenchVersionV2
+	}
+	epoch, err := protocol.DatasetEpochForVersion(version)
+	if err != nil {
+		epoch = protocol.DatasetEpoch
+	}
+	return epoch.Add(-time.Duration(maxDay+TimeSlackDays) * 24 * time.Hour)
 }
 
 // SessionDate is the calendar start instant of session index si (day

@@ -24,8 +24,8 @@ jobs:
       - name: Determinism (same seed, same hash across two separate runs)
         run: |
           go build -o /tmp/generate ./cmd/generate
-          a=$(/tmp/generate -seed 123456789 -run-size full -sha 2>/dev/null)
-          b=$(/tmp/generate -seed 123456789 -run-size full -sha 2>/dev/null)
+          a=$(/tmp/generate -bench-version 2 -seed 123456789 -run-size full -sha 2>/dev/null)
+          b=$(/tmp/generate -bench-version 2 -seed 123456789 -run-size full -sha 2>/dev/null)
           echo "run1=$a"
           echo "run2=$b"
           if [ "$a" != "$b" ]; then echo "generator is not deterministic"; exit 1; fi
