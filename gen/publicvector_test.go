@@ -150,7 +150,7 @@ func TestKnownVector(t *testing.T) {
 		// audit pair costs ONE extra case slot (the base case was already in the
 		// run), so this moves ~7 of a full run's ~59 memory slots to audit
 		// coverage.
-		want = "54d3f2a2a2ddad059c048aa86dff01ab47bc80d78f7ad975f4dbaa7599d6a121"
+		want = "dfb4fc243d7d3e84bb4e896d5873bbc9bda114e16f5215f913c13adbfbc4a7fe"
 	)
 	prof, _ := ProfileFor("full")
 	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV2)
@@ -171,7 +171,12 @@ func TestKnownVector(t *testing.T) {
 func TestV3KnownVector(t *testing.T) {
 	const (
 		seed = int64(123456789)
-		want = "cdb0e6431b47a98492059e199dc8bd2567be00d1d299d55cdca0a67a26abb32a"
+		// v3 is the ANTI-GAMING release, so this vector covers the hardened
+		// generator: the reproduce-under-transform audit, the distractor salt,
+		// composed injection framings, and the cross-user lifecycle probe. It was
+		// re-pinned when that work landed on top of the v2/v3 contract split; v2
+		// above is unaffected, which is the property that split exists to give.
+		want = "766183922b5a56725bdf44573fc31adf05355dc80fe9654d436935363fcdb3f2"
 	)
 	prof, _ := ProfileFor("full")
 	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV3)

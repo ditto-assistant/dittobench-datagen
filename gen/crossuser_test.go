@@ -25,7 +25,10 @@ func xuNoun(q string) string {
 // Returns the mean score over the READ cases.
 func runCrossUser(t *testing.T, seed int64, perUser bool) (float64, int) {
 	t.Helper()
-	iso := GenerateIsolation(seed, 50, 3, 8)
+	iso, err := GenerateIsolationForVersion(seed, 50, 3, 8, protocol.BenchVersionV3)
+	if err != nil {
+		t.Fatalf("isolation: %v", err)
+	}
 	store := map[string]string{}
 	key := func(user, noun string) string {
 		if perUser {
@@ -103,7 +106,10 @@ func TestRedTeamGlobalMemoryMapLeaksCrossUser(t *testing.T) {
 // under the same user the case would silently degrade into an ordinary
 // single-user lifecycle chain and detect nothing.
 func TestCrossUserLifecycleIsUserScoped(t *testing.T) {
-	iso := GenerateIsolation(7, 50, 3, 8)
+	iso, err := GenerateIsolationForVersion(7, 50, 3, 8, protocol.BenchVersionV3)
+	if err != nil {
+		t.Fatalf("isolation: %v", err)
+	}
 	writes, reads := 0, 0
 	for _, sc := range iso.Cases {
 		if xuNoun(sc.Case.Question) == "" {

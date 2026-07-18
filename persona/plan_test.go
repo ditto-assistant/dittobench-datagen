@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // TestBuildPlanDeterministic is the golden test: same (seed, opts) ⇒
@@ -206,7 +208,12 @@ func marshal(t *testing.T, v any) string {
 // A missing negated fact on ANY seed is therefore a generator regression.
 func TestNegatedDistractorBecomesConfusable(t *testing.T) {
 	for seed := int64(1); seed <= 30; seed++ {
-		p := BuildPlan(seed, fullOpts())
+		// The adversarial NoOp distractor is v3-only: v2 is a frozen contract, so
+		// adding a fact to it would change bytes already scored against.
+		p, err := BuildPlanForVersion(seed, fullOpts(), protocol.BenchVersionV3)
+		if err != nil {
+			t.Fatalf("plan: %v", err)
+		}
 		var neg *Fact
 		for i := range p.Facts {
 			if p.Facts[i].Kind == KindNegated {

@@ -6,9 +6,8 @@ import (
 	"encoding/json"
 	"sort"
 
-	v2gen "github.com/ditto-assistant/dittobench-datagen/internal/v2gen/gen"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
-	"github.com/ditto-assistant/dittobench-datagen/toolexec"
+	"github.com/ditto-assistant/dittobench-datagen/internal/v2gen/toolexec"
 )
 
 // DatasetArtifact is the canonical, hashable snapshot of a fully-rendered run
@@ -63,21 +62,6 @@ type FixtureDigest struct {
 // fixtures + staged suite) and calls BuildArtifact with them, so both paths
 // produce an identical artifact for a given seed.
 func GenerateDataset(seed int64, prof Profile, benchVersion int) (DatasetArtifact, error) {
-	// v2 is a FROZEN contract, served from a snapshot of the generator as it
-	// stood when v2 shipped (internal/v2gen). It is not a conditional through
-	// the live generator: the v3 anti-gaming work perturbs the shared rng stream
-	// globally -- it moved 50 of 54 memory cases, the haystack epoch, and 18 tool
-	// fixtures -- so version conditionals through the live path would have to
-	// cover essentially every generation site and would silently rot the first
-	// time one was missed.
-	//
-	// The snapshot is never edited. Both versions have to come from one binary
-	// because the scoring engine advertises supported_bench_versions [2,3] and
-	// selects per request, which is what lets a validator that has migrated to
-	// the v3 stack keep serving v2 while the v3 cohort fills.
-	if benchVersion == protocol.BenchVersionV2 {
-		return generateV2Frozen(seed, prof)
-	}
 	rng, err := NewRNGForVersion(seed, benchVersion)
 	if err != nil {
 		return DatasetArtifact{}, err
@@ -161,35 +145,4 @@ func (a DatasetArtifact) SHA256Hex() (string, []byte, error) {
 	}
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:]), b, nil
-}
-
-// generateV2Frozen produces the immutable v2 dataset from the frozen snapshot.
-// The artifact types are structurally identical by construction (both are built
-// from the shared protocol types), so this is a field copy rather than a
-// re-encode; the golden v2 vector guards the result.
-func generateV2Frozen(seed int64, prof Profile) (DatasetArtifact, error) {
-	a, err := v2gen.GenerateDataset(seed, v2gen.Profile{
-		Tools:        prof.Tools,
-		Mem:          prof.Mem,
-		Waves:        prof.Waves,
-		RawPairsFrac: prof.RawPairsFrac,
-		IsoCases:     prof.IsoCases,
-	}, protocol.BenchVersionV2)
-	if err != nil {
-		return DatasetArtifact{}, err
-	}
-	out := DatasetArtifact{
-		Seed:         a.Seed,
-		BenchVersion: a.BenchVersion,
-		GeneratedAt:  a.GeneratedAt,
-		ToolCases:    a.ToolCases,
-		MemoryWaves:  a.MemoryWaves,
-	}
-	for _, c := range a.MemoryCases {
-		out.MemoryCases = append(out.MemoryCases, ArtifactCase(c))
-	}
-	for _, f := range a.ToolFixtures {
-		out.ToolFixtures = append(out.ToolFixtures, FixtureDigest(f))
-	}
-	return out, nil
 }
