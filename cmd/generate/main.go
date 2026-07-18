@@ -8,10 +8,10 @@
 //
 // Usage:
 //
-//	generate -seed 123456789 -run-size full           # canonical JSON to stdout
-//	generate -seed 123456789 -run-size full -out d.json
-//	generate -seed 123456789 -sha                      # print only the SHA-256
-//	generate -run-size small                           # random seed (prints it)
+//	generate -bench-version 3 -seed 123456789 -run-size full
+//	generate -bench-version 2 -seed 123456789 -run-size full -out d.json
+//	generate -bench-version 3 -seed 123456789 -sha
+//	generate -bench-version 3 -run-size small # random seed (prints it)
 //
 // The SHA-256 printed on stderr is the same dataset_sha256 the platform pins and a
 // validator re-derives. If two runs of the same seed print a different hash, the
@@ -25,6 +25,7 @@ import (
 	"os"
 
 	"github.com/ditto-assistant/dittobench-datagen/gen"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 func main() {
@@ -34,12 +35,18 @@ func main() {
 		runSize string
 		outPath string
 		shaOnly bool
+		version int
 	)
+	flag.IntVar(&version, "bench-version", 0, "required benchmark generation version (2 or 3)")
 	flag.Int64Var(&seed, "seed", 0, "dataset seed (omit for a fresh random seed)")
 	flag.StringVar(&runSize, "run-size", "full", "profile: small | medium | full")
 	flag.StringVar(&outPath, "out", "", "write canonical JSON here (default: stdout)")
 	flag.BoolVar(&shaOnly, "sha", false, "print only the SHA-256 of the artifact, no JSON")
 	flag.Parse()
+	if !protocol.SupportedBenchVersion(version) {
+		fmt.Fprintln(os.Stderr, "-bench-version is required and must be 2 or 3")
+		os.Exit(2)
+	}
 
 	// Detect whether -seed was passed so an omitted seed can default to random.
 	flag.Visit(func(f *flag.Flag) {
@@ -57,7 +64,11 @@ func main() {
 		os.Exit(2)
 	}
 
-	art := gen.GenerateDataset(seed, prof)
+	art, err := gen.GenerateDataset(seed, prof, version)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "generate artifact: %v\n", err)
+		os.Exit(1)
+	}
 	sha, canonical, err := art.SHA256Hex()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hash artifact: %v\n", err)

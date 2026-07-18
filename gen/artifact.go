@@ -61,14 +61,23 @@ type FixtureDigest struct {
 // run path (runSizeJob) generates the same pieces (it also needs the live
 // fixtures + staged suite) and calls BuildArtifact with them, so both paths
 // produce an identical artifact for a given seed.
-func GenerateDataset(seed int64, prof Profile) DatasetArtifact {
-	rng := NewRNG(seed)
+func GenerateDataset(seed int64, prof Profile, benchVersion int) (DatasetArtifact, error) {
+	rng, err := NewRNGForVersion(seed, benchVersion)
+	if err != nil {
+		return DatasetArtifact{}, err
+	}
 	toolCases, _ := GenerateTools(rng, seed, prof.Tools)
-	suite := GenerateMemorySuite(rng, seed, prof.Mem, prof.Waves, prof.RawPairsFrac)
-	iso := GenerateIsolation(seed, prof.Mem, prof.Waves, prof.IsoCases)
+	suite, err := GenerateMemorySuiteForVersion(rng, seed, prof.Mem, prof.Waves, prof.RawPairsFrac, benchVersion)
+	if err != nil {
+		return DatasetArtifact{}, err
+	}
+	iso, err := GenerateIsolationForVersion(seed, prof.Mem, prof.Waves, prof.IsoCases, benchVersion)
+	if err != nil {
+		return DatasetArtifact{}, err
+	}
 	suite.Cases = append(suite.Cases, iso.Cases...)
 	memWaves := MergeMemoryWaves(suite.Waves, iso.SecondaryWave)
-	return BuildArtifact(seed, toolCases, suite.Cases, memWaves)
+	return BuildArtifactForVersion(seed, benchVersion, toolCases, suite.Cases, memWaves)
 }
 
 // MergeMemoryWaves appends the secondary isolation graph's seeding wave to the
@@ -88,6 +97,18 @@ func MergeMemoryWaves(primary []protocol.SeedRequest, secondary protocol.SeedReq
 // fixtures are rebuilt from (seed, case) and sorted by CaseID so the JSON is
 // byte-stable.
 func BuildArtifact(seed int64, toolCases []protocol.ToolCase, memCases []StagedCase, memWaves []protocol.SeedRequest) DatasetArtifact {
+	artifact, _ := BuildArtifactForVersion(seed, protocol.BenchVersionV2, toolCases, memCases, memWaves)
+	return artifact
+}
+
+// BuildArtifactForVersion assembles an artifact under an explicit benchmark
+// contract. It rejects unknown versions instead of silently using the current
+// release.
+func BuildArtifactForVersion(seed int64, benchVersion int, toolCases []protocol.ToolCase, memCases []StagedCase, memWaves []protocol.SeedRequest) (DatasetArtifact, error) {
+	epoch, err := protocol.DatasetEpochForVersion(benchVersion)
+	if err != nil {
+		return DatasetArtifact{}, err
+	}
 	flat := make([]ArtifactCase, 0, len(memCases))
 	for _, sc := range memCases {
 		flat = append(flat, ArtifactCase{MemoryCase: sc.Case, UserID: sc.UserID, RunAfterWave: sc.RunAfterWave})
@@ -100,13 +121,13 @@ func BuildArtifact(seed int64, toolCases []protocol.ToolCase, memCases []StagedC
 	sort.Slice(fixtures, func(i, j int) bool { return fixtures[i].CaseID < fixtures[j].CaseID })
 	return DatasetArtifact{
 		Seed:         seed,
-		BenchVersion: protocol.BenchVersion,
-		GeneratedAt:  protocol.DatasetEpochRFC3339,
+		BenchVersion: benchVersion,
+		GeneratedAt:  epoch.UTC().Format("2006-01-02T15:04:05Z07:00"),
 		ToolCases:    toolCases,
 		MemoryWaves:  memWaves,
 		MemoryCases:  flat,
 		ToolFixtures: fixtures,
-	}
+	}, nil
 }
 
 // Marshal returns the canonical JSON bytes of the artifact.

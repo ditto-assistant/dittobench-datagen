@@ -46,13 +46,13 @@ go build ./cmd/generate
 
 ```bash
 # regenerate a submission's dataset from its published seed
-generate -seed 123456789 -run-size full -out dataset.json
+generate -bench-version 3 -seed 123456789 -run-size full -out dataset.json
 
 # print only the dataset_sha256 (the hash the platform pins and validators verify)
-generate -seed 123456789 -run-size full -sha
+generate -bench-version 3 -seed 123456789 -run-size full -sha
 
 # a fresh random seed (printed on stderr) for exploration
-generate -run-size small
+generate -bench-version 3 -run-size small
 ```
 
 `generate` writes the canonical JSON artifact to stdout (or `-out`) and prints
@@ -63,14 +63,23 @@ the identical dataset that submission was scored against.
 
 Run sizes: `small` (smoke), `medium`, `full` (the scored profile).
 
+`-bench-version` is required. Use the version published with the score you are
+auditing; never substitute the latest version. Supported immutable contracts are
+v2 and v3. For the public full-profile seed `123456789`, the canonical SHA-256
+vectors are:
+
+| Version | Dataset epoch | SHA-256 |
+| --- | --- | --- |
+| 2 | `2026-01-01T00:00:00Z` | `dfb4fc243d7d3e84bb4e896d5873bbc9bda114e16f5215f913c13adbfbc4a7fe` |
+| 3 | `2026-07-01T00:00:00Z` | `cdb0e6431b47a98492059e199dc8bd2567be00d1d299d55cdca0a67a26abb32a` |
+
 ## Determinism guarantee
 
-The same seed always yields the same bytes. The CI determinism test generates a
-fixed seed twice and asserts the hashes match, and a known-vector test pins the
-canonical hash for a fixed seed. The module has no external dependencies, only the
-Go standard library, so a build from source reproduces the validators' bytes
-exactly. The validators run this same module, so their bytes match yours by
-construction.
+The same `(seed, bench_version)` always yields the same bytes. CI generates fixed
+vectors twice and pins both the historical v2 bytes and the rotated v3 bytes. The
+module has no external dependencies, only the Go standard library. Validators
+must pin the exact immutable datagen module commit or release used by the scorer;
+using `@latest` in production would make an old score impossible to audit.
 
 The output is a function of `(seed, bench_version)`, not the seed alone. Each
 version folds its number into the generation stream (`protocol.RotateSeed`), so
@@ -88,11 +97,16 @@ than keeping their own copies.
 
 - `cmd/generate`: the CLI entry point.
 - `cmd/generate-service`: the same generation behind HTTP
-  (`POST /generate?seed=&run_size=` → DatasetArtifact JSON + `X-Dataset-SHA256`
-  header), with the `Dockerfile`/`cloudbuild.yaml` the SN118 platform deploys it
+  (`POST /generate?seed=&run_size=&bench_version=2|3` → DatasetArtifact JSON +
+  `X-Dataset-SHA256` and `X-Bench-Version` headers), with the
+  `Dockerfile`/`cloudbuild.yaml` the SN118 platform deploys it
   from. The deployment is private (IAM-gated) so platform infrastructure cannot
   be farmed for generation, but there is no secret in the code — it computes
-  exactly what `cmd/generate` computes for the same `(seed, run_size)`.
+  exactly what `cmd/generate` computes for the same
+  `(seed, run_size, bench_version)`.
+  `bench_version` is mandatory for canonical calls. Its temporary omitted-value
+  compatibility path emits v2 plus `Deprecation: true`, allowing an old platform
+  deployment to coexist while the explicit version handshake rolls out.
 - `cmd/graderaudit`: the grader false-negative audit. Given an artifact and a
   JSONL transcript dump it emits a labeling sheet of every memory case that
   survived the disqualifying scans but failed the typed answer check, plus
@@ -104,7 +118,10 @@ than keeping their own copies.
   categories; pure analysis, no LLM.
 - `gen`: the generation pipeline (tool cases, memory suite, write-then-read
   lifecycle chains, isolation graphs, artifact assembly and hashing).
-  `gen.GenerateDataset(seed, profile)` is the one entry point.
+  `gen.GenerateDataset(seed, profile, benchVersion)` is the canonical entry
+  point and rejects unsupported versions. The scorer must echo the selected
+  version into its job/result and score-report details and must fail closed if
+  the artifact version differs.
 - `persona`, `datagen`: case content builders.
 - `protocol`: the wire shapes, including the `DatasetArtifact` schema validators
   score.

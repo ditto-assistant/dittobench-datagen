@@ -1,17 +1,20 @@
 // Command generate-service is the HTTP wrapper the SN118 platform deploys to
 // pin a per-submission dataset.
 //
-// POST /generate?seed=<int64>&run_size=<small|medium|full> returns the FULL
+// POST /generate?seed=<int64>&run_size=<small|medium|full>&bench_version=<2|3> returns the FULL
 // canonical DatasetArtifact (JSON): the tool cases, the staged memory seeding
 // waves, the memory cases (with their unlock wave + graph user_id), and the
 // tool-fixture digests — everything a validator needs to replay the eval, plus
 // the oracle (expected tools/answers) the validator scores against. The
-// artifact's SHA-256 is surfaced in the X-Dataset-SHA256 response header so
-// the platform can pin it without re-marshaling.
+// artifact's SHA-256 and version are surfaced in X-Dataset-SHA256 and
+// X-Bench-Version so the platform can pin them without re-marshaling. An
+// omitted bench_version is a deprecated v2-only compatibility path for the old
+// platform; new callers must select an explicit immutable contract.
 //
 // The platform calls this once per submission at screening pass and pins
-// (seed, dataset_sha256, run_size); validators regenerate the dataset from the
-// pin and their engine fails a run whose regenerated hash mismatches.
+// (seed, dataset_sha256, run_size, bench_version); validators regenerate the
+// dataset from that complete contract and fail a run whose regenerated version
+// or hash mismatches.
 //
 // The DEPLOYMENT is private (an IAM-gated Cloud Run service only the platform
 // may invoke, so platform infrastructure cannot be farmed as a generation
@@ -30,6 +33,7 @@ import (
 	"strconv"
 
 	"github.com/ditto-assistant/dittobench-datagen/gen"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // defaultRunSize is used when the caller omits run_size. small is the cheapest
@@ -53,7 +57,9 @@ func main() {
 
 // handleGenerate produces one seeded dataset artifact. seed is required (the
 // platform supplies a fresh one per submission); run_size selects the profile
-// (defaults to small). The response is the canonical DatasetArtifact JSON.
+// (defaults to small). bench_version selects the immutable generation contract;
+// omission exists only for the deprecated v2 compatibility path. The response
+// is the canonical DatasetArtifact JSON.
 func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	seed, err := strconv.ParseInt(r.URL.Query().Get("seed"), 10, 64)
 	if err != nil {
@@ -70,8 +76,30 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	artifact := gen.GenerateDataset(seed, prof)
+	versionText := r.URL.Query().Get("bench_version")
+	legacyV2 := versionText == ""
+	if legacyV2 {
+		// Compatibility for platform versions deployed before version negotiation.
+		// New/canonical callers must always send bench_version explicitly.
+		versionText = strconv.Itoa(protocol.BenchVersionV2)
+	}
+	version, err := strconv.Atoi(versionText)
+	if err != nil || !protocol.SupportedBenchVersion(version) {
+		http.Error(w, "bench_version query param required (supported: 2, 3)", http.StatusBadRequest)
+		return
+	}
+
+	artifact, err := gen.GenerateDataset(seed, prof, version)
+	if err != nil {
+		http.Error(w, "generate dataset", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Bench-Version", strconv.Itoa(version))
+	if legacyV2 {
+		w.Header().Set("Deprecation", "true")
+		w.Header().Set("Warning", `299 - "omitted bench_version is legacy v2 compatibility; send bench_version=2 explicitly"`)
+	}
 	// Surface the content hash so the platform can record/pin it with the ticket
 	// without re-marshaling.
 	if h, _, herr := artifact.SHA256Hex(); herr == nil {

@@ -1,13 +1,21 @@
 package gen
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
+)
 
 // artifactFor builds the full DatasetArtifact for (seed, n) via the production
 // GenerateDataset entry point (the same deterministic pipeline the generate
 // service and the run path use), so the reproducibility tests exercise the real
 // assembly, not a test-local copy.
 func artifactFor(seed int64, n int) DatasetArtifact {
-	return GenerateDataset(seed, Profile{Tools: n, Mem: n, Waves: 2, RawPairsFrac: 0.3, IsoCases: 4})
+	artifact, err := GenerateDataset(seed, Profile{Tools: n, Mem: n, Waves: 2, RawPairsFrac: 0.3, IsoCases: 4}, protocol.BenchVersionV2)
+	if err != nil {
+		panic(err)
+	}
+	return artifact
 }
 
 // TestDatasetHashStable checks a hash is stable across repeated hashing of the
