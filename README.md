@@ -65,13 +65,21 @@ Run sizes: `small` (smoke), `medium`, `full` (the scored profile).
 
 `-bench-version` is required. Use the version published with the score you are
 auditing; never substitute the latest version. Supported immutable contracts are
-v2 and v3. For the public full-profile seed `123456789`, the canonical SHA-256
-vectors are:
+v2, v3 and v4. For the public full-profile seed `123456789`, the canonical
+SHA-256 vectors are:
 
 | Version | Dataset epoch | SHA-256 |
 | --- | --- | --- |
 | 2 | `2026-01-01T00:00:00Z` | `dfb4fc243d7d3e84bb4e896d5873bbc9bda114e16f5215f913c13adbfbc4a7fe` |
-| 3 | `2026-07-01T00:00:00Z` | `cdb0e6431b47a98492059e199dc8bd2567be00d1d299d55cdca0a67a26abb32a` |
+| 3 | `2026-07-01T00:00:00Z` | `766183922b5a56725bdf44573fc31adf05355dc80fe9654d436935363fcdb3f2` |
+| 4 | `2026-08-01T00:00:00Z` | `43e90780aa33505661047a2584381f6983875ac4a0eb85d46f83103389748b06` |
+
+Each is regenerated and asserted by CI (`TestV2KnownVector` and friends), so a
+value here that disagrees with `cmd/generate` is a bug in this table, not in the
+generator.
+
+See [docs/bench-versions.md](docs/bench-versions.md) for what each contract is,
+what changed in v4, and how module releases are versioned relative to it.
 
 ## Determinism guarantee
 
@@ -97,7 +105,7 @@ than keeping their own copies.
 
 - `cmd/generate`: the CLI entry point.
 - `cmd/generate-service`: the same generation behind HTTP
-  (`POST /generate?seed=&run_size=&bench_version=2|3` → DatasetArtifact JSON +
+  (`POST /generate?seed=&run_size=&bench_version=2|3|4` → DatasetArtifact JSON +
   `X-Dataset-SHA256` and `X-Bench-Version` headers), with the
   `Dockerfile`/`cloudbuild.yaml` the SN118 platform deploys it
   from. The deployment is private (IAM-gated) so platform infrastructure cannot
