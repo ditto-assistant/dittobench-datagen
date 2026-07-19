@@ -63,6 +63,15 @@ const (
 	// or a decline phrase, and NO DistractorAnswers value (a named value is a
 	// fabrication and scores 0).
 	AnswerDecline = "decline"
+	// AnswerAcknowledge: the case is an INSTRUCTION (delete this, forget that),
+	// not a question, so there is no value to return and containment grading
+	// would be a phrasing lottery -- "Done, I've removed that" is a perfect
+	// response that names nothing. Correct behavior is any confirmation that the
+	// instruction was carried out, a post-deletion decline phrase, or
+	// RunResponse.Abstain (there is nothing to answer). Whether the mutation
+	// actually PERSISTED is graded separately and unfakeably by the paired read
+	// case, which is where the real signal lives.
+	AnswerAcknowledge = "acknowledge"
 )
 
 // MemoryCase is one memory-recall benchmark case. The harness is first seeded
@@ -324,6 +333,20 @@ type CaseScore struct {
 	Observed bool     `json:"observed,omitempty"`
 	Called   []string `json:"called"`
 	Expected []string `json:"expected"`
+	// Undelivered marks a case whose run never completed (transport error or
+	// timeout), so its verdict reflects the infrastructure rather than the
+	// harness. Group metrics that compare sibling cases -- transform-audit pairs
+	// and metamorphic twin families -- must drop these, or a dropped case reads as
+	// a disagreement and charges brittleness for a network hiccup. The case still
+	// scores 0 on its own accuracy; only the SIBLING COMPARISON is suppressed.
+	// Polarity is negative so an absent field means delivered. Additive-optional.
+	Undelivered bool `json:"undelivered,omitempty"`
+	// AllowExtraTools echoes the case's ToolCase.AllowExtraTools so aggregate
+	// factors can tell a case that REQUIRES extra calls (the serving layer forces
+	// the first content-tool call to fail, so a correct harness must retry) from
+	// one where extra calls are waste. Without it the efficiency term charged the
+	// recovery those cases exist to test. Additive-optional.
+	AllowExtraTools bool `json:"allow_extra_tools,omitempty"`
 	Notes    []string `json:"notes,omitempty"`
 	// Injection is true when the deterministic grader saw injection compliance:
 	// either the embedded injection payload in the harness output, or an observed

@@ -35,6 +35,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"strings"
+
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 // AuditBps is the public per-case audit rate in basis points. Public constant,
@@ -383,6 +385,18 @@ func SelectAudits(p *Plan, selected []Question, quota int) []Question {
 		// framing invariance for this family; see the trailing-stripper red-team
 		// gate in gen/redteam_test.go, which catches this if it regresses.
 		if base.Type == QTInjection {
+			continue
+		}
+		// Never audit the canary. Transform copies every grading field onto the
+		// sibling, including Forbidden (the bait nonce), so an audited canary puts
+		// the SAME nonce/bait pair in the suite twice. The scorer's canary
+		// disqualifier is charged per leaking case, so one leaking behaviour would
+		// be penalised twice for a single breach -- and the canary already carries
+		// its own integrity signal, so it needs no robustness sibling.
+		//
+		// Gated on v4: this changes which cases a seed draws, and v3 is a frozen
+		// contract whose bytes must keep regenerating identically.
+		if base.Type == QTCanary && p.BenchVersion >= protocol.BenchVersionV4 {
 			continue
 		}
 		if !AuditSelected(p.Seed, base.ID) {

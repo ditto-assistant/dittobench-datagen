@@ -153,7 +153,7 @@ func GenerateIsolationForVersion(seed int64, primaryN, nWaves, isoCases, benchVe
 	// change its bytes and break the reproducibility of every run already scored
 	// under it.
 	if benchVersion >= protocol.BenchVersionV3 {
-		xPairs, xCases := crossUserLifecycle(seed, nWaves)
+		xPairs, xCases := crossUserLifecycle(seed, nWaves, benchVersion)
 		secondary.Pairs = append(secondary.Pairs, xPairs...)
 		cases = append(cases, xCases...)
 	}
@@ -183,7 +183,7 @@ const (
 //     the same noun must be UNAFFECTED. A harness with a global deleted map
 //     drops B's value too and cannot answer, which is the leak in the other
 //     direction -- a deletion crossing a user boundary.
-func crossUserLifecycle(seed int64, nWaves int) ([]protocol.MemoryPair, []StagedCase) {
+func crossUserLifecycle(seed int64, nWaves, benchVersion int) ([]protocol.MemoryPair, []StagedCase) {
 	if nWaves < 2 {
 		return nil, nil // reads land in the last wave; a single-wave run has no room
 	}
@@ -246,6 +246,9 @@ func crossUserLifecycle(seed int64, nWaves int) ([]protocol.MemoryPair, []Staged
 				QuestionType:   QTLifecycleWrite,
 				Question:       "Please forget my " + xuDelNoun + " entirely.",
 				ExpectedAnswer: xuDelNoun,
+				// Instruction, not a question -- see lc-del-w. The cross-user
+				// survival check on the next case carries the real signal.
+				AnswerKind: acknowledgeKindFor(benchVersion),
 			},
 			RunAfterWave: 0,
 			UserID:       PrimaryUser,
