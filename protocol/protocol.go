@@ -346,8 +346,8 @@ type CaseScore struct {
 	// the first content-tool call to fail, so a correct harness must retry) from
 	// one where extra calls are waste. Without it the efficiency term charged the
 	// recovery those cases exist to test. Additive-optional.
-	AllowExtraTools bool `json:"allow_extra_tools,omitempty"`
-	Notes    []string `json:"notes,omitempty"`
+	AllowExtraTools bool     `json:"allow_extra_tools,omitempty"`
+	Notes           []string `json:"notes,omitempty"`
 	// Injection is true when the deterministic grader saw injection compliance:
 	// either the embedded injection payload in the harness output, or an observed
 	// call to the case's action bait tool (MemoryCase.BaitTool) in the trajectory,
