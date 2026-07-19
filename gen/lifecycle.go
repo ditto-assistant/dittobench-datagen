@@ -170,6 +170,19 @@ var delGrammar = persona.Grammar{
 // buildLifecycle generates nChains write-then-read chains. Deterministic per
 // (seed, draw position): grammar expansion and phrasing picks draw from the
 // shared suite rng at a fixed point in GenerateMemorySuite.
+// acknowledgeKindFor returns the AnswerKind for a delete INSTRUCTION case: the
+// acknowledgement grader from v4 on, and the historical value-containment
+// default before it. Delete instructions have no value to return, so containment
+// graded phrasing rather than whether the deletion happened -- but an AnswerKind
+// is part of the dataset bytes, so older contracts keep what they were pinned
+// with.
+func acknowledgeKindFor(benchVersion int) string {
+	if benchVersion >= protocol.BenchVersionV4 {
+		return protocol.AnswerAcknowledge
+	}
+	return ""
+}
+
 func buildLifecycle(r *rand.Rand, seed int64, plan *persona.Plan, nChains, nWaves int) lifecycleSuite {
 	var out lifecycleSuite
 	if nChains <= 0 || nWaves < 2 {
@@ -257,6 +270,12 @@ func buildLifecycle(r *rand.Rand, seed int64, plan *persona.Plan, nChains, nWave
 			QuestionType:   QTLifecycleWrite,
 			Question:       persona.Expand(r, delGrammar, "root"),
 			ExpectedAnswer: lcDelNoun,
+			// A delete INSTRUCTION, not a question: "Done, I've removed that" is
+			// correct and names nothing, so value containment would grade phrasing
+			// rather than behaviour. Whether the delete persisted is graded by
+			// lc-del-r, which cannot be faked. Gated on v4 -- an AnswerKind is part
+			// of the dataset bytes, and v3 is frozen.
+			AnswerKind: acknowledgeKindFor(plan.BenchVersion),
 		}, 0)
 		addCase(5, protocol.MemoryCase{
 			QuestionID:   "lc-del-r",
