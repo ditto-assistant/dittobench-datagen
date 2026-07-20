@@ -623,37 +623,30 @@ type TokenUsage struct {
 	TTFTStatus        string `json:"ttft_status"`
 }
 
-// TokenEfficiency is the complete v5 efficiency decision. Composite remains
-// the final score for wire compatibility; RawComposite and every transform
-// input remain separate here so the adjustment can be reproduced and audited.
+// TokenEfficiency is the complete v5 relay-token waste decision. It never
+// rewards token minimization: usage through the reference budget is neutral,
+// and only above-budget waste can reduce Composite. RawComposite and every
+// transform input remain separate so the adjustment is reproducible.
 type TokenEfficiency struct {
 	FormulaVersion           string  `json:"formula_version"`
 	BaselineID               string  `json:"baseline_id,omitempty"`
 	BaselinePromptTokens     uint64  `json:"baseline_prompt_tokens,omitempty"`
 	BaselineCompletionTokens uint64  `json:"baseline_completion_tokens,omitempty"`
 	BaselineTotalTokens      uint64  `json:"baseline_total_tokens,omitempty"`
-	BaselineWeightedTokens   float64 `json:"baseline_weighted_tokens,omitempty"`
+	BudgetPercentile         float64 `json:"budget_percentile"`
 	ObservedPromptTokens     uint64  `json:"observed_prompt_tokens"`
 	ObservedCompletionTokens uint64  `json:"observed_completion_tokens"`
 	ObservedTotalTokens      uint64  `json:"observed_total_tokens"`
-	ObservedWeightedTokens   float64 `json:"observed_weighted_tokens"`
-	PromptTokenWeight        float64 `json:"prompt_token_weight"`
-	CompletionTokenWeight    float64 `json:"completion_token_weight"`
-	RewardExponent           float64 `json:"reward_exponent"`
-	PenaltyExponent          float64 `json:"penalty_exponent"`
+	ExcessRatio              float64 `json:"excess_ratio"`
+	MaximumPenalty           float64 `json:"maximum_penalty"`
 	MinimumMultiplier        float64 `json:"minimum_multiplier"`
 	Multiplier               float64 `json:"multiplier"`
 	RawComposite             float64 `json:"raw_composite"`
 	AdjustedComposite        float64 `json:"adjusted_composite"`
 	RawCompositeStderr       float64 `json:"raw_composite_stderr,omitempty"`
 	AdjustedCompositeStderr  float64 `json:"adjusted_composite_stderr,omitempty"`
-	QualityEligible          bool    `json:"quality_eligible"`
-	EligibilityReason        string  `json:"eligibility_reason"`
-	MinimumComposite         float64 `json:"minimum_composite"`
-	MinimumToolMean          float64 `json:"minimum_tool_mean"`
-	MinimumMemoryMean        float64 `json:"minimum_memory_mean"`
-	MinimumResponseCoverage  float64 `json:"minimum_response_coverage"`
-	ResponseCoverage         float64 `json:"response_coverage"`
+	PenaltyApplied           bool    `json:"penalty_applied"`
+	DecisionReason           string  `json:"decision_reason"`
 }
 
 // ModelInfo is the set of LLM model ids a run was produced with (RunDetails.models).
