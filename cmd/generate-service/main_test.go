@@ -8,7 +8,7 @@ import (
 
 func TestHandleGenerateRequiresSupportedVersion(t *testing.T) {
 	for _, path := range []string{
-		"/generate?seed=42&run_size=small&bench_version=5",
+		"/generate?seed=42&run_size=small&bench_version=6",
 		"/generate?seed=42&run_size=small&bench_version=garbage",
 	} {
 		rr := httptest.NewRecorder()
@@ -34,7 +34,7 @@ func TestHandleGenerateOmittedVersionIsDeprecatedV2Compatibility(t *testing.T) {
 }
 
 func TestHandleGenerateVersionedVectors(t *testing.T) {
-	for _, version := range []string{"2", "3"} {
+	for _, version := range []string{"2", "3", "4", "5"} {
 		rr := httptest.NewRecorder()
 		handleGenerate(rr, httptest.NewRequest(http.MethodPost, "/generate?seed=42&run_size=small&bench_version="+version, nil))
 		if rr.Code != http.StatusOK {

@@ -471,6 +471,9 @@ type RunDetails struct {
 	// The weight fold only compares entries of the max bench_version present, so a
 	// bump makes new scores non-comparable to old until a re-score.
 	BenchVersion int `json:"bench_version"`
+	// RunSize is the immutable generator profile (small, medium, or full). It is
+	// required to select a like-for-like starter-kit token baseline.
+	RunSize string `json:"run_size,omitempty"`
 	// DatasetSHA256 is the hex SHA-256 of the fully-rendered dataset (tool cases +
 	// memory waves + memory cases). It pins the exact artifact a dispute
 	// re-scores: the recorded hash must match a re-hash of the persisted
@@ -589,6 +592,58 @@ type RunDetails struct {
 	// the platform wire (which carries details but not the top-level
 	// per_category) and can drive a transparent leaderboard. Advisory only.
 	PerCategory []CategoryStat `json:"per_category,omitempty"`
+	// TokenUsage is trusted model-proxy accounting for this run. It is derived
+	// by the validator from provider responses, never copied from RunResponse's
+	// miner-reported token fields. TokenEfficiency records the v5 baseline lookup
+	// and score transform separately so raw quality remains auditable.
+	TokenUsage      *TokenUsage      `json:"token_usage,omitempty"`
+	TokenEfficiency *TokenEfficiency `json:"token_efficiency,omitempty"`
+}
+
+// TokenUsage is validator-observed model consumption for one isolated run.
+// Status is "complete" only when every successful proxy completion carried a
+// valid provider usage object. Missing or malformed telemetry is explicit and
+// makes the v5 efficiency transform fail neutral.
+type TokenUsage struct {
+	AccountingVersion int    `json:"accounting_version"`
+	Status            string `json:"status"`
+	Source            string `json:"source"`
+	Provider          string `json:"provider"`
+	ProfileRevision   string `json:"profile_revision"`
+	Model             string `json:"model"`
+	Requests          uint64 `json:"requests"`
+	Successes         uint64 `json:"successes"`
+	UsageAvailable    uint64 `json:"usage_available"`
+	UsageUnavailable  uint64 `json:"usage_unavailable"`
+	PromptTokens      uint64 `json:"prompt_tokens"`
+	CompletionTokens  uint64 `json:"completion_tokens"`
+	TotalTokens       uint64 `json:"total_tokens"`
+	ProviderLatencyMs uint64 `json:"provider_latency_ms"`
+	TTFTStatus        string `json:"ttft_status"`
+}
+
+// TokenEfficiency is the complete v5 efficiency decision. Composite remains
+// the final score for wire compatibility; RawComposite and every transform
+// input remain separate here so the adjustment can be reproduced and audited.
+type TokenEfficiency struct {
+	FormulaVersion           string  `json:"formula_version"`
+	BaselineID               string  `json:"baseline_id,omitempty"`
+	BaselinePromptTokens     uint64  `json:"baseline_prompt_tokens,omitempty"`
+	BaselineCompletionTokens uint64  `json:"baseline_completion_tokens,omitempty"`
+	BaselineTotalTokens      uint64  `json:"baseline_total_tokens,omitempty"`
+	ObservedTotalTokens      uint64  `json:"observed_total_tokens"`
+	Multiplier               float64 `json:"multiplier"`
+	RawComposite             float64 `json:"raw_composite"`
+	AdjustedComposite        float64 `json:"adjusted_composite"`
+	RawCompositeStderr       float64 `json:"raw_composite_stderr,omitempty"`
+	AdjustedCompositeStderr  float64 `json:"adjusted_composite_stderr,omitempty"`
+	QualityEligible          bool    `json:"quality_eligible"`
+	EligibilityReason        string  `json:"eligibility_reason"`
+	MinimumComposite         float64 `json:"minimum_composite"`
+	MinimumToolMean          float64 `json:"minimum_tool_mean"`
+	MinimumMemoryMean        float64 `json:"minimum_memory_mean"`
+	MinimumResponseCoverage  float64 `json:"minimum_response_coverage"`
+	ResponseCoverage         float64 `json:"response_coverage"`
 }
 
 // ModelInfo is the set of LLM model ids a run was produced with (RunDetails.models).
@@ -611,7 +666,10 @@ type ScoreReport struct {
 	RunID       string  `json:"run_id"`
 	Seed        int64   `json:"seed"` // dataset seed (anti-overfit reproducibility)
 	GeneratedAt string  `json:"generated_at"`
-	Composite   float64 `json:"composite"` // 0..1 weighted composite: 0.5*tool_mean + 0.5*memory_mean (v2)
+	Composite   float64 `json:"composite"` // final composite; v5 may exceed 1 after a bounded efficiency reward
+	// RawComposite is the pre-efficiency quality score. It is emitted for v5 and
+	// omitted for frozen v2-v4 reports, whose Composite is already raw quality.
+	RawComposite float64 `json:"raw_composite,omitempty"`
 	// CompositeStderr is the standard error of the composite for THIS run, combining
 	// the tool-half and memory-half standard errors: 0.5*sqrt(se_tool^2 + se_mem^2).
 	// It lets the KOTH weight fold gate a challenger on measurement uncertainty (a

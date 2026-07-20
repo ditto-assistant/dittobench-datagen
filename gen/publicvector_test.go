@@ -241,9 +241,31 @@ func TestV4KnownVector(t *testing.T) {
 	}
 }
 
+// TestV5KnownVector pins the chat-quality/efficiency contract. The token
+// transform lives in the validator; this vector pins the independently rotated
+// v5 dataset used by both scored runs and starter-kit calibration.
+func TestV5KnownVector(t *testing.T) {
+	const (
+		seed = int64(123456789)
+		want = "dea58aceeedd9585f32a782ad08b729ef933415ddc8f446d2a78b5f8d2f950f8"
+	)
+	prof, _ := ProfileFor("full")
+	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV5)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	got, _, err := artifact.SHA256Hex()
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	if got != want {
+		t.Fatalf("v5 known-vector hash drift for seed %d full:\n got %s\nwant %s", seed, got, want)
+	}
+}
+
 func TestUnsupportedVersionRejected(t *testing.T) {
 	prof, _ := ProfileFor("small")
-	if _, err := GenerateDataset(42, prof, 5); err == nil {
+	if _, err := GenerateDataset(42, prof, 6); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -251,7 +273,7 @@ func TestUnsupportedVersionRejected(t *testing.T) {
 // TestSameSeedSameBytes is the core determinism guarantee: one seed, one artifact.
 func TestSameSeedSameBytes(t *testing.T) {
 	prof, _ := ProfileFor("full")
-	for _, version := range []int{protocol.BenchVersionV2, protocol.BenchVersionV3, protocol.BenchVersionV4} {
+	for _, version := range []int{protocol.BenchVersionV2, protocol.BenchVersionV3, protocol.BenchVersionV4, protocol.BenchVersionV5} {
 		artifactA, err := GenerateDataset(42, prof, version)
 		if err != nil {
 			t.Fatalf("v%d generate a: %v", version, err)
