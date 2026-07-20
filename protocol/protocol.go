@@ -72,6 +72,16 @@ const (
 	// actually PERSISTED is graded separately and unfakeably by the paired read
 	// case, which is where the real signal lives.
 	AnswerAcknowledge = "acknowledge"
+	// AnswerChitchat (bench_version 5): a greeting or small-talk turn that carries
+	// no memory question at all. There is nothing to recall, so the ONLY thing
+	// graded is the non-leak floor: a non-empty reply that surfaces no seeded
+	// sentinel (ForbiddenAnswer), no off-topic self value (DumpGuard), and no
+	// same-attribute distractor scores 1; surfacing any of them scores 0. This is
+	// the canary check inverted -- it directly catches a router that answers a
+	// plain "hi" with a stray retrieved value ("Aurora-9"). The negative scans that
+	// precede the positive check already enforce the leak zero, so the positive
+	// check for this kind is simply "did the harness say anything at all".
+	AnswerChitchat = "chitchat"
 )
 
 // MemoryCase is one memory-recall benchmark case. The harness is first seeded
@@ -92,6 +102,18 @@ type MemoryCase struct {
 	// AnswerItems are the elements of a list/ordered_list answer (ordered for
 	// ordered_list). Validator-internal.
 	AnswerItems []string `json:"answer_items,omitempty"`
+	// AcceptAny (bench_version 5) is the accept-set for an AnswerValue case: a set
+	// of equivalent surface forms of the SAME answer, any one of which grades
+	// correct. It is the primitive that lets a non-verbatim answer be graded
+	// deterministically (v5 workstream 4.3): when the load-bearing fact is stored
+	// through a unit that must be converted or a reference that must be resolved,
+	// the answer token is no longer a literal substring of any seeded pair, so a
+	// grep parser fails, while an honest reader can emit any of several equivalent
+	// forms ("0.67", "two-thirds", "0.67 hours"). The generator fills every
+	// equivalent form so an honest reply is never false-negatived; ExpectedAnswer
+	// remains the canonical form. Matched by the same normalized bounded
+	// containment as ExpectedAnswer. Validator-internal, never sent to the harness.
+	AcceptAny []string `json:"accept_any,omitempty"`
 	// DistractorAnswers are same-attribute confusable values (another entity's
 	// value in the haystack, or pool values for a decline case). A response that
 	// surfaces one has retrieved or fabricated the wrong fact and scores 0.
@@ -502,6 +524,20 @@ type RunDetails struct {
 	// LexicalGap is the query↔needle overlap telemetry for the memory suite (the
 	// NoLiMa literal-match signal). Advisory only.
 	LexicalGap *LexicalGapStats `json:"lexical_gap,omitempty"`
+	// ConversationalSanity (bench_version 5) is the first-class conversational
+	// grounding metric: the WEAKEST-LINK (minimum) pass rate across the three v5
+	// conversational-sanity slices that ran -- greeting non-leak, declarative
+	// acknowledgement, and behavior-change application. It is a conjunction by
+	// construction so a canned reply cannot bank the greeting slice (which a fixed
+	// "Got it!" passes) and dilute its failures on the declarative and
+	// behavior-change slices. The validator also folds it into the composite as a
+	// bounded factor with its own floor (ConversationalSanityFactor), harder than
+	// the efficiency floors, so a run that fails conversational sanity cannot reach
+	// champion composite regardless of memory accuracy. nil when no v5
+	// conversational case ran (older contracts, or a run that drew none). Any third
+	// party recomputes it from (dataset, transcript). See dittobench-api
+	// docs/BENCHMARK-V5-PLAN.md section 4.1.
+	ConversationalSanity *float64 `json:"conversational_sanity,omitempty"`
 	// MetamorphicConsistency is the fraction of invariance twin groups whose
 	// members the harness answered consistently (all correct or all incorrect). A
 	// phrasing-brittle harness scores below 1.0. The validator folds this into the
@@ -622,13 +658,18 @@ type ScoreReport struct {
 	// persona (a single cluster), so it understates run-to-run variance. The subnet
 	// combines it with CRN paired scoring and multi-seed aggregation for the
 	// cross-run picture.
-	CompositeStderr float64        `json:"composite_stderr,omitempty"`
-	ToolMean        float64        `json:"tool_mean"`   // 0..1 mean tool-case composite
-	MemoryMean      float64        `json:"memory_mean"` // 0..1 fraction of memory cases correct
-	MedianMs        int64          `json:"median_ms"`
-	N               int            `json:"n"`
-	PerCase         []CaseScore    `json:"per_case"`
-	PerCategory     []CategoryStat `json:"per_category,omitempty"`
+	CompositeStderr float64 `json:"composite_stderr,omitempty"`
+	ToolMean        float64 `json:"tool_mean"`   // 0..1 mean tool-case composite
+	MemoryMean      float64 `json:"memory_mean"` // 0..1 fraction of memory cases correct
+	// ConversationalSanity (bench_version 5) is the weakest-link conversational
+	// grounding metric published as a first-class field so a low score cannot hide
+	// inside the memory mean; see RunDetails.ConversationalSanity. nil (omitted)
+	// when no v5 conversational case ran. Additive-optional.
+	ConversationalSanity *float64       `json:"conversational_sanity,omitempty"`
+	MedianMs             int64          `json:"median_ms"`
+	N                    int            `json:"n"`
+	PerCase              []CaseScore    `json:"per_case"`
+	PerCategory          []CategoryStat `json:"per_category,omitempty"`
 	// Details is opaque, additive run telemetry. Advisory only, never scored or
 	// signed.
 	Details *RunDetails `json:"details,omitempty"`

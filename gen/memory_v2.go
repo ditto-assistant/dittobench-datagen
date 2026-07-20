@@ -35,6 +35,11 @@ type MemorySuite struct {
 	// LifecycleCases counts the write-then-read lifecycle cases in the suite
 	// (instruction + read halves; see gen/lifecycle.go). Advisory telemetry.
 	LifecycleCases int
+	// ConversationalCases counts the v5 conversational-sanity and declarative-write
+	// cases in the suite (greeting non-leak, declarative acknowledgement,
+	// abstention-over-confabulation, and the declarative write/read/behavior chain;
+	// see gen/conversational.go). Zero for pre-v5 contracts. Advisory telemetry.
+	ConversationalCases int
 	// LexicalGap is the query↔needle overlap telemetry (NoLiMa): how much
 	// content wording the emitted questions share with their evidence, before and
 	// after the low-overlap rewrite.
@@ -142,9 +147,18 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	// they are never sampled out; their count is seed-independent per run size.
 	lc := buildLifecycle(r, seed, plan, lifecycleChainsFor(n, nWaves), nWaves)
 	suite.LifecycleCases = len(lc.Cases)
-	// Reserve room for the always-included canary, twin, and lifecycle cases so
-	// the total case count stays at n.
-	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(lc.Cases)
+	// v5 conversational-sanity and declarative-write cases (gen/conversational.go).
+	// Like the canary and lifecycle chains they are never sampled out; their count
+	// is seed-independent per run size. Built at a fixed draw position and gated so
+	// a pre-v5 contract's rng sequence and bytes are untouched.
+	var conv conversationalSuite
+	if conversationalEnabled(benchVersion) {
+		conv = buildConversational(r, seed, plan, n, nWaves)
+	}
+	suite.ConversationalCases = len(conv.Cases)
+	// Reserve room for the always-included canary, twin, lifecycle, and
+	// conversational cases so the total case count stays at n.
+	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(lc.Cases) - len(conv.Cases)
 	if mainQuota < 0 {
 		mainQuota = 0
 	}
@@ -317,6 +331,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		suite.LexicalGap.MeanAfter = gapAfterSum / float64(suite.LexicalGap.Questions)
 	}
 	staged = append(staged, lc.Cases...)
+	staged = append(staged, conv.Cases...)
 	r.Shuffle(len(staged), func(i, j int) { staged[i], staged[j] = staged[j], staged[i] })
 	suite.Cases = staged
 
@@ -327,6 +342,11 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	// no prepared subject, so the harness indexes them itself (Tier-B style).
 	if len(lc.Pairs) > 0 {
 		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, lc.Pairs...)
+	}
+	// v5 conversational sentinels and abstention neighbors also join wave 0 as raw
+	// pairs, seeded before any question runs so a greeting can leak them.
+	if len(conv.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, conv.Pairs...)
 	}
 	return suite, nil
 }
