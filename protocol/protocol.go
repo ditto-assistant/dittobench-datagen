@@ -616,6 +616,7 @@ type TokenUsage struct {
 	UsageAvailable    uint64 `json:"usage_available"`
 	UsageUnavailable  uint64 `json:"usage_unavailable"`
 	PromptTokens      uint64 `json:"prompt_tokens"`
+	PromptBytes       uint64 `json:"prompt_bytes"`
 	CompletionTokens  uint64 `json:"completion_tokens"`
 	TotalTokens       uint64 `json:"total_tokens"`
 	ProviderLatencyMs uint64 `json:"provider_latency_ms"`
