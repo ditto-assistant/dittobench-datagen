@@ -632,7 +632,16 @@ type TokenEfficiency struct {
 	BaselinePromptTokens     uint64  `json:"baseline_prompt_tokens,omitempty"`
 	BaselineCompletionTokens uint64  `json:"baseline_completion_tokens,omitempty"`
 	BaselineTotalTokens      uint64  `json:"baseline_total_tokens,omitempty"`
+	BaselineWeightedTokens   float64 `json:"baseline_weighted_tokens,omitempty"`
+	ObservedPromptTokens     uint64  `json:"observed_prompt_tokens"`
+	ObservedCompletionTokens uint64  `json:"observed_completion_tokens"`
 	ObservedTotalTokens      uint64  `json:"observed_total_tokens"`
+	ObservedWeightedTokens   float64 `json:"observed_weighted_tokens"`
+	PromptTokenWeight        float64 `json:"prompt_token_weight"`
+	CompletionTokenWeight    float64 `json:"completion_token_weight"`
+	RewardExponent           float64 `json:"reward_exponent"`
+	PenaltyExponent          float64 `json:"penalty_exponent"`
+	MinimumMultiplier        float64 `json:"minimum_multiplier"`
 	Multiplier               float64 `json:"multiplier"`
 	RawComposite             float64 `json:"raw_composite"`
 	AdjustedComposite        float64 `json:"adjusted_composite"`
@@ -667,7 +676,7 @@ type ScoreReport struct {
 	RunID       string  `json:"run_id"`
 	Seed        int64   `json:"seed"` // dataset seed (anti-overfit reproducibility)
 	GeneratedAt string  `json:"generated_at"`
-	Composite   float64 `json:"composite"` // final composite; v5 may exceed 1 after a bounded efficiency reward
+	Composite   float64 `json:"composite"` // final composite; v5 may exceed 1 after an efficiency reward
 	// RawComposite is the pre-efficiency quality score. It is emitted for v5 and
 	// omitted for frozen v2-v4 reports, whose Composite is already raw quality.
 	RawComposite float64 `json:"raw_composite,omitempty"`
