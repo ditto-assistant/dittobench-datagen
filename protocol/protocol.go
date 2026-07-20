@@ -669,7 +669,7 @@ type ScoreReport struct {
 	RunID       string  `json:"run_id"`
 	Seed        int64   `json:"seed"` // dataset seed (anti-overfit reproducibility)
 	GeneratedAt string  `json:"generated_at"`
-	Composite   float64 `json:"composite"` // final composite; v5 may exceed 1 after an efficiency reward
+	Composite   float64 `json:"composite"` // final composite in [0,1]; v5 may apply a bounded waste penalty
 	// RawComposite is the pre-efficiency quality score. It is emitted for v5 and
 	// omitted for frozen v2-v4 reports, whose Composite is already raw quality.
 	RawComposite float64 `json:"raw_composite,omitempty"`
