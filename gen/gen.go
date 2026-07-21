@@ -54,20 +54,55 @@ type Profile struct {
 	IsoCases int
 }
 
-// Profiles maps run_size → counts.
+// Profiles maps run_size → counts (v2/v3/v4). Frozen: changing these changes
+// those contracts' dataset bytes. v5 uses profilesV5 via ProfileForVersion.
 var Profiles = map[string]Profile{
 	"small":  {Tools: 6, Mem: 6, Waves: 1, RawPairsFrac: 0, IsoCases: 0},
 	"medium": {Tools: 20, Mem: 20, Waves: 2, RawPairsFrac: 0.3, IsoCases: 2},
 	"full":   {Tools: 60, Mem: 50, Waves: 2, RawPairsFrac: 0.35, IsoCases: 4},
 }
 
-// ProfileFor returns the Profile for a run_size, defaulting to small.
+// profilesV5 scales the bench_version 5 run sizes up for comprehensiveness (v5
+// plan 4.3: scale the store so retrieval recall is the bottleneck, not parsing).
+// Relative to v4: more memory cases and tool cases, DEEPER multi-session staging
+// (more waves, so knowledge-update / point-in-time / longitudinal chains span
+// more of the timeline), a larger raw-pairs (Tier-B) share, and more multi-graph
+// isolation personas. The bigger memory-case count also grows the procedural
+// persona (personaOptsFor), so the haystack and distractor density rise with it.
+// small stays a cheap single-wave smoke path. Only v5 uses these, so v2/v3/v4
+// bytes are untouched.
+// Counts are chosen with the between-seed DIFFICULTY variance in mind: more cases
+// at the FIXED stratified per-category mix lowers tool_mean variance (measured with
+// cmd/benchcal --version 5: tool σ falls from ~0.036 at n=80 to ~0.026 at n=120),
+// so scaling up adds coverage AND tightens difficulty rather than widening it.
+var profilesV5 = map[string]Profile{
+	"small":  {Tools: 6, Mem: 6, Waves: 1, RawPairsFrac: 0, IsoCases: 0},
+	"medium": {Tools: 40, Mem: 40, Waves: 3, RawPairsFrac: 0.35, IsoCases: 3},
+	"full":   {Tools: 110, Mem: 85, Waves: 4, RawPairsFrac: 0.4, IsoCases: 6},
+}
+
+// ProfileFor returns the Profile for a run_size, defaulting to small. Uses the
+// historical (v2/v3/v4) sizes; canonical versioned callers use ProfileForVersion.
 func ProfileFor(runSize string) (Profile, bool) {
 	p, ok := Profiles[runSize]
 	if !ok {
 		return Profiles["small"], false
 	}
 	return p, true
+}
+
+// ProfileForVersion returns the Profile for a (run_size, bench_version). v5 uses
+// the scaled-up profilesV5; earlier versions use the frozen historical sizes, so
+// their dataset bytes are unchanged. Deterministic, so any third party holding
+// (seed, run_size, bench_version) regenerates the identical dataset.
+func ProfileForVersion(runSize string, benchVersion int) (Profile, bool) {
+	if benchVersion >= protocol.BenchVersionV5 {
+		if p, ok := profilesV5[runSize]; ok {
+			return p, true
+		}
+		return profilesV5["small"], false
+	}
+	return ProfileFor(runSize)
 }
 
 // FreshSeed returns a cryptographically-random int64 seed for a submission. The

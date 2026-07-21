@@ -601,8 +601,105 @@ const resultUsageSuffix = "_result_usage"
 // needle.
 func IsResultUsage(category string) bool { return strings.HasSuffix(category, resultUsageSuffix) }
 
-// fillerFor returns a random entity string appropriate for a category.
+// v5 content-pool extensions. The thin open-ended CONTENT pools (a URL, an image
+// prompt, a coding task, a research topic) are the tool suite's main memorization
+// surface — with only ~5-9 entries a miner sees the same handful every seed. v5
+// roughly doubles them, which is pure anti-memorization: a different URL or image
+// subject is the SAME routing difficulty, so between-seed difficulty variance is
+// unchanged while per-seed surface entropy rises. Value pools with a real finite
+// space (themes, models, effort levels) are deliberately NOT extended — inventing
+// fake values there would hurt realism, and the answer, not the surface, is what
+// matters for them. Gated on v5 (poolV5), so v2/v3/v4 fillers are byte-identical.
+var (
+	topicsV5 = []string{
+		"quantum error correction", "the housing market outlook", "olive oil adulteration",
+		"deep-sea mining rules", "the Voyager probes", "sourdough hydration ratios",
+		"urban heat islands", "the semiconductor supply chain", "coral reef restoration",
+		"noise-cancelling headphone tech", "the history of the metric system",
+	}
+	urlsV5 = []string{
+		"https://example.com/2026-outlook", "https://blog.example.org/rust-async",
+		"https://news.example.net/energy-grid", "https://docs.example.io/api/v3",
+		"https://example.com/longform/whales", "https://example.org/recipes/ramen",
+		"https://research.example.edu/paper-42", "https://example.net/city-transit-plan",
+	}
+	imagePromptsV5 = []string{
+		"a neon koi pond at dusk", "an isometric cozy reading nook", "a watercolor alpine village",
+		"a retro-futurist train station", "a cross-section of a seed sprouting",
+		"a lighthouse in a lightning storm", "a papercraft rainforest scene",
+		"a chalkboard diagram of the water cycle",
+	}
+	agentTasksV5 = []string{
+		"scaffold a CLI that renames photos by EXIF date", "write a script to dedupe my CSV export",
+		"build a small Flask app that serves a health check", "add unit tests to my parser module",
+		"convert this repo's config from JSON to YAML", "write a cron job that backs up a folder nightly",
+		"refactor the utils file to remove duplication",
+	}
+	workflowGoalsV5 = []string{
+		"audit my site for accessibility across pages, forms, and images",
+		"research three CRM options on price, integrations, and support",
+		"benchmark four JSON libraries on parse speed, memory, and API",
+		"review a PR for correctness, tests, and style in parallel",
+		"summarize a report from the finance, risk, and ops angles",
+	}
+	artifactKindsV5 = []string{
+		"a habit-tracker web app", "a markdown resume", "a snake game",
+		"a budgeting spreadsheet mockup", "a landing page for a coffee shop",
+		"an interactive periodic table", "a pomodoro timer",
+	}
+	calendarTitlesV5 = []string{
+		"dentist cleaning", "1:1 with Priya", "car service appointment",
+		"book club", "flight to Denver", "quarterly review", "vet visit for the cat",
+	}
+)
+
+// poolV5 returns base for pre-v5 contracts and base+extra for v5, so an expanded
+// pool only affects v5 generation (v2/v3/v4 draws are unchanged).
+func poolV5(base, extra []string, benchVersion int) []string {
+	if benchVersion >= protocol.BenchVersionV5 {
+		out := make([]string, 0, len(base)+len(extra))
+		out = append(out, base...)
+		out = append(out, extra...)
+		return out
+	}
+	return base
+}
+
+// fillerFor returns a random entity string appropriate for a category (v2 pools).
 func fillerFor(r *rand.Rand, cat string) string {
+	return fillerForVersion(r, cat, protocol.BenchVersionV2)
+}
+
+// fillerForVersion is fillerFor under an explicit contract: v5 draws the thin
+// content categories from the extended pools (poolV5), everything else from the
+// historical pools, so v2/v3/v4 fillers are byte-identical.
+func fillerForVersion(r *rand.Rand, cat string, benchVersion int) string {
+	pick := func(base, extra []string) string {
+		p := poolV5(base, extra, benchVersion)
+		return p[r.Intn(len(p))]
+	}
+	switch cat {
+	case "web_search", "route_web_not_memory", "calendar_search":
+		return pick(topics, topicsV5)
+	case "link_read":
+		return pick(urls, urlsV5)
+	case "image_create":
+		return pick(imagePrompts, imagePromptsV5)
+	case "artifacts_create":
+		return pick(artifactKinds, artifactKindsV5)
+	case "agent_job", "agent_run_not_read":
+		return pick(agentTasks, agentTasksV5)
+	case "workflow_not_job", "agent_workflow":
+		return pick(workflowGoals, workflowGoalsV5)
+	case "calendar_create":
+		return pick(calendarTitles, calendarTitlesV5)
+	}
+	return fillerForLegacy(r, cat)
+}
+
+// fillerForLegacy is the historical per-category pool selection for every category
+// not extended in v5.
+func fillerForLegacy(r *rand.Rand, cat string) string {
 	switch cat {
 	case "memory_lookup", "memory_subject":
 		return subjects[r.Intn(len(subjects))]
@@ -709,8 +806,7 @@ func Generate(seed int64, n int) protocol.Dataset {
 // lucky-easy or unlucky-hard draw. Choosing n as a multiple of the category count
 // gives a perfectly balanced set; otherwise the first n%C categories get one
 // extra (deterministic, so it adds no between-run variance).
-func stratifiedCategoryOrder(r *rand.Rand, n int) []int {
-	nc := len(categories)
+func stratifiedCategoryOrder(r *rand.Rand, n, nc int) []int {
 	order := make([]int, 0, n)
 	base, rem := n/nc, n%nc
 	for ci := 0; ci < nc; ci++ {
@@ -726,6 +822,77 @@ func stratifiedCategoryOrder(r *rand.Rand, n int) []int {
 	return order
 }
 
+// codeModeCategories are the bench_version 5 Code Mode categories: they exercise
+// run_code (the in-process JavaScript compute/orchestration sandbox) and the
+// discrimination between run_code (a pure in-context calculation, no side effects)
+// and execute_agent_job (Ditto Code — real coding work needing fs/network/repo).
+// This is where "code mode usage" is represented in the tool suite. Gated on v5
+// via categoriesForVersion so v2/v3/v4 tool bytes stay frozen. Grammar-based
+// prompts (self-contained numbers) so no new filler pool is needed.
+var codeModeCategories = []category{
+	{
+		name: "code_compute", tool: "run_code",
+		grammar: persona.Grammar{
+			"root": {
+				"#lead# I spent #a#, #b#, and #c# over the last three months — work out my average monthly spend and the total.",
+				"#lead# my three test scores were #a#, #b#, and #c#. Give me the mean and how far the lowest sits below it.",
+				"#lead# take #a#, #b#, and #c#, then give me their sum, their average, and the spread between highest and lowest.",
+				"#lead# if I split a bill of #a# three ways and add a #b# tip, what does each person pay?",
+			},
+			"lead": {"Quick calc:", "Can you crunch this for me:", "Number-crunch this —", "Help me work this out:"},
+			"a":    {"$1,240", "312", "48.5", "1,024", "$96"},
+			"b":    {"$980", "277", "51.2", "18%", "2,048"},
+			"c":    {"$1,510", "298", "46.9", "512", "$74"},
+		},
+	},
+	{
+		name: "code_compute_not_agent_job", tool: "run_code",
+		grammar: persona.Grammar{
+			"root": {
+				"No need to spin up a whole project or touch my files — just compute #a# times #b# minus #c# right now.",
+				"This is a one-off calculation, not a coding job: normalize #a#, #b#, and #c# to sum to 1 and give me the fractions.",
+				"Don't build anything — just do the arithmetic: what's the compound total of #a#, #b#, and #c#?",
+				"I don't need a script or a repo, just the answer in your head-scratchpad: what percent of #a# is #b#?",
+			},
+			"lead": {""},
+			"a":    {"1,240", "312", "48.5", "1,024", "96"},
+			"b":    {"9.5", "277", "51.2", "12", "2,048"},
+			"c":    {"310", "298", "46.9", "512", "74"},
+		},
+	},
+	{
+		name: "tool_discovery", tool: "search_tools",
+		grammar: persona.Grammar{
+			"root": {
+				"Before you write any code, which of your tools can #cap#? Look it up.",
+				"I'm not sure what's available — search your tools for something that can #cap#.",
+				"Find the right tool binding to #cap# before you run anything.",
+				"What tool would you use to #cap#? Search for it first.",
+			},
+			"cap": {
+				"convert a file between formats",
+				"fetch live exchange rates",
+				"resize a batch of images",
+				"pull rows from a spreadsheet",
+				"look up a package's latest version",
+			},
+		},
+	},
+}
+
+// categoriesForVersion returns the tool category set for a bench version. v5 adds
+// the Code Mode categories; earlier versions get exactly the historical set, so
+// their dataset bytes (and the known-vector hashes) are unchanged.
+func categoriesForVersion(benchVersion int) []category {
+	if benchVersion >= protocol.BenchVersionV5 {
+		out := make([]category, 0, len(categories)+len(codeModeCategories))
+		out = append(out, categories...)
+		out = append(out, codeModeCategories...)
+		return out
+	}
+	return categories
+}
+
 // GenerateCases emits n raw tool cases from an existing RNG. Exported so the gen
 // package can build tool cases from the same templated ground truth. seed drives
 // both the stable case IDs and each result-usage prompt's fabricated needle
@@ -737,18 +904,27 @@ func GenerateCases(r *rand.Rand, seed int64, n int) []protocol.ToolCase {
 }
 
 // GenerateCasesWithFillers is GenerateCases plus, for each case, the concrete
-// entity ("filler") substituted into its template (empty for templates with no
-// %s slot). The filler is the ground-truth entity the prompt is about, exposed so
-// a caller can assert the prompt and the scored ground truth stay coupled.
+// entity ("filler") substituted into its template. Uses the historical (pre-v5)
+// category set; canonical versioned generation uses the ForVersion variant.
 func GenerateCasesWithFillers(r *rand.Rand, seed int64, n int) ([]protocol.ToolCase, []string) {
+	return GenerateCasesWithFillersForVersion(r, seed, n, protocol.BenchVersionV2)
+}
+
+// GenerateCasesWithFillersForVersion is GenerateCasesWithFillers under an explicit
+// benchmark contract: v5 draws from the Code Mode-extended category set, earlier
+// versions from the historical set (byte-identical to before). The filler is the
+// ground-truth entity the prompt is about, exposed so a caller can assert the
+// prompt and the scored ground truth stay coupled.
+func GenerateCasesWithFillersForVersion(r *rand.Rand, seed int64, n, benchVersion int) ([]protocol.ToolCase, []string) {
 	if n < 1 {
 		n = 1
 	}
-	order := stratifiedCategoryOrder(r, n)
+	cats := categoriesForVersion(benchVersion)
+	order := stratifiedCategoryOrder(r, n, len(cats))
 	cases := make([]protocol.ToolCase, 0, n)
 	fillers := make([]string, 0, n)
 	for i := 0; i < n; i++ {
-		cat := categories[order[i]]
+		cat := cats[order[i]]
 		var tmpl string
 		if cat.grammar != nil {
 			tmpl = persona.Expand(r, cat.grammar, "root")
@@ -764,7 +940,7 @@ func GenerateCasesWithFillers(r *rand.Rand, seed int64, n int) ([]protocol.ToolC
 		if IsResultUsage(cat.name) {
 			filler = toolexec.NeedleFor(seed, caseID).Subject
 		} else {
-			filler = fillerFor(r, cat.name)
+			filler = fillerForVersion(r, cat.name, benchVersion)
 		}
 		prompt := tmpl
 

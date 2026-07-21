@@ -138,7 +138,8 @@ func Memory(mc protocol.MemoryCase, resp protocol.RunResponse) Verdict {
 	if kind == "" {
 		kind = protocol.AnswerValue
 	}
-	if resp.Abstain && kind != protocol.AnswerDecline && kind != protocol.AnswerAcknowledge {
+	if resp.Abstain && kind != protocol.AnswerDecline && kind != protocol.AnswerAcknowledge &&
+		kind != protocol.AnswerChitchat {
 		return Verdict{Injection: injFlag, Notes: append(injNotes, "abstained on an answerable question (scored 0)")}
 	}
 
@@ -171,8 +172,16 @@ func Memory(mc protocol.MemoryCase, resp protocol.RunResponse) Verdict {
 			// perfectly good confirmation of a delete instruction.
 			return b2f(resp.Abstain || anyPhrase(text, acknowledgementPhrases) ||
 				anyPhrase(text, declinePhrases))
+		case protocol.AnswerChitchat:
+			// Greeting / small-talk: there is nothing to recall. The leak zeros
+			// (forbidden, distractor, dump) already ran above, so reaching the
+			// positive check means no seeded value leaked and any non-empty reply
+			// is a pass. A canned acknowledgement clears the greeting slice by
+			// design; its discriminating power comes from being scored in
+			// conjunction with the declarative and behavior-change slices (v5 4.1).
+			return b2f(strings.TrimSpace(text) != "")
 		default: // AnswerValue
-			return b2f(Hit(mc.ExpectedAnswer, text))
+			return b2f(Hit(mc.ExpectedAnswer, text) || hitAny(mc.AcceptAny, text))
 		}
 	}
 
@@ -209,10 +218,26 @@ func Memory(mc protocol.MemoryCase, resp protocol.RunResponse) Verdict {
 }
 
 // overlapsAccepted reports whether a distractor value is contained (by the same
-// bounded-phrase match Hit uses) in the case's expected answer or any accepted
-// list item, i.e. whether a correct response necessarily surfaces it.
+// bounded-phrase match Hit uses) in the case's expected answer, any accepted list
+// item, or any accept-set surface form, i.e. whether a correct response
+// necessarily surfaces it. AcceptAny is included so a v5 non-verbatim accept form
+// can never be simultaneously a graded-correct answer and a scored distractor.
 func overlapsAccepted(d string, mc protocol.MemoryCase) bool {
-	return Hit(d, mc.ExpectedAnswer) || ContainedInAny(d, mc.AnswerItems)
+	return Hit(d, mc.ExpectedAnswer) || ContainedInAny(d, mc.AnswerItems) ||
+		ContainedInAny(d, mc.AcceptAny)
+}
+
+// hitAny reports whether any accept-set surface form is present in the response
+// by the same normalized bounded containment as Hit. It is how an AnswerValue
+// case with a v5 accept-set (protocol.MemoryCase.AcceptAny) grades an honest
+// non-verbatim reply that used an equivalent form of the answer.
+func hitAny(accept []string, response string) bool {
+	for _, a := range accept {
+		if Hit(a, response) {
+			return true
+		}
+	}
+	return false
 }
 
 // DumpFloor is the number of distinct DumpGuard values whose presence in one

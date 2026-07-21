@@ -70,11 +70,6 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	if runSize == "" {
 		runSize = defaultRunSize
 	}
-	prof, ok := gen.ProfileFor(runSize)
-	if !ok {
-		http.Error(w, "unknown run_size (want small|medium|full)", http.StatusBadRequest)
-		return
-	}
 
 	versionText := r.URL.Query().Get("bench_version")
 	legacyV2 := versionText == ""
@@ -85,7 +80,13 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 	version, err := strconv.Atoi(versionText)
 	if err != nil || !protocol.SupportedBenchVersion(version) {
-		http.Error(w, "bench_version query param required (supported: 2, 3)", http.StatusBadRequest)
+		http.Error(w, "bench_version query param required (supported: 2, 3, 4, 5)", http.StatusBadRequest)
+		return
+	}
+
+	prof, ok := gen.ProfileForVersion(runSize, version)
+	if !ok {
+		http.Error(w, "unknown run_size (want small|medium|full)", http.StatusBadRequest)
 		return
 	}
 
