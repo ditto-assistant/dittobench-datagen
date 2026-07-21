@@ -143,6 +143,22 @@ var declarativeAckSpecs = []string{
 	"Let's use %s as my nickname going forward.",
 }
 
+// declarativeAckForms are acknowledgment surfaces that also count as a correct
+// response to a plain declarative statement (bench_version 6). The old grading
+// required the harness to ECHO the coined token verbatim, so a perfectly grounded
+// reply like "Got it, noted." scored zero. That was a false negative against the
+// honest, grounded harness the conversational-sanity gate exists to reward. Accept
+// a clear acknowledgment as well: the non-leak guards (ForbiddenAnswer + DumpGuard)
+// still zero a memory dump, and durable capture is proven unfakeably by the separate
+// declarative-write-read case, so a generic "got it" cannot game the gate (a harness
+// that acknowledges but never captures still fails the write-read and behavior
+// slices). This only removes the false negative.
+var declarativeAckForms = []string{
+	"got it", "noted", "understood", "will do", "makes sense", "sounds good",
+	"good to know", "i'll remember", "i've noted", "duly noted", "acknowledged",
+	"of course", "no problem", "gotcha", "sure thing", "consider it noted",
+}
+
 // confabSpec is one abstention-over-confabulation probe: a coined value seeded on
 // seededNoun, then askedNoun (never seeded, semantically adjacent) is queried. A
 // confabulator reports the seeded neighbor; the correct behavior is to decline.
@@ -303,7 +319,14 @@ var confabSpecs = []confabSpec{
 // cases. Deterministic per (seed, draw position): all picks draw from the shared
 // suite rng at a fixed point in GenerateMemorySuite, gated so a pre-v5 contract's
 // draw sequence is untouched.
-func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves int) conversationalSuite {
+func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves, benchVersion int) conversationalSuite {
+	// v6 softens declarative acknowledgement: a clear acknowledgment counts, not only
+	// a verbatim echo of the coined value (v5 kept the strict echo, so v5's bytes and
+	// its frozen vector are untouched).
+	var ackAccept []string
+	if benchVersion >= protocol.BenchVersionV6 {
+		ackAccept = declarativeAckForms
+	}
 	var out conversationalSuite
 	pick := func(opts []string) string { return opts[r.Intn(len(opts))] }
 	offTopic := offTopicSelfValues(plan, 8)
@@ -348,6 +371,7 @@ func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves
 			Question:        fmt.Sprintf(pick(declarativeAckSpecs), val),
 			ExpectedAnswer:  val,
 			AnswerKind:      protocol.AnswerValue,
+			AcceptAny:       ackAccept, // v6: a clear acknowledgment also passes
 			ForbiddenAnswer: sentinel,
 			DumpGuard:       offTopic,
 		}, 0)
