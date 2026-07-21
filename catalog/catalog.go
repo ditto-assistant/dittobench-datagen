@@ -125,8 +125,18 @@ func Catalog() []protocol.ToolDefinition {
 		},
 		{
 			Name:        "execute_agent_job",
-			Description: "Dispatch a one-off background agent job. For a goal with clear independent parts, use execute_agent_workflow instead.",
+			Description: "Dispatch a one-off background agent job to Ditto Code — a sandboxed coding harness that can write and run code, install packages, run shell commands, and edit files in a workspace. Use for real coding/automation work that needs the file system, the network, or a repo. For a pure in-context calculation with no side effects, use run_code instead.",
 			Parameters:  params(map[string]string{"task": "the task to run"}, "task"),
+		},
+		{
+			Name:        "run_code",
+			Description: "Execute JavaScript in a fast in-process sandbox to compute a result or chain tool calls (Code Mode). Use for a one-off calculation, data transformation, or orchestrating several tools over their results — it has NO file system, network, or package installs. For real coding work (writing a repo, running shell, editing files) use execute_agent_job instead.",
+			Parameters:  params(map[string]string{"code": "the JavaScript to execute"}, "code"),
+		},
+		{
+			Name:        "search_tools",
+			Description: "Search the available tools by keyword and return the matching tool signatures. Use inside Code Mode to discover which tool binding to call before writing run_code.",
+			Parameters:  params(map[string]string{"query": "keywords describing the capability you need"}, "query"),
 		},
 		{
 			Name:        "execute_agent_workflow",

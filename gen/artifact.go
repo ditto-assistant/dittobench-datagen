@@ -82,7 +82,7 @@ func GenerateDataset(seed int64, prof Profile, benchVersion int) (DatasetArtifac
 	if err != nil {
 		return DatasetArtifact{}, err
 	}
-	toolCases, _ := GenerateTools(rng, seed, prof.Tools)
+	toolCases, _ := GenerateToolsForVersion(rng, seed, prof.Tools, benchVersion)
 	suite, err := GenerateMemorySuiteForVersion(rng, seed, prof.Mem, prof.Waves, prof.RawPairsFrac, benchVersion)
 	if err != nil {
 		return DatasetArtifact{}, err

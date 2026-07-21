@@ -58,7 +58,7 @@ func main() {
 		seed = gen.FreshSeed()
 	}
 
-	prof, ok := gen.ProfileFor(runSize)
+	prof, ok := gen.ProfileForVersion(runSize, version)
 	if !ok {
 		fmt.Fprintf(os.Stderr, "unknown run-size %q; valid: small, medium, full\n", runSize)
 		os.Exit(2)

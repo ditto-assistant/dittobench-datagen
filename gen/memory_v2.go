@@ -481,8 +481,15 @@ func personaOptsFor(n int) persona.Opts {
 		return persona.Opts{Sessions: 5, Projects: 4, Trips: 3, Pets: 2, UpdateChains: 2, Reversals: 1, DecoyPeople: 4, DomainItems: 3, LongChain: 3}
 	case n <= 25:
 		return persona.DefaultOpts()
-	default:
+	case n <= 55:
+		// v2/v3/v4 full (Mem 50) lands here; its opts are unchanged so those
+		// contracts' bytes stay frozen.
 		return persona.Opts{Sessions: 9, Projects: 10, Trips: 8, Pets: 5, UpdateChains: 4, Reversals: 3, DecoyPeople: 10, DomainItems: 4, LongChain: 4}
+	default:
+		// v5 full (Mem 70) lands here: a materially larger persona so the haystack
+		// and distractor density grow, making retrieval recall the bottleneck rather
+		// than parsing (v5 plan 4.3). No frozen contract generates n>55.
+		return persona.Opts{Sessions: 12, Projects: 14, Trips: 10, Pets: 6, UpdateChains: 6, Reversals: 4, DecoyPeople: 16, DomainItems: 5, LongChain: 5}
 	}
 }
 
