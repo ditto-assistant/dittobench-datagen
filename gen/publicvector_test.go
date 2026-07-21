@@ -241,6 +241,34 @@ func TestV4KnownVector(t *testing.T) {
 	}
 }
 
+// TestV5KnownVector pins the chat-quality/efficiency contract. The token
+// transform lives in the validator; this vector pins the independently rotated
+// v5 dataset used by both scored runs and starter-kit calibration.
+func TestV5KnownVector(t *testing.T) {
+	const (
+		seed = int64(123456789)
+		// v5 is the ACTIVE (not-yet-frozen) release; re-pin on any deliberate v5
+		// generator change. Re-pinned when the conversational-sanity gate, declarative
+		// writes, code-mode, scaled volume, multi-hop/temporal-depth hardening, and the
+		// high-entropy + metamorphic-twin anti-overfit rework landed, and when this
+		// vector switched to the canonical v5 profile (ProfileForVersion) the validator
+		// actually serves, rather than the v4-sized ProfileFor.
+		want = "720e8f338252e5ca7ebd5da04f33b9da59987ef17c4541d5595bedf03ecf0b70"
+	)
+	prof, _ := ProfileForVersion("full", protocol.BenchVersionV5)
+	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV5)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	got, _, err := artifact.SHA256Hex()
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	if got != want {
+		t.Fatalf("v5 known-vector hash drift for seed %d full:\n got %s\nwant %s", seed, got, want)
+	}
+}
+
 func TestUnsupportedVersionRejected(t *testing.T) {
 	prof, _ := ProfileFor("small")
 	if _, err := GenerateDataset(42, prof, 6); err == nil {

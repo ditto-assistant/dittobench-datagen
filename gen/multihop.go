@@ -44,19 +44,20 @@ type multiHopSuite struct {
 
 func multiHopEnabled(benchVersion int) bool { return benchVersion >= protocol.BenchVersionV5 }
 
-// multiHopCasesFor is the seed-independent multi-hop quota. The chain needs its
-// relation intro and leaf fact seeded before the question, and benefits from
-// spanning sessions/waves, so single-wave (small) runs carry none.
+// multiHopCasesFor is the seed-independent multi-hop CHAIN quota. Each chain emits
+// a metamorphic twin PAIR (two cases), so the case count is 2x this. The chain
+// needs its relation intro and leaf fact seeded before the question and benefits
+// from spanning sessions/waves, so single-wave (small) runs carry none.
 func multiHopCasesFor(n, nWaves int) int {
 	switch {
 	case nWaves < 2:
 		return 0
 	case n >= 70:
-		return 4
-	case n >= 40:
-		return 3
-	case n >= 20:
 		return 2
+	case n >= 40:
+		return 2
+	case n >= 20:
+		return 1
 	default:
 		return 0
 	}
@@ -64,15 +65,20 @@ func multiHopCasesFor(n, nWaves int) int {
 
 // relativeNames are uncommon given names for the intermediary entity. Uncommon so
 // a collision with a rendered decoy person is unlikely; the join is by exact name
-// match between the relation pair and the leaf pair.
+// match between the relation pair and the leaf pair. A large pool so the
+// intermediary is not enumerable across seeds.
 var relativeNames = []string{
 	"Dana", "Priya", "Marcus", "Ingrid", "Rafael", "Yuki", "Nadia", "Emeka",
 	"Lena", "Tomas", "Anouk", "Darius", "Freya", "Kwame", "Sofia", "Bjorn",
+	"Iris", "Malik", "Rosa", "Viktor", "Amara", "Theo", "Petra", "Idris",
+	"Simone", "Oskar", "Leila", "Hassan", "Greta", "Diego", "Noor", "Cillian",
+	"Yasmin", "Arjun", "Elodie", "Kofi", "Saoirse", "Milo", "Zara", "Lars",
 }
 
 // relationPair is a (target, decoy) relation on the same leaf attribute. The
 // question asks about the TARGET relative; naming the DECOY relative's leaf value
-// is the shallow one-hop error.
+// is the shallow one-hop error. A wide pool of relation kinds so the family cannot
+// be reduced to a fixed cue list.
 type relationPair struct {
 	target string
 	decoy  string
@@ -84,23 +90,95 @@ var relationPairs = []relationPair{
 	{target: "best friend", decoy: "neighbor"},
 	{target: "aunt", decoy: "coworker"},
 	{target: "mentor", decoy: "landlord"},
+	{target: "roommate", decoy: "dentist"},
+	{target: "cousin", decoy: "barber"},
+	{target: "old college friend", decoy: "manager"},
+	{target: "gym buddy", decoy: "accountant"},
+	{target: "godmother", decoy: "physio"},
+	{target: "nephew", decoy: "plumber"},
+	{target: "sister-in-law", decoy: "trainer"},
+	{target: "childhood friend", decoy: "vet"},
+	{target: "brother-in-law", decoy: "tutor"},
 }
 
-// leafFact is a joinable attribute whose value is a COINED token (a pet/boat/plant
-// name — plausibly any string, so a coined value reads naturally). intro states
-// the relation; fact attaches the coined value to the intermediary; ask queries
-// the target relative's leaf.
+// leafFact is a joinable attribute whose value is a COINED token (a name for a
+// thing, so a coined value reads naturally). It is grammar-generated so the
+// phrasing is drawn from a large space (hundreds of surfaces per noun) rather than
+// one memorizable template — the family cannot be enumerated into a static cue
+// list. intro states the relation; fact attaches the coined value to the
+// intermediary; ask queries the target relative's leaf, present in the store only
+// via the link.
 type leafFact struct {
-	// factTmpl: %s=person, %s=value. askTmpl: (no args) the join question.
-	factTmpl string
-	askTmpl  string // %s = target relation
+	noun string          // "puppy", "sailboat", ...
+	fact persona.Grammar // root: %s person, %s value
+	ask  persona.Grammar // root: %s target relation
 }
 
-var leafFacts = []leafFact{
-	{factTmpl: "%s adopted a puppy last month and named it %s.", askTmpl: "What did my %s name their puppy?"},
-	{factTmpl: "%s finally named their sailboat %s.", askTmpl: "What's the name of my %s's sailboat?"},
-	{factTmpl: "%s got a kitten and is calling it %s.", askTmpl: "What did my %s name their kitten?"},
-	{factTmpl: "%s named their new houseplant %s, of all things.", askTmpl: "What did my %s name their houseplant?"},
+// leafNouns are the joinable things whose NAME is coined. A wide set so the
+// attribute space cannot be enumerated into a "if the question mentions X, do a
+// 2-hop join" shortcut.
+var leafNouns = []string{
+	"puppy", "kitten", "sailboat", "houseplant", "road bike", "acoustic guitar",
+	"food truck", "podcast", "cat", "campervan", "startup", "fantasy-league team",
+	"rowboat", "terrarium", "vintage scooter", "book club", "sourdough starter",
+	"parrot", "e-bike", "greenhouse",
+}
+
+// randomLeaf picks a leaf-attribute KIND and a noun, then builds grammar-driven
+// fact/ask surfaces. Varying the KIND (name-a-thing / moved-to-place / works-at /
+// lives-on-street) as well as the noun and phrasing means the question STRUCTURE
+// itself varies, so there is no single "detect 'name their X' -> do a 2-hop join"
+// shortcut to overfit. The value is always a COINED token (exact grading, natural
+// as a name / town / employer / street).
+func randomLeaf(r *rand.Rand) leafFact {
+	kinds := []func() leafFact{
+		func() leafFact { // name a thing
+			noun := leafNouns[r.Intn(len(leafNouns))]
+			return leafFact{noun: noun,
+				fact: persona.Grammar{
+					"root":  {"#lead# %s #verb# their " + noun + " %s.#trail#", "#lead# %s #verb# the " + noun + " %s.#trail#"},
+					"lead":  {"Fun update:", "Oh,", "By the way,", "Heard that", "So,", "Turns out", ""},
+					"verb":  {"named", "decided to call", "went with", "is calling", "finally named", "settled on calling"},
+					"trail": {" Cute, right?", " I liked it.", "", " Very them."}},
+				ask: persona.Grammar{
+					"root": {"#lead# what did my %s name their " + noun + "?", "#lead# what's my %s's " + noun + " called?", "#lead# remind me what my %s named their " + noun + "."},
+					"lead": {"", "Quick one:", "Hey,", "So,"}}}
+		},
+		func() leafFact { // moved to a town
+			return leafFact{noun: "town",
+				fact: persona.Grammar{
+					"root":  {"#lead# %s #verb# a town called %s.#trail#", "#lead# %s #verb# %s, a little town.#trail#"},
+					"lead":  {"Oh,", "By the way,", "Heard that", "So,", ""},
+					"verb":  {"just moved to", "relocated to", "settled in", "recently moved to"},
+					"trail": {" Big change.", " Suits them.", "", " Nice area."}},
+				ask: persona.Grammar{
+					"root": {"#lead# what town did my %s move to?", "#lead# where does my %s live now?", "#lead# which town did my %s relocate to?"},
+					"lead": {"", "Quick one:", "Hey,"}}}
+		},
+		func() leafFact { // works at
+			return leafFact{noun: "employer",
+				fact: persona.Grammar{
+					"root":  {"#lead# %s #verb# %s.#trail#", "#lead# %s #verb# a company called %s.#trail#"},
+					"lead":  {"Oh,", "By the way,", "Heard", "So,", ""},
+					"verb":  {"started a job at", "now works at", "took a role at", "just joined"},
+					"trail": {" Exciting.", " Good for them.", "", " Big step."}},
+				ask: persona.Grammar{
+					"root": {"#lead# where does my %s work?", "#lead# what company did my %s join?", "#lead# who does my %s work for now?"},
+					"lead": {"", "Quick one:", "Hey,"}}}
+		},
+		func() leafFact { // lives on street
+			return leafFact{noun: "street",
+				fact: persona.Grammar{
+					"root":  {"#lead# %s #verb# %s Street.#trail#", "#lead# %s's new place is on %s Street.#trail#"},
+					"lead":  {"Oh,", "By the way,", "So,", ""},
+					"verb":  {"moved to", "just bought a place on", "now lives on"},
+					"trail": {" Lovely block.", "", " Quiet street."}},
+				ask: persona.Grammar{
+					"root": {"#lead# what street does my %s live on?", "#lead# which street is my %s's place on?"},
+					"lead": {"", "Hey,"}}}
+		},
+	}
+	return kinds[r.Intn(len(kinds))]()
 }
 
 // buildMultiHop generates the multi-hop relational cases. Deterministic per (seed,
@@ -128,9 +206,21 @@ func buildMultiHop(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves int) 
 		pairIdx++
 	}
 
+	// introOf varies the relation-introduction surface (lead, body order, trail) so
+	// the relation pair is not a fixed memorizable template.
+	leads := []string{"", "Oh, ", "By the way, ", "For context, ", "Quick note: ", "So, "}
+	trails := []string{"", " Lovely person.", " We're close.", " Known them ages.", " Good egg."}
+	introOf := func(relation, person string) string {
+		body := "my " + relation + " is " + person
+		if r.Intn(2) == 0 {
+			body = person + " is my " + relation
+		}
+		return leads[r.Intn(len(leads))] + body + "." + trails[r.Intn(len(trails))]
+	}
+
 	for c := 0; c < nCases; c++ {
 		rel := relationPairs[r.Intn(len(relationPairs))]
-		leaf := leafFacts[r.Intn(len(leafFacts))]
+		leaf := randomLeaf(r)
 		// Distinct intermediary names for target and decoy.
 		tPerm := r.Perm(len(relativeNames))
 		targetPerson := relativeNames[tPerm[0]]
@@ -139,22 +229,39 @@ func buildMultiHop(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves int) 
 		decoyVal := persona.CoinShaped(seed, fmt.Sprintf("mh|dec|%d", c))
 
 		// Target chain: relation intro and leaf fact, in two distinct sessions.
-		seedPair(4*c, "My "+rel.target+" is "+targetPerson+".", "Good to know.")
-		seedPair(4*c+1, fmt.Sprintf(leaf.factTmpl, targetPerson, targetVal), "Noted.")
+		seedPair(4*c, introOf(rel.target, targetPerson), "Good to know.")
+		seedPair(4*c+1, fmt.Sprintf(persona.Expand(r, leaf.fact, "root"), targetPerson, targetVal), "Noted.")
 		// Decoy chain: wrong relative on the SAME leaf attribute, two more sessions.
-		seedPair(4*c+2, "My "+rel.decoy+" is "+decoyPerson+".", "Got it.")
-		seedPair(4*c+3, fmt.Sprintf(leaf.factTmpl, decoyPerson, decoyVal), "Nice.")
+		seedPair(4*c+2, introOf(rel.decoy, decoyPerson), "Got it.")
+		seedPair(4*c+3, fmt.Sprintf(persona.Expand(r, leaf.fact, "root"), decoyPerson, decoyVal), "Nice.")
 
-		mc := protocol.MemoryCase{
-			ID:                protocol.OpaqueCaseID(seed, "memmh", ordinal),
-			QuestionType:      QTMultiHop,
-			Question:          fmt.Sprintf(leaf.askTmpl, rel.target),
-			ExpectedAnswer:    targetVal,
-			AnswerKind:        protocol.AnswerValue,
-			DistractorAnswers: []string{decoyVal},
+		// METAMORPHIC-INVARIANCE TWINS: ask the SAME join two different ways, sharing a
+		// TwinGroup. A harness that overfit one surface but cannot generalize the join
+		// answers them inconsistently and is penalized by MetamorphicConsistencyFactor
+		// (the CheckList/INV robustness signal). Two distinct ask surfaces from the
+		// same leaf.ask grammar; the answer is identical.
+		twin := fmt.Sprintf("mhtwin-%d-%d", seed, c)
+		q1 := fmt.Sprintf(persona.Expand(r, leaf.ask, "root"), rel.target)
+		var q2 string
+		for i := 0; i < 6; i++ { // draw a DIFFERENT surface for the twin
+			q2 = fmt.Sprintf(persona.Expand(r, leaf.ask, "root"), rel.target)
+			if q2 != q1 {
+				break
+			}
 		}
-		out.Cases = append(out.Cases, StagedCase{Case: mc, RunAfterWave: nWaves - 1})
-		ordinal++
+		for i, q := range []string{q1, q2} {
+			out.Cases = append(out.Cases, StagedCase{Case: protocol.MemoryCase{
+				ID:                protocol.OpaqueCaseID(seed, "memmh", ordinal),
+				QuestionType:      QTMultiHop,
+				Question:          q,
+				ExpectedAnswer:    targetVal,
+				AnswerKind:        protocol.AnswerValue,
+				DistractorAnswers: []string{decoyVal},
+				TwinGroup:         twin,
+			}, RunAfterWave: nWaves - 1})
+			ordinal++
+			_ = i
+		}
 	}
 	return out
 }

@@ -24,18 +24,23 @@ import (
 // version is an immutable contract: v3's bytes and its already-recorded scores
 // stay exactly as they were, and re-scoring happens by moving to a new contract
 // rather than by rewriting an old one.
-// v5 is the CONVERSATIONAL-GROUNDING release (see dittobench-api
-// docs/BENCHMARK-V5-PLAN.md). v4 rewarded a phrase-list router that recognizes
-// memory writes only through a closed cue family and dumps retrieved memory on
-// any unmatched turn (the "Aurora-9" failure): a greeting could surface an
-// off-topic seeded value and still score near the top, because no case graded
+// v5 is the CONVERSATIONAL-GROUNDING, COVERAGE, AND EFFICIENCY release (see
+// dittobench-api docs/BENCHMARK-V5-PLAN.md). v4 rewarded a phrase-list router that
+// recognizes memory writes only through a closed cue family and dumps retrieved
+// memory on any unmatched turn (the "Aurora-9" failure): a greeting could surface
+// an off-topic seeded value and still score near the top, because no case graded
 // conversational relevance and no case tested a plain declarative statement as a
-// durable write. v5 adds a conversational-sanity gate (greeting non-leak,
-// declarative acknowledgement, abstention-over-confabulation), ordinary
-// declarative writes with no save verb plus their persistence and behavior-change
-// proofs, and the accept-set grading primitive that lets a non-verbatim answer be
-// graded deterministically. Every addition is gated on the version, so v4's bytes
-// and already-recorded scores are untouched.
+// durable write. v5 adds, all version-gated so v4's bytes and already-recorded
+// scores are untouched:
+//   - a conversational-sanity gate (greeting non-leak, declarative acknowledgement,
+//     abstention-over-confabulation) and ordinary no-save-verb declarative writes
+//     with their persistence and behavior-change proofs;
+//   - the accept-set grading primitive (non-verbatim answers), Code Mode tool
+//     coverage, and harder capability dimensions (multi-hop relational KG joins,
+//     temporal-depth), all high-entropy and metamorphic-twinned to resist overfit;
+//   - a token-efficiency (waste-penalty) contract the validator applies from
+//     trusted relay telemetry, binding generation, model/provider profile, and the
+//     starter baseline to one immutable contract.
 const (
 	BenchVersionV2      = 2
 	BenchVersionV3      = 3
