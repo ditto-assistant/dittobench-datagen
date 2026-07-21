@@ -46,6 +46,14 @@ type MemorySuite struct {
 	// TemporalDepthCases counts the v5 temporal-depth cases (see gen/temporaldepth.go).
 	// Zero for pre-v5 contracts. Advisory telemetry.
 	TemporalDepthCases int
+	// StoredInstructionCases counts the v6 stored-instruction (memory-as-data)
+	// cases (see gen/storedinstruction.go). Zero for pre-v6 contracts. Advisory.
+	StoredInstructionCases int
+	// MultiQueryCases / NonVerbatimCases / ConsolidationCases count the v6 fan-out,
+	// non-verbatim-computed, and passive-consolidation cases. Advisory telemetry.
+	MultiQueryCases    int
+	NonVerbatimCases   int
+	ConsolidationCases int
 	// LexicalGap is the query↔needle overlap telemetry (NoLiMa): how much
 	// content wording the emitted questions share with their evidence, before and
 	// after the low-overlap rewrite.
@@ -176,9 +184,38 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		td = buildTemporalDepth(r, seed, plan, n, nWaves)
 	}
 	suite.TemporalDepthCases = len(td.Cases)
+	// v6 stored-instruction (memory-as-data vs memory-as-instructions) cases
+	// (gen/storedinstruction.go): never sampled out, seed-independent count per run
+	// size, fixed draw position, v6-gated so v5's bytes are untouched.
+	var si storedInstructionSuite
+	if storedInstructionEnabled(benchVersion) {
+		si = buildStoredInstruction(r, seed, plan, n, nWaves)
+	}
+	suite.StoredInstructionCases = len(si.Cases)
+	// v6 multi-query fan-out (gen/multiquery.go): answerable only by intersecting
+	// two focused sub-queries; v6-gated, fixed draw position, never sampled out.
+	var mq multiQuerySuite
+	if multiQueryEnabled(benchVersion) {
+		mq = buildMultiQuery(r, seed, plan, n, nWaves)
+	}
+	suite.MultiQueryCases = len(mq.Cases)
+	// v6 non-verbatim / computed answers (gen/nonverbatim.go): the answer is absent
+	// from any seeded pair (unit conversion), graded via the accept-set; v6-gated.
+	var nv nonVerbatimSuite
+	if nonVerbatimEnabled(benchVersion) {
+		nv = buildNonVerbatim(r, seed, plan, n, nWaves)
+	}
+	suite.NonVerbatimCases = len(nv.Cases)
+	// v6 passive-consolidation (gen/consolidation.go): a topic accrued across
+	// non-adjacent sessions with no save verb, queried for its earliest fact; v6-gated.
+	var cons consolidationSuite
+	if consolidationEnabled(benchVersion) {
+		cons = buildConsolidation(r, seed, plan, n, nWaves)
+	}
+	suite.ConsolidationCases = len(cons.Cases)
 	// Reserve room for the always-included canary, twin, lifecycle, and
 	// conversational cases so the total case count stays at n.
-	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(lc.Cases) - len(conv.Cases) - len(mh.Cases) - len(td.Cases)
+	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(lc.Cases) - len(conv.Cases) - len(mh.Cases) - len(td.Cases) - len(si.Cases) - len(mq.Cases) - len(nv.Cases) - len(cons.Cases)
 	if mainQuota < 0 {
 		mainQuota = 0
 	}
@@ -354,6 +391,10 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	staged = append(staged, conv.Cases...)
 	staged = append(staged, mh.Cases...)
 	staged = append(staged, td.Cases...)
+	staged = append(staged, si.Cases...)
+	staged = append(staged, mq.Cases...)
+	staged = append(staged, nv.Cases...)
+	staged = append(staged, cons.Cases...)
 	r.Shuffle(len(staged), func(i, j int) { staged[i], staged[j] = staged[j], staged[i] })
 	suite.Cases = staged
 
@@ -377,6 +418,18 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	}
 	if len(td.Pairs) > 0 {
 		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, td.Pairs...)
+	}
+	if len(si.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, si.Pairs...)
+	}
+	if len(mq.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, mq.Pairs...)
+	}
+	if len(nv.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, nv.Pairs...)
+	}
+	if len(cons.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, cons.Pairs...)
 	}
 	return suite, nil
 }
