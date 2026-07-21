@@ -85,3 +85,45 @@ func TestV6ComplexityGrading(t *testing.T) {
 		t.Errorf("consolidation recency value must score 0, got %.2f", s)
 	}
 }
+
+// TestV6DeclarativeAckSoftened pins the v6 softening of the conversational-declarative
+// gate slice: a clear acknowledgment passes (not only a verbatim echo of the coined
+// value), while ignoring the statement or dumping stored memory still fails, and v5
+// keeps the strict echo (its bytes are frozen).
+func TestV6DeclarativeAckSoftened(t *testing.T) {
+	pick := func(bv int) protocol.MemoryCase {
+		prof, _ := ProfileForVersion("full", bv)
+		r, _ := NewRNGForVersion(101, bv)
+		s, err := GenerateMemorySuiteForVersion(r, 101, prof.Mem, prof.Waves, prof.RawPairsFrac, bv)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, sc := range s.Cases {
+			if sc.Case.QuestionType == QTDeclarativeAck {
+				return sc.Case
+			}
+		}
+		t.Fatalf("no declarative-ack case for bv=%d", bv)
+		return protocol.MemoryCase{}
+	}
+	score := func(mc protocol.MemoryCase, txt string) float64 {
+		return grade.Memory(mc, protocol.RunResponse{FinalText: txt}).Score
+	}
+	v5, v6 := pick(protocol.BenchVersionV5), pick(protocol.BenchVersionV6)
+	// v5 stays strict: a bare acknowledgment does not pass.
+	if s := score(v5, "Got it, noted."); s != 0 {
+		t.Errorf("v5 declarative-ack must still require the value echo, ack got %.2f", s)
+	}
+	// v6 accepts a clear acknowledgment...
+	if s := score(v6, "Got it, noted."); s != 1 {
+		t.Errorf("v6 declarative-ack must accept an acknowledgment, got %.2f", s)
+	}
+	// ...still requires engaging (ignoring the statement fails)...
+	if s := score(v6, "Nice weather today."); s != 0 {
+		t.Errorf("v6 declarative-ack must fail an unrelated reply, got %.2f", s)
+	}
+	// ...and the non-leak guard still zeroes a memory dump.
+	if s := score(v6, "Got it. "+v6.ForbiddenAnswer); s != 0 {
+		t.Errorf("v6 declarative-ack must zero a leak even with an ack, got %.2f", s)
+	}
+}

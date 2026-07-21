@@ -167,7 +167,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	// a pre-v5 contract's rng sequence and bytes are untouched.
 	var conv conversationalSuite
 	if conversationalEnabled(benchVersion) {
-		conv = buildConversational(r, seed, plan, n, nWaves)
+		conv = buildConversational(r, seed, plan, n, nWaves, benchVersion)
 	}
 	suite.ConversationalCases = len(conv.Cases)
 	// v5 multi-hop relational (KG-join) cases (gen/multihop.go): never sampled out,
