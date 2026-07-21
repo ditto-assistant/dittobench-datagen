@@ -71,10 +71,14 @@ var Profiles = map[string]Profile{
 // persona (personaOptsFor), so the haystack and distractor density rise with it.
 // small stays a cheap single-wave smoke path. Only v5 uses these, so v2/v3/v4
 // bytes are untouched.
+// Counts are chosen with the between-seed DIFFICULTY variance in mind: more cases
+// at the FIXED stratified per-category mix lowers tool_mean variance (measured with
+// cmd/benchcal --version 5: tool σ falls from ~0.036 at n=80 to ~0.026 at n=120),
+// so scaling up adds coverage AND tightens difficulty rather than widening it.
 var profilesV5 = map[string]Profile{
 	"small":  {Tools: 6, Mem: 6, Waves: 1, RawPairsFrac: 0, IsoCases: 0},
-	"medium": {Tools: 30, Mem: 30, Waves: 3, RawPairsFrac: 0.35, IsoCases: 3},
-	"full":   {Tools: 80, Mem: 70, Waves: 4, RawPairsFrac: 0.4, IsoCases: 6},
+	"medium": {Tools: 40, Mem: 40, Waves: 3, RawPairsFrac: 0.35, IsoCases: 3},
+	"full":   {Tools: 110, Mem: 85, Waves: 4, RawPairsFrac: 0.4, IsoCases: 6},
 }
 
 // ProfileFor returns the Profile for a run_size, defaulting to small. Uses the

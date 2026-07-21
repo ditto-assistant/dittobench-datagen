@@ -115,6 +115,13 @@ var greetingPrompts = []string{
 	"good morning!",
 	"hey, how's it going?",
 	"morning! hope you're well.",
+	"yo, what's up?",
+	"hello! long time no chat.",
+	"hiya :)",
+	"evening! how are things?",
+	"hey friend, how've you been?",
+	"good to see you again!",
+	"sup, how's your day going?",
 }
 
 // declarativeAckSpecs are same-turn declarative statements carrying a coined
@@ -125,6 +132,10 @@ var declarativeAckSpecs = []string{
 	"Quick note: you can file me under the handle %s from now on.",
 	"Oh, my call sign for our sessions is %s, in case it comes up.",
 	"Heads up, the tag I go by around here is %s.",
+	"For the record, my membership number here is %s.",
+	"Just so you have it, my locker tag is %s.",
+	"FYI, the reference I use for us is %s.",
+	"Let's use %s as my nickname going forward.",
 }
 
 // confabSpec is one abstention-over-confabulation probe: a coined value seeded on
@@ -180,6 +191,23 @@ var declPrefDomains = []declPrefDomain{
 			"Set up a food order for the party — which service are you using?",
 		},
 	},
+	{
+		write: []string{
+			"For rides, I only ever call %s now — never %s, their drivers kept cancelling on me.",
+			"When I need a car, book %s. I've stopped using %s entirely.",
+			"Standing rule for getting around: use %s, and never %s.",
+		},
+		read: []string{
+			"Which rideshare service do I want you to use?",
+			"Who did I say to book my rides through?",
+			"What's my preferred car service again?",
+		},
+		behavior: []string{
+			"Get me a ride to the airport tomorrow — which service are you booking?",
+			"Call me a car for 6pm; what app are you using?",
+			"Arrange a ride to the venue — which service are you going with?",
+		},
+	},
 }
 
 var confabSpecs = []confabSpec{
@@ -187,6 +215,11 @@ var confabSpecs = []confabSpec{
 	{seededNoun: "sailboat", askedNoun: "motorbike"},
 	{seededNoun: "houseplant on the balcony", askedNoun: "houseplant in the kitchen"},
 	{seededNoun: "guitar", askedNoun: "ukulele"},
+	{seededNoun: "road bike", askedNoun: "mountain bike"},
+	{seededNoun: "espresso machine", askedNoun: "kettle"},
+	{seededNoun: "orange tabby", askedNoun: "goldfish"},
+	{seededNoun: "vegetable patch", askedNoun: "flower bed"},
+	{seededNoun: "campervan", askedNoun: "rowboat"},
 }
 
 // buildConversational generates the v5 conversational-sanity and declarative-write

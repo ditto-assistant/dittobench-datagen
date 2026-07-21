@@ -601,8 +601,105 @@ const resultUsageSuffix = "_result_usage"
 // needle.
 func IsResultUsage(category string) bool { return strings.HasSuffix(category, resultUsageSuffix) }
 
-// fillerFor returns a random entity string appropriate for a category.
+// v5 content-pool extensions. The thin open-ended CONTENT pools (a URL, an image
+// prompt, a coding task, a research topic) are the tool suite's main memorization
+// surface — with only ~5-9 entries a miner sees the same handful every seed. v5
+// roughly doubles them, which is pure anti-memorization: a different URL or image
+// subject is the SAME routing difficulty, so between-seed difficulty variance is
+// unchanged while per-seed surface entropy rises. Value pools with a real finite
+// space (themes, models, effort levels) are deliberately NOT extended — inventing
+// fake values there would hurt realism, and the answer, not the surface, is what
+// matters for them. Gated on v5 (poolV5), so v2/v3/v4 fillers are byte-identical.
+var (
+	topicsV5 = []string{
+		"quantum error correction", "the housing market outlook", "olive oil adulteration",
+		"deep-sea mining rules", "the Voyager probes", "sourdough hydration ratios",
+		"urban heat islands", "the semiconductor supply chain", "coral reef restoration",
+		"noise-cancelling headphone tech", "the history of the metric system",
+	}
+	urlsV5 = []string{
+		"https://example.com/2026-outlook", "https://blog.example.org/rust-async",
+		"https://news.example.net/energy-grid", "https://docs.example.io/api/v3",
+		"https://example.com/longform/whales", "https://example.org/recipes/ramen",
+		"https://research.example.edu/paper-42", "https://example.net/city-transit-plan",
+	}
+	imagePromptsV5 = []string{
+		"a neon koi pond at dusk", "an isometric cozy reading nook", "a watercolor alpine village",
+		"a retro-futurist train station", "a cross-section of a seed sprouting",
+		"a lighthouse in a lightning storm", "a papercraft rainforest scene",
+		"a chalkboard diagram of the water cycle",
+	}
+	agentTasksV5 = []string{
+		"scaffold a CLI that renames photos by EXIF date", "write a script to dedupe my CSV export",
+		"build a small Flask app that serves a health check", "add unit tests to my parser module",
+		"convert this repo's config from JSON to YAML", "write a cron job that backs up a folder nightly",
+		"refactor the utils file to remove duplication",
+	}
+	workflowGoalsV5 = []string{
+		"audit my site for accessibility across pages, forms, and images",
+		"research three CRM options on price, integrations, and support",
+		"benchmark four JSON libraries on parse speed, memory, and API",
+		"review a PR for correctness, tests, and style in parallel",
+		"summarize a report from the finance, risk, and ops angles",
+	}
+	artifactKindsV5 = []string{
+		"a habit-tracker web app", "a markdown resume", "a snake game",
+		"a budgeting spreadsheet mockup", "a landing page for a coffee shop",
+		"an interactive periodic table", "a pomodoro timer",
+	}
+	calendarTitlesV5 = []string{
+		"dentist cleaning", "1:1 with Priya", "car service appointment",
+		"book club", "flight to Denver", "quarterly review", "vet visit for the cat",
+	}
+)
+
+// poolV5 returns base for pre-v5 contracts and base+extra for v5, so an expanded
+// pool only affects v5 generation (v2/v3/v4 draws are unchanged).
+func poolV5(base, extra []string, benchVersion int) []string {
+	if benchVersion >= protocol.BenchVersionV5 {
+		out := make([]string, 0, len(base)+len(extra))
+		out = append(out, base...)
+		out = append(out, extra...)
+		return out
+	}
+	return base
+}
+
+// fillerFor returns a random entity string appropriate for a category (v2 pools).
 func fillerFor(r *rand.Rand, cat string) string {
+	return fillerForVersion(r, cat, protocol.BenchVersionV2)
+}
+
+// fillerForVersion is fillerFor under an explicit contract: v5 draws the thin
+// content categories from the extended pools (poolV5), everything else from the
+// historical pools, so v2/v3/v4 fillers are byte-identical.
+func fillerForVersion(r *rand.Rand, cat string, benchVersion int) string {
+	pick := func(base, extra []string) string {
+		p := poolV5(base, extra, benchVersion)
+		return p[r.Intn(len(p))]
+	}
+	switch cat {
+	case "web_search", "route_web_not_memory", "calendar_search":
+		return pick(topics, topicsV5)
+	case "link_read":
+		return pick(urls, urlsV5)
+	case "image_create":
+		return pick(imagePrompts, imagePromptsV5)
+	case "artifacts_create":
+		return pick(artifactKinds, artifactKindsV5)
+	case "agent_job", "agent_run_not_read":
+		return pick(agentTasks, agentTasksV5)
+	case "workflow_not_job", "agent_workflow":
+		return pick(workflowGoals, workflowGoalsV5)
+	case "calendar_create":
+		return pick(calendarTitles, calendarTitlesV5)
+	}
+	return fillerForLegacy(r, cat)
+}
+
+// fillerForLegacy is the historical per-category pool selection for every category
+// not extended in v5.
+func fillerForLegacy(r *rand.Rand, cat string) string {
 	switch cat {
 	case "memory_lookup", "memory_subject":
 		return subjects[r.Intn(len(subjects))]
@@ -843,7 +940,7 @@ func GenerateCasesWithFillersForVersion(r *rand.Rand, seed int64, n, benchVersio
 		if IsResultUsage(cat.name) {
 			filler = toolexec.NeedleFor(seed, caseID).Subject
 		} else {
-			filler = fillerFor(r, cat.name)
+			filler = fillerForVersion(r, cat.name, benchVersion)
 		}
 		prompt := tmpl
 
