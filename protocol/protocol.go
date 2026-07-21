@@ -246,8 +246,11 @@ type RunRequest struct {
 	SystemPrompt string           `json:"system_prompt"`
 	UserInput    string           `json:"user_input"`
 	Tools        []ToolDefinition `json:"tools"`
-	ToolEndpoint string           `json:"tool_endpoint,omitempty"`
-	UserID       string           `json:"user_id,omitempty"`
+	// BenchVersion is sent only for v7+ execution behavior. It is deliberately
+	// omitted for v2-v6 so their historical harness wire request stays frozen.
+	BenchVersion int    `json:"bench_version,omitempty"`
+	ToolEndpoint string `json:"tool_endpoint,omitempty"`
+	UserID       string `json:"user_id,omitempty"`
 }
 
 // ToolExecRequest is what a harness POSTs to the validator-served tool_endpoint

@@ -47,7 +47,8 @@ const (
 	BenchVersionV4      = 4
 	BenchVersionV5      = 5
 	BenchVersionV6      = 6
-	CurrentBenchVersion = BenchVersionV6
+	BenchVersionV7      = 7
+	CurrentBenchVersion = BenchVersionV7
 
 	// BenchVersion is retained as a source-compatible alias for consumers that
 	// report the active release. Generation code must not use it to select a
@@ -61,6 +62,7 @@ var (
 	datasetEpochV4 = time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	datasetEpochV5 = time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	datasetEpochV6 = time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	datasetEpochV7 = time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 
 	// DatasetEpoch and DatasetEpochRFC3339 retain the v2 values for legacy
 	// package callers. Canonical versioned generation uses DatasetEpochForVersion.
@@ -72,7 +74,7 @@ var (
 func SupportedBenchVersion(version int) bool {
 	return version == BenchVersionV2 || version == BenchVersionV3 ||
 		version == BenchVersionV4 || version == BenchVersionV5 ||
-		version == BenchVersionV6
+		version == BenchVersionV6 || version == BenchVersionV7
 }
 
 // DatasetEpochForVersion returns the immutable reference instant for version.
@@ -88,8 +90,10 @@ func DatasetEpochForVersion(version int) (time.Time, error) {
 		return datasetEpochV5, nil
 	case BenchVersionV6:
 		return datasetEpochV6, nil
+	case BenchVersionV7:
+		return datasetEpochV7, nil
 	default:
-		return time.Time{}, fmt.Errorf("unsupported bench_version %d (supported: 2, 3, 4, 5, 6)", version)
+		return time.Time{}, fmt.Errorf("unsupported bench_version %d (supported: 2, 3, 4, 5, 6, 7)", version)
 	}
 }
 
@@ -97,7 +101,7 @@ func DatasetEpochForVersion(version int) (time.Time, error) {
 // It is deterministic and retains the exact historical v2 mixing function.
 func RotateSeedForVersion(seed int64, version int) (int64, error) {
 	if !SupportedBenchVersion(version) {
-		return 0, fmt.Errorf("unsupported bench_version %d (supported: 2, 3, 4, 5, 6)", version)
+		return 0, fmt.Errorf("unsupported bench_version %d (supported: 2, 3, 4, 5, 6, 7)", version)
 	}
 	v := uint64(version)
 	x := uint64(seed) ^ (v * 0x9E3779B97F4A7C15)

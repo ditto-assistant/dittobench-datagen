@@ -46,8 +46,12 @@ func TestVersionedRotationAndEpoch(t *testing.T) {
 	}
 	e2, _ := DatasetEpochForVersion(BenchVersionV2)
 	e3, _ := DatasetEpochForVersion(BenchVersionV3)
+	e7, _ := DatasetEpochForVersion(BenchVersionV7)
 	if !e3.After(e2) {
 		t.Fatalf("v3 epoch %s must follow v2 %s", e3, e2)
+	}
+	if !e7.After(e3) || CurrentBenchVersion != BenchVersionV7 {
+		t.Fatalf("v7 epoch/current contract not advanced: epoch=%s current=%d", e7, CurrentBenchVersion)
 	}
 	if _, err := RotateSeedForVersion(seed, 99); err == nil {
 		t.Fatal("unsupported rotation version accepted")
