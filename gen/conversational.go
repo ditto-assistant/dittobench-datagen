@@ -265,9 +265,32 @@ func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves
 	}
 
 	// --- 4.2 ordinary declarative write chains (need a later wave) ---
+	// Pre-coin every chain's preferred value so the read/behavior distractors are
+	// the OTHER chains' preferred values (the lifecycle cross-chain anti-shotgun
+	// pattern). The same chain's REJECTED value is deliberately NOT a distractor:
+	// it is the user's OWN stated non-preference, so a reply that names the
+	// preferred value while contrasting it with the rejected one ("book through X,
+	// not Y as you asked") is correct application, not a wrong-fact surface --
+	// exactly the grader's rule that a superseded value of the user's own chain is
+	// not a distractor. On-model precheck evidence: the honest reference reader
+	// routinely says "X, avoiding Y", which the rejected-as-distractor rule zeroed.
+	nChains := declarativeChainsFor(n, nWaves)
+	preferredVals := make([]string, nChains)
+	for chain := 0; chain < nChains; chain++ {
+		preferredVals[chain] = convToken(seed, fmt.Sprintf("decl-vendor-pref-%d", chain))
+	}
+	otherPreferred := func(chain int) []string {
+		var out []string
+		for j, v := range preferredVals {
+			if j != chain {
+				out = append(out, v)
+			}
+		}
+		return out
+	}
 	readWave := nWaves - 1
-	for chain := 0; chain < declarativeChainsFor(n, nWaves); chain++ {
-		preferred := convToken(seed, fmt.Sprintf("decl-vendor-pref-%d", chain))
+	for chain := 0; chain < nChains; chain++ {
+		preferred := preferredVals[chain]
 		rejected := convToken(seed, fmt.Sprintf("decl-vendor-rej-%d", chain))
 		// Write turn (wave 0): a durable preference stated conversationally with NO
 		// imperative save verb. Graded on the non-leak floor; the unfakeable signal
@@ -285,16 +308,18 @@ func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves
 			Question:          pick(dom.read),
 			ExpectedAnswer:    preferred,
 			AnswerKind:        protocol.AnswerValue,
-			DistractorAnswers: []string{rejected},
+			DistractorAnswers: otherPreferred(chain),
 		}, readWave)
 		// Behavior change (last wave): an application question whose correct answer
-		// requires APPLYING the stored preference, rejected value as distractor.
+		// requires APPLYING the stored preference. A wrong answer names a DIFFERENT
+		// chain's preferred value (cross-chain shotgun); naming the preferred value
+		// while contrasting the same chain's rejected one stays correct.
 		addCase(protocol.MemoryCase{
 			QuestionType:      QTDeclarativeBehavior,
 			Question:          pick(dom.behavior),
 			ExpectedAnswer:    preferred,
 			AnswerKind:        protocol.AnswerValue,
-			DistractorAnswers: []string{rejected},
+			DistractorAnswers: otherPreferred(chain),
 		}, readWave)
 	}
 
