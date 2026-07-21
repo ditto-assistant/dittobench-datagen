@@ -234,11 +234,15 @@ func buildMultiHop(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves, benc
 		decoyVal := persona.CoinShaped(seed, fmt.Sprintf("mh|dec|%d", c))
 
 		// Target chain: relation intro and leaf fact, in two distinct sessions.
-		seedPair(4*c, introOf(rel.target, targetPerson), "Good to know.")
-		seedPair(4*c+1, fmt.Sprintf(persona.Expand(r, leaf.fact, "root"), targetPerson, targetVal), "Noted.")
+		// v6 injects informal typos into the topic text; the join NAME and the coined
+		// value are protected so the cross-session join and the graded answer stay
+		// exact. typoText is a no-op that draws nothing for pre-v6, so the v5 draw
+		// order (introOf, then Expand, per chain) is byte-preserved.
+		seedPair(4*c, typoText(r, benchVersion, introOf(rel.target, targetPerson), targetPerson), "Good to know.")
+		seedPair(4*c+1, typoText(r, benchVersion, fmt.Sprintf(persona.Expand(r, leaf.fact, "root"), targetPerson, targetVal), targetPerson, targetVal), "Noted.")
 		// Decoy chain: wrong relative on the SAME leaf attribute, two more sessions.
-		seedPair(4*c+2, introOf(rel.decoy, decoyPerson), "Got it.")
-		seedPair(4*c+3, fmt.Sprintf(persona.Expand(r, leaf.fact, "root"), decoyPerson, decoyVal), "Nice.")
+		seedPair(4*c+2, typoText(r, benchVersion, introOf(rel.decoy, decoyPerson), decoyPerson), "Got it.")
+		seedPair(4*c+3, typoText(r, benchVersion, fmt.Sprintf(persona.Expand(r, leaf.fact, "root"), decoyPerson, decoyVal), decoyPerson, decoyVal), "Nice.")
 
 		// METAMORPHIC-INVARIANCE TWINS: ask the SAME join two different ways, sharing a
 		// TwinGroup. A harness that overfit one surface but cannot generalize the join
@@ -254,6 +258,10 @@ func buildMultiHop(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves, benc
 				break
 			}
 		}
+		// Typo the topic questions AFTER the distinctness resample (v6 only; no coined
+		// token or join name appears in the question, so nothing needs protecting).
+		q1 = typoText(r, benchVersion, q1)
+		q2 = typoText(r, benchVersion, q2)
 		for i, q := range []string{q1, q2} {
 			out.Cases = append(out.Cases, StagedCase{Case: protocol.MemoryCase{
 				ID:                protocol.OpaqueCaseID(seed, "memmh", ordinal),

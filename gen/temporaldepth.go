@@ -119,9 +119,12 @@ func buildTemporalDepth(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves,
 		v2 := persona.CoinShaped(seed, fmt.Sprintf("td|v2|%d", c)) // the ANSWER (second-most-recent)
 		v3 := persona.CoinShaped(seed, fmt.Sprintf("td|v3|%d", c)) // the latest (named in the question)
 
-		seedPair(3*c, c, fmt.Sprintf(persona.Expand(r, tdChangeGrammar, "v1"), noun, v1), "Noted.")
-		seedPair(3*c+1, c+2, fmt.Sprintf(persona.Expand(r, tdChangeGrammar, "v2"), noun, v2), "Got it.")
-		seedPair(3*c+2, c+5, fmt.Sprintf(persona.Expand(r, tdChangeGrammar, "v3"), noun, v3), "Updated.")
+		// v6 injects informal typos into the topic (the attribute noun + filler); the
+		// coined chain values are protected so the ordered answer stays exact. Pre-v6,
+		// typoText draws nothing, so the v5 stream is byte-identical.
+		seedPair(3*c, c, typoText(r, benchVersion, fmt.Sprintf(persona.Expand(r, tdChangeGrammar, "v1"), noun, v1), v1), "Noted.")
+		seedPair(3*c+1, c+2, typoText(r, benchVersion, fmt.Sprintf(persona.Expand(r, tdChangeGrammar, "v2"), noun, v2), v2), "Got it.")
+		seedPair(3*c+2, c+5, typoText(r, benchVersion, fmt.Sprintf(persona.Expand(r, tdChangeGrammar, "v3"), noun, v3), v3), "Updated.")
 
 		// Metamorphic-invariance twin: ask "the value before the latest" two ways,
 		// sharing a TwinGroup, so a phrasing-brittle solver is penalized by
@@ -137,6 +140,10 @@ func buildTemporalDepth(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves,
 				break
 			}
 		}
+		// Typo the topic questions AFTER the distinctness resample (v6 only); v3 is the
+		// coined latest-value named in the question, so it is protected.
+		q1 = typoText(r, benchVersion, q1, v3)
+		q2 = typoText(r, benchVersion, q2, v3)
 		for _, q := range []string{q1, q2} {
 			out.Cases = append(out.Cases, StagedCase{Case: protocol.MemoryCase{
 				ID:                protocol.OpaqueCaseID(seed, "memtd", ordinal),

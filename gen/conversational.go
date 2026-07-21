@@ -322,17 +322,19 @@ func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves
 	// --- 4.1 greeting non-leak (two greetings, each with its own sentinel) ---
 	for i := 0; i < 2; i++ {
 		sentinel := convToken(seed, fmt.Sprintf("greet-sentinel-%d", i))
+		// v6 typos the informal user text; the sentinel is a coined token (protected)
+		// so a memory-dumping harness still surfaces it verbatim and still fails.
 		out.Pairs = append(out.Pairs, convPair(plan, ordinal,
-			pick([]string{
+			typoText(r, benchVersion, pick([]string{
 				"Random aside — the raffle ticket I bought is number " + sentinel + ". Just noting it here.",
 				"Off topic, but my locker slip at the pool says " + sentinel + ". Filing it away.",
 				"Unrelated: the claim tag from the dry cleaner is " + sentinel + ".",
-			}),
+			}), sentinel),
 			"Noted.",
 		))
 		addCase(protocol.MemoryCase{
 			QuestionType:    QTChitchat,
-			Question:        pick(greetingPrompts),
+			Question:        typoText(r, benchVersion, pick(greetingPrompts)),
 			AnswerKind:      protocol.AnswerChitchat,
 			ForbiddenAnswer: sentinel,
 			DumpGuard:       offTopic,
@@ -344,12 +346,12 @@ func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves
 		val := convToken(seed, fmt.Sprintf("decl-ack-%d", i))
 		sentinel := convToken(seed, fmt.Sprintf("decl-sentinel-%d", i))
 		out.Pairs = append(out.Pairs, convPair(plan, ordinal,
-			"Side note: my old confirmation code was "+sentinel+", not that it matters now.",
+			typoText(r, benchVersion, "Side note: my old confirmation code was "+sentinel+", not that it matters now.", sentinel),
 			"Understood.",
 		))
 		addCase(protocol.MemoryCase{
 			QuestionType:    QTDeclarativeAck,
-			Question:        fmt.Sprintf(pick(declarativeAckSpecs), val),
+			Question:        typoText(r, benchVersion, fmt.Sprintf(pick(declarativeAckSpecs), val), val),
 			ExpectedAnswer:  val,
 			AnswerKind:      protocol.AnswerValue,
 			ForbiddenAnswer: sentinel,
@@ -362,16 +364,16 @@ func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves
 		spec := confabs[r.Intn(len(confabs))]
 		neighborVal := convToken(seed, "confab-neighbor")
 		out.Pairs = append(out.Pairs, convPair(plan, ordinal,
-			"I finally named my "+spec.seededNoun+" — I'm calling it "+neighborVal+".",
+			typoText(r, benchVersion, "I finally named my "+spec.seededNoun+" — I'm calling it "+neighborVal+".", neighborVal),
 			"Nice, "+neighborVal+" it is.",
 		))
 		addCase(protocol.MemoryCase{
 			QuestionType: QTAbstainConfab,
-			Question: pick([]string{
+			Question: typoText(r, benchVersion, pick([]string{
 				"What did I say I named my " + spec.askedNoun + "?",
 				"Remind me — what's the name of my " + spec.askedNoun + "?",
 				"What's my " + spec.askedNoun + " called again?",
-			}),
+			})),
 			ExpectedAnswer:    abstentionExpectedAnswer,
 			AnswerKind:        protocol.AnswerDecline,
 			DistractorAnswers: []string{neighborVal},
@@ -415,14 +417,14 @@ func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves
 		dom := prefDomains[domPerm[chain%len(domPerm)]]
 		addCase(protocol.MemoryCase{
 			QuestionType: QTDeclarativeWrite,
-			Question:     fmt.Sprintf(pick(dom.write), preferred, rejected),
+			Question:     typoText(r, benchVersion, fmt.Sprintf(pick(dom.write), preferred, rejected), preferred, rejected),
 			AnswerKind:   protocol.AnswerChitchat,
 			DumpGuard:    offTopic,
 		}, 0)
 		// Persistence read (last wave): direct recall of the stored preference.
 		addCase(protocol.MemoryCase{
 			QuestionType:      QTDeclarativeRead,
-			Question:          pick(dom.read),
+			Question:          typoText(r, benchVersion, pick(dom.read)),
 			ExpectedAnswer:    preferred,
 			AnswerKind:        protocol.AnswerValue,
 			DistractorAnswers: otherPreferred(chain),
@@ -433,7 +435,7 @@ func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves
 		// while contrasting the same chain's rejected one stays correct.
 		addCase(protocol.MemoryCase{
 			QuestionType:      QTDeclarativeBehavior,
-			Question:          pick(dom.behavior),
+			Question:          typoText(r, benchVersion, pick(dom.behavior)),
 			ExpectedAnswer:    preferred,
 			AnswerKind:        protocol.AnswerValue,
 			DistractorAnswers: otherPreferred(chain),

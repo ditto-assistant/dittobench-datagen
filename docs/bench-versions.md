@@ -17,7 +17,7 @@ applied to an existing version. It ships as a new one.
 | 3 | `2026-07-01` | The anti-gaming release: dump-guard grading, needle gating, adversarial distractors, composed injection framings, the cross-user lifecycle probe, and the reproduce-under-transform audit. |
 | 4 | `2026-08-01` | A supplementary fix to v3 scoring. Same tests, same shape, corrected grading. |
 | 5 | `2026-09-01` | The conversational-grounding, coverage, and efficiency release: a conversational-sanity gate, ordinary no-save-verb declarative writes, the accept-set grading primitive, Code Mode coverage, multi-hop and temporal-depth capability dimensions (grammar-generated and metamorphic-twinned), and a token-efficiency contract. |
-| 6 | `2026-10-01` | The content-variety release: grows the six v5 content pools 3–4× (a model-authored tier plus a web-entropy tier sourced from public web lists via a random.org TRNG draw) so the memory families draw from far more surface area. Same tests, same shapes, more variety. |
+| 6 | `2026-10-01` | The content-variety release: grows the six v5 content pools 3–4× (a model-authored tier plus a web-entropy tier sourced from public web lists via a random.org TRNG draw), and injects seeded informal typos into the topic text so the harness must reconcile noisy, texting-style prompts. Same tests, same shapes, coined answers untouched. |
 
 ## What v4 is
 
@@ -84,7 +84,25 @@ The additions are generic real-world category words only; every **graded value**
 stays a per-seed coined token, so v6 is as contamination-proof as v5. The
 web-entropy tier is harvested and frozen at authoring time — generation never
 touches the network or an uncontrolled RNG, so `(seed, bench_version)`
-determinism is fully intact. The change
+determinism is fully intact.
+
+### Informal noise (seeded typos)
+
+Ditto chats read like texting a friend — lowercase, rushed, autocorrect
+artifacts — so a harness that only survives clean, well-formed prompts is overfit
+to a register real users never write in. v6 injects **seeded, realistic typos**
+into the *topic* text of the memory families (`gen/typo.go`): adjacent-key
+fat-fingers, transpositions, dropped/doubled letters, dropped apostrophes, and
+autocorrect-to-a-different-clean-word. The number of typos per string is itself a
+seed draw (`0..bound`), so a miner cannot know how many or where, and the same
+noisy topic must be reconciled across turns.
+
+It is answer-safe by construction: **coined answer tokens are never mutated**
+(they carry a digit / underscore / `VK-` shape the typo pass skips), and the
+**multi-hop join name is protected** so cross-session joins stay exact. The topic
+is noisy; the graded answer is not. All typos are deterministic draws from the
+per-`(seed, bench_version)` stream, and the pass is a no-op that draws nothing for
+`bench_version < 6`, so v5 stays byte-frozen. The change
 is gated on the version (`gen/poolsv6.go` selects the larger pool only for
 `bench_version >= 6`), so v5's bytes and already-recorded scores are untouched —
 its known-vector test still passes unchanged. Because v6 folds its number into

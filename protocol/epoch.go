@@ -51,9 +51,13 @@ import (
 // — terms harvested from public web lists and selected by a random.org TRNG draw,
 // so the variety is grounded outside model priors), while the graded values stay
 // per-seed coined tokens. Both tiers are frozen static literals: generation never
-// touches the network or an uncontrolled RNG. It is version-gated: v5's bytes and
-// already-recorded scores are untouched, and v6 draws a freshly rotated surface
-// (RotateSeedForVersion) from the larger pools.
+// touches the network or an uncontrolled RNG. v6 also injects seeded, informal
+// TYPOS into the topic text of the memory families (gen/typo.go) — Ditto chats
+// read like texting a friend, so a harness must reconcile the same noisy topic
+// across turns; the per-string count is a 0..bound seed draw a miner cannot
+// predict, and coined answer tokens and multi-hop join names are never mutated. It
+// is version-gated: v5's bytes and already-recorded scores are untouched, and v6
+// draws a freshly rotated surface (RotateSeedForVersion) from the larger pools.
 const (
 	BenchVersionV2      = 2
 	BenchVersionV3      = 3
