@@ -253,7 +253,7 @@ func TestV5KnownVector(t *testing.T) {
 		// high-entropy + metamorphic-twin anti-overfit rework landed, and when this
 		// vector switched to the canonical v5 profile (ProfileForVersion) the validator
 		// actually serves, rather than the v4-sized ProfileFor.
-		want = "720e8f338252e5ca7ebd5da04f33b9da59987ef17c4541d5595bedf03ecf0b70"
+		want = "ee70387b2470bb72a7ce457cd76187b9d89819016f3d58276f895a55b30a9f1c"
 	)
 	prof, _ := ProfileForVersion("full", protocol.BenchVersionV5)
 	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV5)

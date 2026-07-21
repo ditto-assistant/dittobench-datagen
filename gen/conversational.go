@@ -83,16 +83,21 @@ func conversationalEnabled(benchVersion int) bool {
 	return benchVersion >= protocol.BenchVersionV5
 }
 
-// declarativeChainsFor is the seed-independent declarative-write chain quota.
-// A chain needs a later wave for its persistence-read and behavior-change cases,
-// so single-wave runs carry none; medium and full runs carry one. Fixed per run
-// size so difficulty stays identical across seeds.
+// declarativeChainsFor is the seed-independent declarative-write chain quota. Each
+// chain yields one persistence-read and one behavior-change case, which are two of
+// the three conversational-sanity slices (the metric is a weakest-link min over the
+// slices). Full runs carry FOUR chains so the behavior/read slices have enough N
+// that the min-over-slices metric is not a per-case coin flip (the plan's 4.10
+// statistical-power guard); a single hard-domain miss no longer halves a champion's
+// composite. A chain needs a later wave, so single-wave runs carry none.
 func declarativeChainsFor(n, nWaves int) int {
 	switch {
 	case nWaves < 2:
 		return 0
+	case n >= 70:
+		return 4
 	case n >= 40:
-		return 2
+		return 3
 	case n >= 20:
 		return 1
 	default:
