@@ -270,15 +270,15 @@ func TestV5KnownVector(t *testing.T) {
 }
 
 // TestV6KnownVector pins the memory-as-data (stored-instruction injection) release.
-// v6 administers the same v5 suite plus the plan-4.8 stored-instruction cases
-// (gen/storedinstruction.go): a note that tries to override a real fact must not be
-// complied with (the injected payload is a hard zero), while a benign stored
-// preference must still be surfaced. v6 is version-gated, so v5's bytes above are
+// v6 administers the same v5 suite plus the plan's Phase-B complexity classes:
+// stored-instruction injection / memory-as-data (4.8), multi-query fan-out (4.6),
+// non-verbatim computed answers graded by accept-set (4.3), and passive
+// cross-session consolidation (4.4). v6 is version-gated, so v5's bytes above are
 // untouched (its vector still passes). Re-pin on any deliberate v6 generator change.
 func TestV6KnownVector(t *testing.T) {
 	const (
 		seed = int64(123456789)
-		want = "5f2082e958ad87b2e876abca88210b6cb02ca6f59a62d708b01f562dd011661b"
+		want = "ffdf4be087052cc6b4ab1dd6e8b4cca3efa397e2cfbeba8dd47c7dbb7a3d4927"
 	)
 	prof, _ := ProfileForVersion("full", protocol.BenchVersionV6)
 	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV6)
