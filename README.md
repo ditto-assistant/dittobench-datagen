@@ -105,7 +105,7 @@ than keeping their own copies.
 
 - `cmd/generate`: the CLI entry point.
 - `cmd/generate-service`: the same generation behind HTTP
-  (`POST /generate?seed=&run_size=&bench_version=2|3|4` → DatasetArtifact JSON +
+  (`POST /generate?seed=&run_size=&bench_version=2|3|4|5|6` → DatasetArtifact JSON +
   `X-Dataset-SHA256` and `X-Bench-Version` headers), with the
   `Dockerfile`/`cloudbuild.yaml` the SN118 platform deploys it
   from. The deployment is private (IAM-gated) so platform infrastructure cannot

@@ -16,6 +16,8 @@ applied to an existing version. It ships as a new one.
 | 2 | `2026-01-01` | The launch contract. Frozen since on-chain scoring began. |
 | 3 | `2026-07-01` | The anti-gaming release: dump-guard grading, needle gating, adversarial distractors, composed injection framings, the cross-user lifecycle probe, and the reproduce-under-transform audit. |
 | 4 | `2026-08-01` | A supplementary fix to v3 scoring. Same tests, same shape, corrected grading. |
+| 5 | `2026-09-01` | The conversational-grounding, coverage, and efficiency release: a conversational-sanity gate, ordinary no-save-verb declarative writes, the accept-set grading primitive, Code Mode coverage, multi-hop and temporal-depth capability dimensions (grammar-generated and metamorphic-twinned), and a token-efficiency contract. |
+| 6 | `2026-10-01` | The content-variety release: triples the six v5 content pools so the memory families draw from ~3× the surface area. Same tests, same shapes, more variety. |
 
 ## What v4 is
 
@@ -55,6 +57,35 @@ on the version (see *Auditing an old score* below):
 The scorer carries matching corrections (bounded penalties no longer stack past
 a floor, transport failures no longer read as brittleness, transparent memory
 retrieval is no longer taxed). Those live in `dittobench-api`.
+
+## What v6 is
+
+v6 is **not** a new benchmark. It administers the same v5 suite — the same case
+classes, the same shapes, the same grading — with the underlying **content pools
+tripled**. v5 defeated a static cue list by rendering each family through
+grammar-generated surfaces and metamorphic twins, but the pools those surfaces
+draw from (relationship kinds, nameable possessions, preference domains, temporal
+attributes, intermediary names, confabulation neighbors) were still small enough
+to enumerate. v6 grows every one of them ~3×:
+
+| Pool | v5 | v6 |
+| --- | --- | --- |
+| intermediary names | 40 | 120 |
+| relation kinds (target/decoy) | 14 | 42 |
+| multi-hop leaf nouns | 20 | 60 |
+| temporal-depth attributes | 20 | 60 |
+| confabulation neighbor pairs | 18 | 54 |
+| declarative-preference domains | 10 | 30 |
+
+The additions are generic real-world category words only; every **graded value**
+stays a per-seed coined token, so v6 is as contamination-proof as v5. The change
+is gated on the version (`gen/poolsv6.go` selects the larger pool only for
+`bench_version >= 6`), so v5's bytes and already-recorded scores are untouched —
+its known-vector test still passes unchanged. Because v6 folds its number into
+the generation stream, it also draws a freshly rotated surface: a harness that
+overfit v5's pools to a cue list loses that purchase. `gen/entropy_test.go` pins
+the increase (each pool-driven family shows strictly more distinct surfaces under
+v6 than v5).
 
 ## Versioning going forward
 

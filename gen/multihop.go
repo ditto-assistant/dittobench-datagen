@@ -130,10 +130,10 @@ var leafNouns = []string{
 // itself varies, so there is no single "detect 'name their X' -> do a 2-hop join"
 // shortcut to overfit. The value is always a COINED token (exact grading, natural
 // as a name / town / employer / street).
-func randomLeaf(r *rand.Rand) leafFact {
+func randomLeaf(r *rand.Rand, nouns []string) leafFact {
 	kinds := []func() leafFact{
 		func() leafFact { // name a thing
-			noun := leafNouns[r.Intn(len(leafNouns))]
+			noun := nouns[r.Intn(len(nouns))]
 			return leafFact{noun: noun,
 				fact: persona.Grammar{
 					"root":  {"#lead# %s #verb# their " + noun + " %s.#trail#", "#lead# %s #verb# the " + noun + " %s.#trail#"},
@@ -184,12 +184,17 @@ func randomLeaf(r *rand.Rand) leafFact {
 // buildMultiHop generates the multi-hop relational cases. Deterministic per (seed,
 // draw position): all picks draw from the shared suite rng at a fixed point in
 // GenerateMemorySuite, gated so a pre-v5 contract's draw sequence is untouched.
-func buildMultiHop(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves int) multiHopSuite {
+func buildMultiHop(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves, benchVersion int) multiHopSuite {
 	var out multiHopSuite
 	nCases := multiHopCasesFor(n, nWaves)
 	if nCases == 0 {
 		return out
 	}
+	// v6+ draws intermediary names, relation kinds, and leaf nouns from the tripled
+	// content pools (gen/poolsv6.go); pre-v6 uses the frozen v5 pools.
+	names := relativeNamesFor(benchVersion)
+	pairs := relationPairsFor(benchVersion)
+	nouns := leafNounsFor(benchVersion)
 	pairIdx := 0
 	ordinal := 0
 	// The relation intro and the leaf fact are seeded in DIFFERENT sessions, so the
@@ -219,12 +224,12 @@ func buildMultiHop(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves int) 
 	}
 
 	for c := 0; c < nCases; c++ {
-		rel := relationPairs[r.Intn(len(relationPairs))]
-		leaf := randomLeaf(r)
+		rel := pairs[r.Intn(len(pairs))]
+		leaf := randomLeaf(r, nouns)
 		// Distinct intermediary names for target and decoy.
-		tPerm := r.Perm(len(relativeNames))
-		targetPerson := relativeNames[tPerm[0]]
-		decoyPerson := relativeNames[tPerm[1]]
+		tPerm := r.Perm(len(names))
+		targetPerson := names[tPerm[0]]
+		decoyPerson := names[tPerm[1]]
 		targetVal := persona.CoinShaped(seed, fmt.Sprintf("mh|val|%d", c))
 		decoyVal := persona.CoinShaped(seed, fmt.Sprintf("mh|dec|%d", c))
 

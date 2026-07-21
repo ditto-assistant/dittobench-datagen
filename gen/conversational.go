@@ -303,10 +303,14 @@ var confabSpecs = []confabSpec{
 // cases. Deterministic per (seed, draw position): all picks draw from the shared
 // suite rng at a fixed point in GenerateMemorySuite, gated so a pre-v5 contract's
 // draw sequence is untouched.
-func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves int) conversationalSuite {
+func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves, benchVersion int) conversationalSuite {
 	var out conversationalSuite
 	pick := func(opts []string) string { return opts[r.Intn(len(opts))] }
 	offTopic := offTopicSelfValues(plan, 8)
+	// v6+ draws confabulation neighbors and preference domains from the tripled
+	// content pools (gen/poolsv6.go); pre-v6 uses the frozen v5 pools.
+	confabs := confabSpecsFor(benchVersion)
+	prefDomains := declPrefDomainsFor(benchVersion)
 
 	ordinal := 0
 	addCase := func(mc protocol.MemoryCase, wave int) {
@@ -355,7 +359,7 @@ func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves
 
 	// --- 4.1 abstention over confabulation ---
 	{
-		spec := confabSpecs[r.Intn(len(confabSpecs))]
+		spec := confabs[r.Intn(len(confabs))]
 		neighborVal := convToken(seed, "confab-neighbor")
 		out.Pairs = append(out.Pairs, convPair(plan, ordinal,
 			"I finally named my "+spec.seededNoun+" — I'm calling it "+neighborVal+".",
@@ -387,7 +391,7 @@ func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves
 	nChains := declarativeChainsFor(n, nWaves)
 	// Draw DISTINCT random preference domains per seed (not chain%len, which would
 	// only ever use the first few domains and make the write family enumerable).
-	domPerm := r.Perm(len(declPrefDomains))
+	domPerm := r.Perm(len(prefDomains))
 	preferredVals := make([]string, nChains)
 	for chain := 0; chain < nChains; chain++ {
 		preferredVals[chain] = convToken(seed, fmt.Sprintf("decl-vendor-pref-%d", chain))
@@ -408,7 +412,7 @@ func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves
 		// Write turn (wave 0): a durable preference stated conversationally with NO
 		// imperative save verb. Graded on the non-leak floor; the unfakeable signal
 		// is the later read and behavior cases, whose values appear only here.
-		dom := declPrefDomains[domPerm[chain%len(domPerm)]]
+		dom := prefDomains[domPerm[chain%len(domPerm)]]
 		addCase(protocol.MemoryCase{
 			QuestionType: QTDeclarativeWrite,
 			Question:     fmt.Sprintf(pick(dom.write), preferred, rejected),

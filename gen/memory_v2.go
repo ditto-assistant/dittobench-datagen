@@ -159,21 +159,21 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	// a pre-v5 contract's rng sequence and bytes are untouched.
 	var conv conversationalSuite
 	if conversationalEnabled(benchVersion) {
-		conv = buildConversational(r, seed, plan, n, nWaves)
+		conv = buildConversational(r, seed, plan, n, nWaves, benchVersion)
 	}
 	suite.ConversationalCases = len(conv.Cases)
 	// v5 multi-hop relational (KG-join) cases (gen/multihop.go): never sampled out,
 	// seed-independent count per run size, fixed draw position, v5-gated.
 	var mh multiHopSuite
 	if multiHopEnabled(benchVersion) {
-		mh = buildMultiHop(r, seed, plan, n, nWaves)
+		mh = buildMultiHop(r, seed, plan, n, nWaves, benchVersion)
 	}
 	suite.MultiHopCases = len(mh.Cases)
 	// v5 temporal-depth cases (gen/temporaldepth.go): the second-most-recent value
 	// in an update chain; v5-gated, fixed draw position, never sampled out.
 	var td temporalDepthSuite
 	if temporalDepthEnabled(benchVersion) {
-		td = buildTemporalDepth(r, seed, plan, n, nWaves)
+		td = buildTemporalDepth(r, seed, plan, n, nWaves, benchVersion)
 	}
 	suite.TemporalDepthCases = len(td.Cases)
 	// Reserve room for the always-included canary, twin, lifecycle, and

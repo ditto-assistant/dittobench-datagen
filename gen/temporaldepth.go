@@ -89,12 +89,14 @@ var tdAskGrammar = persona.Grammar{
 
 // buildTemporalDepth generates the temporal-depth cases. Deterministic per (seed,
 // draw position); v5-gated at a fixed point in GenerateMemorySuite.
-func buildTemporalDepth(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves int) temporalDepthSuite {
+func buildTemporalDepth(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves, benchVersion int) temporalDepthSuite {
 	var out temporalDepthSuite
 	nCases := temporalDepthCasesFor(n, nWaves)
 	if nCases == 0 {
 		return out
 	}
+	// v6+ draws update-chain attributes from the tripled pool (gen/poolsv6.go).
+	nouns := tdNounsFor(benchVersion)
 	pairIdx := 0
 	ordinal := 0
 	// Three values seeded across three distinct sessions with increasing day
@@ -112,7 +114,7 @@ func buildTemporalDepth(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves 
 	}
 
 	for c := 0; c < nCases; c++ {
-		noun := tdNouns[r.Intn(len(tdNouns))]
+		noun := nouns[r.Intn(len(nouns))]
 		v1 := persona.CoinShaped(seed, fmt.Sprintf("td|v1|%d", c))
 		v2 := persona.CoinShaped(seed, fmt.Sprintf("td|v2|%d", c)) // the ANSWER (second-most-recent)
 		v3 := persona.CoinShaped(seed, fmt.Sprintf("td|v3|%d", c)) // the latest (named in the question)

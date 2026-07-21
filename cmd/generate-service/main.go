@@ -80,7 +80,7 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 	version, err := strconv.Atoi(versionText)
 	if err != nil || !protocol.SupportedBenchVersion(version) {
-		http.Error(w, "bench_version query param required (supported: 2, 3, 4, 5)", http.StatusBadRequest)
+		http.Error(w, "bench_version query param required (supported: 2, 3, 4, 5, 6)", http.StatusBadRequest)
 		return
 	}
 
