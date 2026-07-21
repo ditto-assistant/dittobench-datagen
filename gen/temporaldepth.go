@@ -46,9 +46,9 @@ func temporalDepthCasesFor(n, nWaves int) int {
 	case nWaves < 2:
 		return 0
 	case n >= 70:
-		return 3
-	case n >= 40:
 		return 2
+	case n >= 40:
+		return 1
 	case n >= 20:
 		return 1
 	default:
@@ -56,23 +56,35 @@ func temporalDepthCasesFor(n, nWaves int) int {
 	}
 }
 
-// tdAttr is an update-chain attribute whose values are COINED tokens so grading is
-// exact and the values never collide with the haystack. The final "now" value uses
-// a coined token too, named in the question, so the question cannot leak the
-// answer (the answer is the PRIOR value).
-type tdAttr struct {
-	noun     string // "favorite color"
-	changeV1 string // "My %s is %s."
-	changeV2 string // "I've switched my %s to %s." (%s noun, %s value)
-	changeV3 string // "My %s is now %s."
-	ask      string // "What was my %s just before I changed it to %s?" (%s noun, %s v3)
+// tdNouns are update-chain attributes. A wide pool so the attribute space is not
+// enumerable into a fixed cue list; the values are COINED tokens (exact grading, no
+// haystack collision).
+var tdNouns = []string{
+	"favorite color", "go-to coffee order", "workout of choice", "primary side project",
+	"default ringtone", "screensaver photo", "commute route", "favorite lunch spot",
+	"preferred note-taking app", "morning playlist", "desktop wallpaper", "weekend hobby",
+	"favorite tea", "running shoe brand", "password manager", "main writing font",
+	"favorite podcast", "go-to pizza topping", "bike lock spot", "meal-prep dish",
 }
 
-var tdAttrs = []tdAttr{
-	{noun: "favorite color", changeV1: "My %s is %s.", changeV2: "I've switched my %s to %s.", changeV3: "My %s is now %s.", ask: "What was my %s just before I changed it to %s?"},
-	{noun: "go-to coffee order", changeV1: "My %s is a %s.", changeV2: "I've changed my %s to a %s.", changeV3: "My %s is now a %s.", ask: "What was my %s right before I switched it to a %s?"},
-	{noun: "workout of choice", changeV1: "My %s is %s.", changeV2: "I moved my %s to %s.", changeV3: "My %s is now %s.", ask: "What was my %s just before it became %s?"},
-	{noun: "primary side project", changeV1: "My %s is %s.", changeV2: "I pivoted my %s to %s.", changeV3: "My %s is now %s.", ask: "What was my %s immediately before I changed it to %s?"},
+// tdChangeGrammar phrases each of the three chain updates; tdAskGrammar phrases the
+// "value just before the latest" question. Grammar-varied so one noun yields many
+// distinct surfaces (%s noun, %s value; the ask takes %s noun, %s latest-value).
+var tdChangeGrammar = persona.Grammar{
+	"v1":   {"My %s is %s.", "For the record, my %s is %s.", "My %s these days is %s.", "Right now my %s is %s."},
+	"v2":   {"#lead# I've switched my %s to %s.", "#lead# I moved my %s to %s.", "#lead# I changed my %s to %s.", "#lead# my %s is %s now."},
+	"v3":   {"#lead# my %s is now %s.", "#lead# I've swapped my %s to %s.", "#lead# my %s just became %s.", "#lead# updated my %s to %s."},
+	"lead": {"Update:", "Heads up,", "Oh,", "FYI,", "Actually,", ""},
+}
+
+var tdAskGrammar = persona.Grammar{
+	"root": {
+		"#lead# what was my %s just before I changed it to %s?",
+		"#lead# what was my %s right before it became %s?",
+		"#lead# before I switched my %s to %s, what was it?",
+		"#lead# what did I have as my %s immediately before %s?",
+	},
+	"lead": {"", "Quick one:", "Trying to remember —", "Hey,"},
 }
 
 // buildTemporalDepth generates the temporal-depth cases. Deterministic per (seed,
@@ -100,27 +112,41 @@ func buildTemporalDepth(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves 
 	}
 
 	for c := 0; c < nCases; c++ {
-		a := tdAttrs[c%len(tdAttrs)]
+		noun := tdNouns[r.Intn(len(tdNouns))]
 		v1 := persona.CoinShaped(seed, fmt.Sprintf("td|v1|%d", c))
 		v2 := persona.CoinShaped(seed, fmt.Sprintf("td|v2|%d", c)) // the ANSWER (second-most-recent)
 		v3 := persona.CoinShaped(seed, fmt.Sprintf("td|v3|%d", c)) // the latest (named in the question)
 
-		seedPair(3*c, c, fmt.Sprintf(a.changeV1, a.noun, v1), "Noted.")
-		seedPair(3*c+1, c+2, fmt.Sprintf(a.changeV2, a.noun, v2), "Got it.")
-		seedPair(3*c+2, c+5, fmt.Sprintf(a.changeV3, a.noun, v3), "Updated.")
+		seedPair(3*c, c, fmt.Sprintf(persona.Expand(r, tdChangeGrammar, "v1"), noun, v1), "Noted.")
+		seedPair(3*c+1, c+2, fmt.Sprintf(persona.Expand(r, tdChangeGrammar, "v2"), noun, v2), "Got it.")
+		seedPair(3*c+2, c+5, fmt.Sprintf(persona.Expand(r, tdChangeGrammar, "v3"), noun, v3), "Updated.")
 
-		mc := protocol.MemoryCase{
-			ID:             protocol.OpaqueCaseID(seed, "memtd", ordinal),
-			QuestionType:   QTTemporalDepth,
-			Question:       fmt.Sprintf(a.ask, a.noun, v3),
-			ExpectedAnswer: v2,
-			AnswerKind:     protocol.AnswerValue,
-			// The latest value (v3) and the oldest (v1) are both wrong: surfacing the
-			// current value (naive recency) or the original (grep the earliest) zeros.
-			DistractorAnswers: []string{v3, v1},
+		// Metamorphic-invariance twin: ask "the value before the latest" two ways,
+		// sharing a TwinGroup, so a phrasing-brittle solver is penalized by
+		// MetamorphicConsistencyFactor. The latest value (v3) and the oldest (v1) are
+		// both wrong distractors: surfacing the current value (naive recency) or the
+		// original (grep the earliest) zeros.
+		twin := fmt.Sprintf("tdtwin-%d-%d", seed, c)
+		q1 := fmt.Sprintf(persona.Expand(r, tdAskGrammar, "root"), noun, v3)
+		var q2 string
+		for i := 0; i < 6; i++ {
+			q2 = fmt.Sprintf(persona.Expand(r, tdAskGrammar, "root"), noun, v3)
+			if q2 != q1 {
+				break
+			}
 		}
-		out.Cases = append(out.Cases, StagedCase{Case: mc, RunAfterWave: nWaves - 1})
-		ordinal++
+		for _, q := range []string{q1, q2} {
+			out.Cases = append(out.Cases, StagedCase{Case: protocol.MemoryCase{
+				ID:                protocol.OpaqueCaseID(seed, "memtd", ordinal),
+				QuestionType:      QTTemporalDepth,
+				Question:          q,
+				ExpectedAnswer:    v2,
+				AnswerKind:        protocol.AnswerValue,
+				DistractorAnswers: []string{v3, v1},
+				TwinGroup:         twin,
+			}, RunAfterWave: nWaves - 1})
+			ordinal++
+		}
 	}
 	return out
 }

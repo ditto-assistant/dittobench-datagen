@@ -208,6 +208,69 @@ var declPrefDomains = []declPrefDomain{
 			"Arrange a ride to the venue — which service are you going with?",
 		},
 	},
+	{
+		write: []string{
+			"For music I've moved everything to %s — never %s again, the recommendations were awful.",
+			"I stream all my music on %s now. I cancelled %s for good.",
+			"Standing preference: play my music through %s, not %s.",
+		},
+		read:     []string{"Which music service do I use?", "Where do I stream my music these days?", "What's my music app of choice again?"},
+		behavior: []string{"Put on my morning playlist — which service are you using?", "Queue up some focus music; what app are you opening?", "Start my workout mix — where are you playing it from?"},
+	},
+	{
+		write: []string{
+			"For groceries I order from %s exclusively now — never %s, their produce was always off.",
+			"I get all my groceries via %s. I'm done with %s.",
+			"Note my standing choice: groceries come from %s, never %s.",
+		},
+		read:     []string{"Which grocery service do I want?", "Where do I order groceries from now?", "What's my go-to grocery app again?"},
+		behavior: []string{"Restock my fridge for the week — which service are you ordering from?", "Order ingredients for dinner; what app are you using?", "Set up a grocery delivery — where are you placing it?"},
+	},
+	{
+		write: []string{
+			"For banking I've switched to %s — never %s, their fees were ridiculous.",
+			"I do all my banking with %s now. I closed my %s account.",
+			"For the record, my bank is %s these days, not %s.",
+		},
+		read:     []string{"Which bank do I use now?", "Where do I do my banking these days?", "What's my current bank again?"},
+		behavior: []string{"Help me set up a transfer — which bank are we working with?", "I need to check my balance; what bank app are you opening?", "Draft a note to my bank — which one is it?"},
+	},
+	{
+		write: []string{
+			"I read my news on %s now — never %s, too much clickbait.",
+			"For news I've moved to %s. I unsubscribed from %s.",
+			"Standing preference: get my news from %s, not %s.",
+		},
+		read:     []string{"Which news source do I prefer?", "Where do I read my news now?", "What's my go-to news outlet again?"},
+		behavior: []string{"Give me this morning's headlines — which source are you pulling from?", "Summarize today's news; what outlet are you using?", "Find me a story on that — where are you looking?"},
+	},
+	{
+		write: []string{
+			"For flights I only book %s now — never %s, they cancelled on me twice.",
+			"When I fly, it's %s. I avoid %s entirely.",
+			"Note my airline preference: %s, never %s.",
+		},
+		read:     []string{"Which airline do I prefer?", "Who do I fly with these days?", "What's my airline of choice again?"},
+		behavior: []string{"Book me a flight to Chicago — which airline are you using?", "Find me a red-eye next week; what carrier are you booking?", "Sort out my flights for the trip — which airline?"},
+	},
+	{
+		write: []string{
+			"For fitness I use %s now — never %s, the app kept crashing.",
+			"I track my workouts on %s. I ditched %s.",
+			"Standing choice: my fitness app is %s, not %s.",
+		},
+		read:     []string{"Which fitness app do I use?", "Where do I track my workouts now?", "What's my go-to fitness app again?"},
+		behavior: []string{"Log my run from this morning — which app are you using?", "Set up a workout plan; what app are you opening?", "Check my step count — where are you pulling it from?"},
+	},
+	{
+		write: []string{
+			"For shipping I use %s now — never %s, they lost two packages.",
+			"I send everything via %s. I've stopped using %s.",
+			"Note my courier preference: %s, never %s.",
+		},
+		read:     []string{"Which courier do I prefer?", "Who do I ship with these days?", "What's my go-to shipping service again?"},
+		behavior: []string{"Send this package for me — which courier are you using?", "Arrange a return pickup; what service are you booking?", "Ship a gift to my sister — which carrier?"},
+	},
 }
 
 var confabSpecs = []confabSpec{
@@ -220,6 +283,15 @@ var confabSpecs = []confabSpec{
 	{seededNoun: "orange tabby", askedNoun: "goldfish"},
 	{seededNoun: "vegetable patch", askedNoun: "flower bed"},
 	{seededNoun: "campervan", askedNoun: "rowboat"},
+	{seededNoun: "acoustic guitar", askedNoun: "banjo"},
+	{seededNoun: "rooftop garden", askedNoun: "window box"},
+	{seededNoun: "vintage scooter", askedNoun: "skateboard"},
+	{seededNoun: "parrot", askedNoun: "hamster"},
+	{seededNoun: "chess set", askedNoun: "dartboard"},
+	{seededNoun: "pizza oven", askedNoun: "smoker"},
+	{seededNoun: "record player", askedNoun: "cassette deck"},
+	{seededNoun: "fishing rod", askedNoun: "tennis racket"},
+	{seededNoun: "greenhouse", askedNoun: "compost bin"},
 }
 
 // buildConversational generates the v5 conversational-sanity and declarative-write
@@ -308,6 +380,9 @@ func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves
 	// not a distractor. On-model precheck evidence: the honest reference reader
 	// routinely says "X, avoiding Y", which the rejected-as-distractor rule zeroed.
 	nChains := declarativeChainsFor(n, nWaves)
+	// Draw DISTINCT random preference domains per seed (not chain%len, which would
+	// only ever use the first few domains and make the write family enumerable).
+	domPerm := r.Perm(len(declPrefDomains))
 	preferredVals := make([]string, nChains)
 	for chain := 0; chain < nChains; chain++ {
 		preferredVals[chain] = convToken(seed, fmt.Sprintf("decl-vendor-pref-%d", chain))
@@ -328,7 +403,7 @@ func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves
 		// Write turn (wave 0): a durable preference stated conversationally with NO
 		// imperative save verb. Graded on the non-leak floor; the unfakeable signal
 		// is the later read and behavior cases, whose values appear only here.
-		dom := declPrefDomains[chain%len(declPrefDomains)]
+		dom := declPrefDomains[domPerm[chain%len(domPerm)]]
 		addCase(protocol.MemoryCase{
 			QuestionType: QTDeclarativeWrite,
 			Question:     fmt.Sprintf(pick(dom.write), preferred, rejected),
