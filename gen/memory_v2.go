@@ -40,6 +40,12 @@ type MemorySuite struct {
 	// abstention-over-confabulation, and the declarative write/read/behavior chain;
 	// see gen/conversational.go). Zero for pre-v5 contracts. Advisory telemetry.
 	ConversationalCases int
+	// MultiHopCases counts the v5 multi-hop relational (KG-join) cases in the suite
+	// (see gen/multihop.go). Zero for pre-v5 contracts. Advisory telemetry.
+	MultiHopCases int
+	// TemporalDepthCases counts the v5 temporal-depth cases (see gen/temporaldepth.go).
+	// Zero for pre-v5 contracts. Advisory telemetry.
+	TemporalDepthCases int
 	// LexicalGap is the query↔needle overlap telemetry (NoLiMa): how much
 	// content wording the emitted questions share with their evidence, before and
 	// after the low-overlap rewrite.
@@ -156,9 +162,23 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		conv = buildConversational(r, seed, plan, n, nWaves)
 	}
 	suite.ConversationalCases = len(conv.Cases)
+	// v5 multi-hop relational (KG-join) cases (gen/multihop.go): never sampled out,
+	// seed-independent count per run size, fixed draw position, v5-gated.
+	var mh multiHopSuite
+	if multiHopEnabled(benchVersion) {
+		mh = buildMultiHop(r, seed, plan, n, nWaves)
+	}
+	suite.MultiHopCases = len(mh.Cases)
+	// v5 temporal-depth cases (gen/temporaldepth.go): the second-most-recent value
+	// in an update chain; v5-gated, fixed draw position, never sampled out.
+	var td temporalDepthSuite
+	if temporalDepthEnabled(benchVersion) {
+		td = buildTemporalDepth(r, seed, plan, n, nWaves)
+	}
+	suite.TemporalDepthCases = len(td.Cases)
 	// Reserve room for the always-included canary, twin, lifecycle, and
 	// conversational cases so the total case count stays at n.
-	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(lc.Cases) - len(conv.Cases)
+	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(lc.Cases) - len(conv.Cases) - len(mh.Cases) - len(td.Cases)
 	if mainQuota < 0 {
 		mainQuota = 0
 	}
@@ -332,6 +352,8 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	}
 	staged = append(staged, lc.Cases...)
 	staged = append(staged, conv.Cases...)
+	staged = append(staged, mh.Cases...)
+	staged = append(staged, td.Cases...)
 	r.Shuffle(len(staged), func(i, j int) { staged[i], staged[j] = staged[j], staged[i] })
 	suite.Cases = staged
 
@@ -347,6 +369,14 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	// pairs, seeded before any question runs so a greeting can leak them.
 	if len(conv.Pairs) > 0 {
 		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, conv.Pairs...)
+	}
+	// Multi-hop relation + leaf pairs also join wave 0 as raw pairs (no prepared
+	// subject), so the harness must build its own link across sessions to answer.
+	if len(mh.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, mh.Pairs...)
+	}
+	if len(td.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, td.Pairs...)
 	}
 	return suite, nil
 }
