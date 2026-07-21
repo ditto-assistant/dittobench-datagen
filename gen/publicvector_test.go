@@ -269,14 +269,17 @@ func TestV5KnownVector(t *testing.T) {
 	}
 }
 
-// TestV6KnownVector pins the content-variety release. v6 triples the six v5
-// content-variety pools (gen/poolsv6.go) behind a version gate, so v5's bytes
-// above are untouched (its vector still passes) while v6 draws a freshly rotated
-// surface from ~3x the pool area. Re-pin on any deliberate v6 generator change.
+// TestV6KnownVector pins the content-variety release. v6 grows the six v5
+// content-variety pools 3-4x behind a version gate — a model-authored tier
+// (gen/poolsv6.go) plus a web-entropy tier (gen/poolsv6_web.go, harvested from
+// public web lists and TRNG-selected) — so v5's bytes above are untouched (its
+// vector still passes) while v6 draws a freshly rotated surface from the larger
+// pools. Re-pinned when the web-entropy tier landed. Re-pin on any deliberate v6
+// generator change.
 func TestV6KnownVector(t *testing.T) {
 	const (
 		seed = int64(123456789)
-		want = "f0e63136bfd18ea304e8bd25135cae80883acd8f892fab75d854fced431f2625"
+		want = "bb921794dce37db3586b1232ea356b9d016d088574f5d4d9f94c0d793507abe5"
 	)
 	prof, _ := ProfileForVersion("full", protocol.BenchVersionV6)
 	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV6)

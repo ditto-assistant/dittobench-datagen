@@ -318,17 +318,54 @@ var extraDeclPrefDomains = []declPrefDomain{
 // v6 merged pools, precomputed once at init from the frozen v5 slice plus the v6
 // additions. Kept as distinct vars so the v5 slices above never reallocate — the
 // v5 generator draws from exactly the same backing arrays it always has.
+// Each v6 pool is the frozen v5 slice, plus the model-authored extra* tier, plus
+// the web-entropy webExtra* tier (gen/poolsv6_web.go — real-world terms harvested
+// from public web lists and selected by a random.org TRNG draw, so the variety is
+// grounded outside model priors). All three tiers are static literals; nothing here
+// runs at generation time.
 var (
-	relativeNamesV6   = mergeStrings(relativeNames, extraRelativeNames)
-	leafNounsV6       = mergeStrings(leafNouns, extraLeafNouns)
-	tdNounsV6         = mergeStrings(tdNouns, extraTdNouns)
-	relationPairsV6   = append(append([]relationPair{}, relationPairs...), extraRelationPairs...)
-	confabSpecsV6     = append(append([]confabSpec{}, confabSpecs...), extraConfabSpecs...)
-	declPrefDomainsV6 = append(append([]declPrefDomain{}, declPrefDomains...), extraDeclPrefDomains...)
+	relativeNamesV6   = mergeStrings(relativeNames, extraRelativeNames, webExtraRelativeNames)
+	leafNounsV6       = mergeStrings(leafNouns, extraLeafNouns, webExtraLeafNouns)
+	tdNounsV6         = mergeStrings(tdNouns, extraTdNouns, webExtraTdNouns)
+	relationPairsV6   = mergeRelationPairs(relationPairs, extraRelationPairs, webExtraRelationPairs)
+	confabSpecsV6     = mergeConfabSpecs(confabSpecs, extraConfabSpecs, webExtraConfabSpecs)
+	declPrefDomainsV6 = mergeDeclPrefDomains(declPrefDomains, extraDeclPrefDomains, webExtraDeclPrefDomains)
 )
 
-func mergeStrings(a, b []string) []string {
-	return append(append(make([]string, 0, len(a)+len(b)), a...), b...)
+func mergeStrings(tiers ...[]string) []string {
+	var n int
+	for _, t := range tiers {
+		n += len(t)
+	}
+	out := make([]string, 0, n)
+	for _, t := range tiers {
+		out = append(out, t...)
+	}
+	return out
+}
+
+func mergeRelationPairs(tiers ...[]relationPair) []relationPair {
+	var out []relationPair
+	for _, t := range tiers {
+		out = append(out, t...)
+	}
+	return out
+}
+
+func mergeConfabSpecs(tiers ...[]confabSpec) []confabSpec {
+	var out []confabSpec
+	for _, t := range tiers {
+		out = append(out, t...)
+	}
+	return out
+}
+
+func mergeDeclPrefDomains(tiers ...[]declPrefDomain) []declPrefDomain {
+	var out []declPrefDomain
+	for _, t := range tiers {
+		out = append(out, t...)
+	}
+	return out
 }
 
 // Pool selectors: v6+ draws from the tripled pool; earlier versions from the

@@ -46,11 +46,14 @@ import (
 // static cue list with grammar-generated surfaces and metamorphic twins, but the
 // underlying CONTENT pools (relationship kinds, nameable possessions, preference
 // domains, temporal attributes, intermediary names, confabulation neighbors) were
-// still small enough to enumerate. v6 triples every one of those pools (see
-// gen/poolsv6.go) so the surface a miner would have to memorize grows ~3x, while
-// the graded values stay per-seed coined tokens. It is version-gated: v5's bytes
-// and already-recorded scores are untouched, and v6 draws a freshly rotated
-// surface (RotateSeedForVersion) from the larger pools.
+// still small enough to enumerate. v6 grows every one of those pools 3-4x, in a
+// model-authored tier (gen/poolsv6.go) and a web-entropy tier (gen/poolsv6_web.go
+// — terms harvested from public web lists and selected by a random.org TRNG draw,
+// so the variety is grounded outside model priors), while the graded values stay
+// per-seed coined tokens. Both tiers are frozen static literals: generation never
+// touches the network or an uncontrolled RNG. It is version-gated: v5's bytes and
+// already-recorded scores are untouched, and v6 draws a freshly rotated surface
+// (RotateSeedForVersion) from the larger pools.
 const (
 	BenchVersionV2      = 2
 	BenchVersionV3      = 3

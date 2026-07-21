@@ -17,7 +17,7 @@ applied to an existing version. It ships as a new one.
 | 3 | `2026-07-01` | The anti-gaming release: dump-guard grading, needle gating, adversarial distractors, composed injection framings, the cross-user lifecycle probe, and the reproduce-under-transform audit. |
 | 4 | `2026-08-01` | A supplementary fix to v3 scoring. Same tests, same shape, corrected grading. |
 | 5 | `2026-09-01` | The conversational-grounding, coverage, and efficiency release: a conversational-sanity gate, ordinary no-save-verb declarative writes, the accept-set grading primitive, Code Mode coverage, multi-hop and temporal-depth capability dimensions (grammar-generated and metamorphic-twinned), and a token-efficiency contract. |
-| 6 | `2026-10-01` | The content-variety release: triples the six v5 content pools so the memory families draw from ~3× the surface area. Same tests, same shapes, more variety. |
+| 6 | `2026-10-01` | The content-variety release: grows the six v5 content pools 3–4× (a model-authored tier plus a web-entropy tier sourced from public web lists via a random.org TRNG draw) so the memory families draw from far more surface area. Same tests, same shapes, more variety. |
 
 ## What v4 is
 
@@ -66,19 +66,25 @@ tripled**. v5 defeated a static cue list by rendering each family through
 grammar-generated surfaces and metamorphic twins, but the pools those surfaces
 draw from (relationship kinds, nameable possessions, preference domains, temporal
 attributes, intermediary names, confabulation neighbors) were still small enough
-to enumerate. v6 grows every one of them ~3×:
+to enumerate. v6 grows every one of them 3–4×, in two tiers — a model-authored tier
+(`gen/poolsv6.go`) and a **web-entropy tier** (`gen/poolsv6_web.go`) whose terms
+were harvested from public web lists and selected by a true-random (random.org
+atmospheric-noise) draw, so the added variety is grounded outside model priors:
 
 | Pool | v5 | v6 |
 | --- | --- | --- |
-| intermediary names | 40 | 120 |
-| relation kinds (target/decoy) | 14 | 42 |
-| multi-hop leaf nouns | 20 | 60 |
-| temporal-depth attributes | 20 | 60 |
-| confabulation neighbor pairs | 18 | 54 |
-| declarative-preference domains | 10 | 30 |
+| intermediary names | 40 | 160 |
+| relation kinds (target/decoy) | 14 | 52 |
+| multi-hop leaf nouns | 20 | 92 |
+| temporal-depth attributes | 20 | 78 |
+| confabulation neighbor pairs | 18 | 72 |
+| declarative-preference domains | 10 | 36 |
 
 The additions are generic real-world category words only; every **graded value**
-stays a per-seed coined token, so v6 is as contamination-proof as v5. The change
+stays a per-seed coined token, so v6 is as contamination-proof as v5. The
+web-entropy tier is harvested and frozen at authoring time — generation never
+touches the network or an uncontrolled RNG, so `(seed, bench_version)`
+determinism is fully intact. The change
 is gated on the version (`gen/poolsv6.go` selects the larger pool only for
 `bench_version >= 6`), so v5's bytes and already-recorded scores are untouched —
 its known-vector test still passes unchanged. Because v6 folds its number into
