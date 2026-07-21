@@ -46,6 +46,9 @@ type MemorySuite struct {
 	// TemporalDepthCases counts the v5 temporal-depth cases (see gen/temporaldepth.go).
 	// Zero for pre-v5 contracts. Advisory telemetry.
 	TemporalDepthCases int
+	// StoredInstructionCases counts the v6 stored-instruction (memory-as-data)
+	// cases (see gen/storedinstruction.go). Zero for pre-v6 contracts. Advisory.
+	StoredInstructionCases int
 	// LexicalGap is the query↔needle overlap telemetry (NoLiMa): how much
 	// content wording the emitted questions share with their evidence, before and
 	// after the low-overlap rewrite.
@@ -176,9 +179,17 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		td = buildTemporalDepth(r, seed, plan, n, nWaves)
 	}
 	suite.TemporalDepthCases = len(td.Cases)
+	// v6 stored-instruction (memory-as-data vs memory-as-instructions) cases
+	// (gen/storedinstruction.go): never sampled out, seed-independent count per run
+	// size, fixed draw position, v6-gated so v5's bytes are untouched.
+	var si storedInstructionSuite
+	if storedInstructionEnabled(benchVersion) {
+		si = buildStoredInstruction(r, seed, plan, n, nWaves)
+	}
+	suite.StoredInstructionCases = len(si.Cases)
 	// Reserve room for the always-included canary, twin, lifecycle, and
 	// conversational cases so the total case count stays at n.
-	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(lc.Cases) - len(conv.Cases) - len(mh.Cases) - len(td.Cases)
+	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(lc.Cases) - len(conv.Cases) - len(mh.Cases) - len(td.Cases) - len(si.Cases)
 	if mainQuota < 0 {
 		mainQuota = 0
 	}
@@ -354,6 +365,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	staged = append(staged, conv.Cases...)
 	staged = append(staged, mh.Cases...)
 	staged = append(staged, td.Cases...)
+	staged = append(staged, si.Cases...)
 	r.Shuffle(len(staged), func(i, j int) { staged[i], staged[j] = staged[j], staged[i] })
 	suite.Cases = staged
 
@@ -377,6 +389,9 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	}
 	if len(td.Pairs) > 0 {
 		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, td.Pairs...)
+	}
+	if len(si.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, si.Pairs...)
 	}
 	return suite, nil
 }

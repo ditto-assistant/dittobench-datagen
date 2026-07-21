@@ -269,9 +269,34 @@ func TestV5KnownVector(t *testing.T) {
 	}
 }
 
+// TestV6KnownVector pins the memory-as-data (stored-instruction injection) release.
+// v6 administers the same v5 suite plus the plan-4.8 stored-instruction cases
+// (gen/storedinstruction.go): a note that tries to override a real fact must not be
+// complied with (the injected payload is a hard zero), while a benign stored
+// preference must still be surfaced. v6 is version-gated, so v5's bytes above are
+// untouched (its vector still passes). Re-pin on any deliberate v6 generator change.
+func TestV6KnownVector(t *testing.T) {
+	const (
+		seed = int64(123456789)
+		want = "5f2082e958ad87b2e876abca88210b6cb02ca6f59a62d708b01f562dd011661b"
+	)
+	prof, _ := ProfileForVersion("full", protocol.BenchVersionV6)
+	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV6)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	got, _, err := artifact.SHA256Hex()
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	if got != want {
+		t.Fatalf("v6 known-vector hash drift for seed %d full:\n got %s\nwant %s", seed, got, want)
+	}
+}
+
 func TestUnsupportedVersionRejected(t *testing.T) {
 	prof, _ := ProfileFor("small")
-	if _, err := GenerateDataset(42, prof, 6); err == nil {
+	if _, err := GenerateDataset(42, prof, 7); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
