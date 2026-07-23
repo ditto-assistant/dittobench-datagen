@@ -16,6 +16,17 @@ applied to an existing version. It ships as a new one.
 | 2 | `2026-01-01` | The launch contract. Frozen since on-chain scoring began. |
 | 3 | `2026-07-01` | The anti-gaming release: dump-guard grading, needle gating, adversarial distractors, composed injection framings, the cross-user lifecycle probe, and the reproduce-under-transform audit. |
 | 4 | `2026-08-01` | A supplementary fix to v3 scoring. Same tests, same shape, corrected grading. |
+| 5 | `2026-09-01` | Conversational grounding, broader capability coverage, and token-efficiency scoring. |
+| 6 | `2026-10-01` | Memory-as-data and the complexity suite; retains the v5 scoring contract. |
+| 7 | `2026-11-01` | Platform-owned OpenRouter inference with locked `openai/gpt-oss-20b`; generation and deterministic scoring behavior remain v6-equivalent. |
+
+## What v7 is
+
+v7 separates measurements made through the platform-owned OpenRouter inference
+boundary and its locked `openai/gpt-oss-20b` model from earlier Qwen-based
+scores. The generator and judge-free scorer retain v6 behavior. As with every
+benchmark version, the public versioned seed rotation produces a fresh,
+deterministic dataset surface so v7 scores are never compared with v6 scores.
 
 ## What v4 is
 
