@@ -19,6 +19,54 @@ applied to an existing version. It ships as a new one.
 | 5 | `2026-09-01` | Conversational grounding, broader capability coverage, and token-efficiency scoring. |
 | 6 | `2026-10-01` | Memory-as-data and the complexity suite; retains the v5 scoring contract. |
 | 7 | `2026-11-01` | Platform-owned OpenRouter inference with locked `openai/gpt-oss-20b`; generation and deterministic scoring behavior remain v6-equivalent. |
+| 8 | `2026-12-01` | Deep history: the scored haystack scales from ~4.5k tokens to LongMemEval_S parity, over a multi-year timeline. Same scoring contract as v6/v7. |
+
+## What v8 is
+
+v8 is the **deep-history** release. It changes how much a harness must remember,
+not how it is scored.
+
+Through v7 the scored haystack was about 4.5k tokens over 12 sessions spanning
+95 days. That is small enough to paste into a context window whole, which means
+a harness could skip retrieval entirely and still score well: the memory score
+was measuring reading comprehension as much as memory. v8 takes the primary
+graph to roughly 111k tokens over ~55 persona sessions spanning three to five
+years, which is parity with LongMemEval_S (~115k tokens, 30-50 sessions,
+[arXiv:2410.10813](https://arxiv.org/abs/2410.10813)).
+
+The volume comes from **background threads** (`persona/filler.go`): multi-turn,
+topically-coherent narratives about mundane domestic and bureaucratic life that
+run across non-adjacent sessions and carry no ground truth at all. Most of the
+history is now this. Three properties are what keep it from being padding, and
+each has a test:
+
+- **Coherence.** A thread is an arc (kickoff, complication, grind, turn, coda)
+  over one subject. It names that subject in full exactly once and refers back
+  through a short coreferent afterwards. Eight to twelve arcs are in flight at
+  any point, so a session reads as a life with several concerns running rather
+  than a monologue. Semantically disjoint padding inflates lexical-retrieval
+  scores; an on-topic narrative that never states a fact does not.
+- **Length parity.** Fact-bearing turns are elaborated from the same clause
+  pools the threads use, and a quarter of thread turns are terse check-ins. Both
+  populations span the same length range. Without this, "index the short turns
+  and ignore the rest" would beat retrieval outright: the first draft left a
+  third of fact beats unelaborated and the shortest decile of the haystack was
+  55% evidence against an 11% base rate.
+- **Answer disjointness.** The thread vocabulary shares no token with any answer
+  pool. `TestFillerNeverStatesAFact` checks the entire vocabulary against every
+  pool the generator can draw an answer from, using the grader's own matcher.
+
+Two further changes come with it. The timeline uses **clustered** session gaps
+(bursts a few days apart, broken by multi-month silences) so elapsed-duration
+and point-in-time answers range over years rather than a single quarter. And a
+fact beat is now inserted at a seeded position among its session's filler rather
+than leading it, so evidence sits at an unpredictable depth.
+
+**The graded case count is deliberately near-flat**: 100 memory cases against
+v7's 85, and tool cases unchanged at 110. Ingest is a fixed per-submission cost
+while every graded case is an inference round trip, so scaling the two together
+would have turned a retrieval benchmark into a bill. `TestV8GradedCaseCountStaysFlat`
+fails if a later change lets the case count drift up with the history.
 
 ## What v7 is
 
