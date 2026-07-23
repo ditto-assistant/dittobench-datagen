@@ -123,6 +123,7 @@ than keeping their own copies.
   survived the disqualifying scans but failed the typed answer check, plus
   per-answer-kind counts, so the grader's measured false-negative rate can be
   published per bench version.
+
 - `cmd/gstudy`: the offline reliability analyzer. Given a JSONL of scored runs
   it reports a G-study variance decomposition (seed vs. item vs. residual) and
   per-category difficulty/discrimination estimates, flagging saturated and floor
@@ -137,6 +138,31 @@ than keeping their own copies.
 - `protocol`: the wire shapes, including the `DatasetArtifact` schema validators
   score.
 - `toolexec`, `catalog`: the tool fixtures and tool catalog.
+
+### Releasing the generation service
+
+Every merge to `main` is interpreted from its conventional squash title by
+semantic-release. Release CI updates the Go provenance version, creates the
+semver tag and GitHub release, verifies the exact tagged source, then publishes
+the generator image with source tag/commit OCI labels. The job summary prints
+the immutable Artifact Registry digest for the infra repository to pin. Tags
+must not be created manually.
+
+The same tagged source can be checked locally without publishing:
+
+```bash
+git fetch origin --tags
+git switch --detach v0.11.2
+scripts/verify-generate-service-release.sh
+```
+
+Publishing an image does not deploy Cloud Run; the reviewed digest is activated
+only by the separate infra pin and rollout.
+
+The release job uses the standard organization release token. Image publication
+uses a `prod` GitHub environment restricted to `main` and a dedicated WIF
+identity that can write only to the datagen Artifact Registry repository. Those
+bindings must be staged before merging the first release-aware PR.
 
 ## License
 
