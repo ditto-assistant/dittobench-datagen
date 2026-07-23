@@ -6,19 +6,22 @@
 # it, so the deployed generator provably matches the public reproduction CLI at
 # that version and a rollback is a tag change, not a rebuild.
 #
-# Usage (from the REPO ROOT at the release tag, project already selected):
-#   gcloud builds submit \
-#     --config cmd/generate-service/cloudbuild.yaml \
-#     --substitutions=_IMAGE=us-central1-docker.pkg.dev/PROJECT/datapipeline/generate:v0.7.1
+# Release CI is the canonical build/publish path. This file is retained for an
+# operator-reviewed emergency rebuild and requires the same source provenance
+# substitutions as CI; it never deploys Cloud Run.
 
 substitutions:
   _IMAGE: "REPLACE_WITH_ARTIFACT_REGISTRY_IMAGE"
+  _SOURCE_COMMIT: "REPLACE_WITH_FULL_GIT_SHA"
+  _SOURCE_TAG: "REPLACE_WITH_RELEASE_TAG"
 
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
       - build
       - --tag=${_IMAGE}
+      - --build-arg=SOURCE_COMMIT=${_SOURCE_COMMIT}
+      - --build-arg=SOURCE_TAG=${_SOURCE_TAG}
       - --file=cmd/generate-service/Dockerfile
       - .
 
