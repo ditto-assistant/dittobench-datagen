@@ -81,6 +81,25 @@ var profilesV5 = map[string]Profile{
 	"full":   {Tools: 110, Mem: 85, Waves: 4, RawPairsFrac: 0.4, IsoCases: 6},
 }
 
+// profilesV8 is the bench_version 8 DEEP-HISTORY sizing. The change relative to
+// v5-v7 is deliberately asymmetric: the number of GRADED cases barely moves,
+// while the history those cases must be answered from grows by roughly 25x to
+// LongMemEval_S parity (~115k tokens; arXiv:2410.10813). Through v7 the scored
+// haystack was ~4.5k tokens, small enough to hold in context whole, so a harness
+// could skip retrieval and still score; the volume added here is what makes
+// retrieval recall the binding constraint. Because the case count is flat, the
+// per-submission INFERENCE cost is roughly unchanged: what grows is ingest and
+// retrieval, which is exactly the capability under test.
+//
+// Waves rises with the session count so staged ingestion still lands in
+// meaningful increments across a much longer timeline. small stays a cheap
+// single-wave smoke path with no deep history at all.
+var profilesV8 = map[string]Profile{
+	"small":  {Tools: 6, Mem: 6, Waves: 1, RawPairsFrac: 0, IsoCases: 0},
+	"medium": {Tools: 40, Mem: 45, Waves: 4, RawPairsFrac: 0.35, IsoCases: 3},
+	"full":   {Tools: 110, Mem: 100, Waves: 6, RawPairsFrac: 0.4, IsoCases: 6},
+}
+
 // ProfileFor returns the Profile for a run_size, defaulting to small. Uses the
 // historical (v2/v3/v4) sizes; canonical versioned callers use ProfileForVersion.
 func ProfileFor(runSize string) (Profile, bool) {
@@ -96,6 +115,12 @@ func ProfileFor(runSize string) (Profile, bool) {
 // their dataset bytes are unchanged. Deterministic, so any third party holding
 // (seed, run_size, bench_version) regenerates the identical dataset.
 func ProfileForVersion(runSize string, benchVersion int) (Profile, bool) {
+	if benchVersion >= protocol.BenchVersionV8 {
+		if p, ok := profilesV8[runSize]; ok {
+			return p, true
+		}
+		return profilesV8["small"], false
+	}
 	if benchVersion >= protocol.BenchVersionV5 {
 		if p, ok := profilesV5[runSize]; ok {
 			return p, true

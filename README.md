@@ -63,9 +63,19 @@ the identical dataset that submission was scored against.
 
 Run sizes: `small` (smoke), `medium`, `full` (the scored profile).
 
+From `bench_version` 8 the scored profile carries a **deep history**. `full`
+seeds a primary memory graph of roughly 1,300 conversation pairs, ~111k tokens,
+across ~55 sessions spanning three to five years, which is parity with
+LongMemEval_S. The artifact is around 685 KB rather than 140 KB, and a harness
+receives the history in six balanced `/seed` waves of ~200 pairs each rather than
+one blocking call. The graded case count barely moves (100 memory cases against
+v7's 85, tool cases unchanged), so what grows is what a harness must retrieve
+from, not how many times it is asked. Use `medium` (~34k tokens) or `small` (no
+deep history at all) for iteration.
+
 `-bench-version` is required. Use the version published with the score you are
 auditing; never substitute the latest version. Supported immutable contracts are
-v2 through v7. For the public full-profile seed `123456789`, the canonical
+v2 through v8. For the public full-profile seed `123456789`, the canonical
 SHA-256 vectors are:
 
 | Version | Dataset epoch | SHA-256 |
@@ -76,6 +86,7 @@ SHA-256 vectors are:
 | 5 | `2026-09-01T00:00:00Z` | `ee70387b2470bb72a7ce457cd76187b9d89819016f3d58276f895a55b30a9f1c` |
 | 6 | `2026-10-01T00:00:00Z` | `38a0df83a95bdad271f80a271d59d676509290e2fd762683abd960952ff84016` |
 | 7 | `2026-11-01T00:00:00Z` | `1cfc6e3b9f3f4c04afe04b058a6851f9357f6463170b879867e2cf4588f58fcf` |
+| 8 | `2026-12-01T00:00:00Z` | `766ebc6d1fa3963b5926cc7553e4230d7992ccde143054590907848165278b0c` |
 
 Each is regenerated and asserted by CI (`TestV2KnownVector` and friends), so a
 value here that disagrees with `cmd/generate` is a bug in this table, not in the

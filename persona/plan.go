@@ -157,6 +157,12 @@ type Opts struct {
 	// chain for state-tracking questions; <3 → all chains stay 2-state). The long
 	// chain is drawn from the same attributes eligible for an update.
 	LongChain int
+	// FillerBeats is the v8 deep-history budget: roughly how many background-thread
+	// turns (persona/filler.go) to lay across the session grid. They carry no
+	// ground truth; they exist so the haystack is too large to hold in context and
+	// retrieval becomes the bottleneck. 0 (every pre-v8 profile) disables the layer
+	// entirely, so those contracts' RNG streams and bytes are untouched.
+	FillerBeats int
 }
 
 // DefaultOpts is a medium-sized, well-populated universe: enough facts for the
@@ -202,6 +208,9 @@ func (o Opts) normalized() Opts {
 	}
 	if o.LongChain < 0 {
 		o.LongChain = 0
+	}
+	if o.FillerBeats < 0 {
+		o.FillerBeats = 0
 	}
 	return o
 }
@@ -1172,7 +1181,14 @@ func BuildPlanForVersion(seed int64, opts Opts, benchVersion int) (*Plan, error)
 	}
 
 	// --- assign facts to session scripts (ordered), interleaved with noise ---
-	p.Sessions = buildSessions(r, p.Facts, opts.Sessions)
+	// v8 lays deep-history background threads across the same session grid and
+	// stretches the timeline to multi-year; pre-v8 keeps the original one-line
+	// chit-chat filler and week-scale gaps, so those contracts' bytes are frozen.
+	if benchVersion >= protocol.BenchVersionV8 {
+		p.Sessions = buildDeepSessions(r, p.Facts, opts)
+	} else {
+		p.Sessions = buildSessions(r, p.Facts, opts.Sessions)
+	}
 	return p, nil
 }
 
@@ -1418,6 +1434,79 @@ func buildSessions(r *rand.Rand, facts []Fact, nSessions int) []Session {
 		gap := 1 + r.Intn(10)
 		if r.Intn(4) == 0 {
 			gap += 14 + r.Intn(31)
+		}
+		day += gap
+	}
+	return sessions
+}
+
+// buildDeepSessions is the bench_version 8 session builder. It differs from
+// buildSessions in three ways, each addressing a way the pre-v8 haystack was too
+// easy to shortcut:
+//
+//   - Volume and coherence. Each session's fact beats are interleaved with turns
+//     from the live background threads (persona/filler.go) instead of one-line
+//     chit-chat, taking the scored history from ~4.5k tokens to LongMemEval_S
+//     scale. Most sessions carry no ground truth at all.
+//   - Depth. A fact beat is inserted at a seeded position among that session's
+//     filler rather than always leading it, so evidence sits at an unpredictable
+//     offset in the session instead of at a fixed one.
+//   - Span. Session gaps are CLUSTERED: mostly a few days apart, with occasional
+//     multi-month silences, so the timeline runs to years rather than the ~95 days
+//     v7 spanned. Elapsed-duration and point-in-time answers then range over
+//     genuinely long horizons.
+//
+// Deterministic: every draw is from r, and the layout is a pure function of
+// (r, facts, opts).
+func buildDeepSessions(r *rand.Rand, facts []Fact, opts Opts) []Session {
+	nSessions := opts.Sessions
+	bySession := make([][]Fact, nSessions)
+	for _, f := range facts {
+		s := f.Session
+		if s < 0 {
+			s = 0
+		}
+		if s >= nSessions {
+			s = nSessions - 1
+		}
+		bySession[s] = append(bySession[s], f)
+	}
+
+	filler := buildFillerBeats(r, nSessions, opts.FillerBeats)
+
+	sessions := make([]Session, 0, nSessions)
+	day := r.Intn(20)
+	for i := 0; i < nSessions; i++ {
+		sf := bySession[i]
+		sort.Slice(sf, func(a, b int) bool { return sf[a].Seq < sf[b].Seq })
+
+		beats := append([]Beat(nil), filler[i]...)
+		// Insert each fact beat at a seeded position among the filler, in Seq
+		// order. Positions are drawn over the growing slice, so a session with
+		// several facts keeps them ordered while still scattering them through
+		// the conversation rather than clustering them at the front.
+		lo := 0
+		for _, f := range sf {
+			b := Elaborate(r, Beat{Kind: BeatFact, FactID: f.ID, UserText: f.UserText, AsstText: f.AsstText})
+			pos := lo
+			if len(beats) > lo {
+				pos = lo + r.Intn(len(beats)-lo+1)
+			}
+			beats = append(beats, Beat{})
+			copy(beats[pos+1:], beats[pos:])
+			beats[pos] = b
+			lo = pos + 1
+		}
+		if len(beats) == 0 { // never emit an empty session
+			beats = append(beats, noiseBeat(r))
+		}
+		sessions = append(sessions, Session{Index: i, DayOffset: day, Beats: beats})
+		// Clustered gaps: conversations come in bursts a few days apart, broken
+		// by occasional long silences. Over a v8-sized session count this spans
+		// several years instead of a single quarter.
+		gap := 2 + r.Intn(9)
+		if r.Intn(5) == 0 {
+			gap += 45 + r.Intn(120)
 		}
 		day += gap
 	}

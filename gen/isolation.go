@@ -62,7 +62,7 @@ func GenerateIsolationForVersion(seed int64, primaryN, nWaves, isoCases, benchVe
 	if nWaves < 1 {
 		nWaves = 1
 	}
-	pPlan, err := persona.BuildPlanForVersion(seed, personaOptsFor(primaryN), benchVersion)
+	pPlan, err := persona.BuildPlanForVersion(seed, personaOptsForVersion(primaryN, benchVersion), benchVersion)
 	if err != nil {
 		return IsolationSuite{}, err
 	}

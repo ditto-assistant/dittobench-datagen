@@ -95,7 +95,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		return suite, nil
 	}
 
-	plan, err := persona.BuildPlanForVersion(seed, personaOptsFor(n), benchVersion)
+	plan, err := persona.BuildPlanForVersion(seed, personaOptsForVersion(n, benchVersion), benchVersion)
 	if err != nil {
 		return MemorySuite{}, err
 	}
@@ -556,8 +556,36 @@ func sessionBucket(session, nSessions, nWaves int) int {
 	return w
 }
 
+// personaOptsForVersion scales the plan size to (memory-case quota, contract).
+// v8 gets its own table because the deep-history layer changes the shape of the
+// universe rather than just its size: many more sessions, a much larger fact and
+// decoy population spread across them, and a filler budget that carries the
+// haystack to LongMemEval_S scale. Earlier contracts route to the frozen
+// personaOptsFor so their bytes are untouched.
+func personaOptsForVersion(n, benchVersion int) persona.Opts {
+	if benchVersion < protocol.BenchVersionV8 {
+		return personaOptsFor(n)
+	}
+	switch {
+	case n <= 8:
+		// Smoke path: no deep history at all, so the small profile stays cheap.
+		return persona.Opts{Sessions: 5, Projects: 4, Trips: 3, Pets: 2, UpdateChains: 2, Reversals: 1, DecoyPeople: 4, DomainItems: 3, LongChain: 3}
+	case n <= 60:
+		// v8 medium: a real multi-session history (~40k tokens) without the full
+		// profile's ingest cost.
+		return persona.Opts{Sessions: 30, Projects: 12, Trips: 9, Pets: 5, UpdateChains: 5, Reversals: 3, DecoyPeople: 14, DomainItems: 5, LongChain: 5, FillerBeats: 320}
+	default:
+		// v8 full (Mem 100): the scored profile. Sessions and FillerBeats are set
+		// so the primary graph lands at LongMemEval_S parity (~115k tokens over
+		// ~55 sessions); the enlarged fact and decoy population keeps evidence
+		// density per session low, which is what makes recall the bottleneck.
+		return persona.Opts{Sessions: 55, Projects: 18, Trips: 14, Pets: 7, UpdateChains: 8, Reversals: 5, DecoyPeople: 24, DomainItems: 6, LongChain: 6, FillerBeats: 1280}
+	}
+}
+
 // personaOptsFor scales the plan size to the memory-case quota so the question
-// pool comfortably exceeds n at every run_size.
+// pool comfortably exceeds n at every run_size. Frozen for v2-v7; v8 uses
+// personaOptsForVersion.
 func personaOptsFor(n int) persona.Opts {
 	switch {
 	case n <= 8:

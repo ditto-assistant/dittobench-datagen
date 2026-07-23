@@ -317,9 +317,35 @@ func TestV7KnownVector(t *testing.T) {
 	}
 }
 
+// TestV8KnownVector pins the deep-history release. v8 scales the scored haystack
+// from ~4.5k tokens over 12 sessions to LongMemEval_S parity (~115k tokens over
+// ~55 sessions, spanning years) using the background-thread layer in
+// persona/filler.go, and elaborates fact beats to the same length distribution so
+// graded turns are not separable from filler by length. The graded case count is
+// deliberately near-flat. All of it is v8-gated, so every vector above still
+// passes. Re-pin on any deliberate v8 generator change.
+func TestV8KnownVector(t *testing.T) {
+	const (
+		seed = int64(123456789)
+		want = "766ebc6d1fa3963b5926cc7553e4230d7992ccde143054590907848165278b0c"
+	)
+	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
+	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV8)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	got, _, err := artifact.SHA256Hex()
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	if got != want {
+		t.Fatalf("v8 known-vector hash drift for seed %d full:\n got %s\nwant %s", seed, got, want)
+	}
+}
+
 func TestUnsupportedVersionRejected(t *testing.T) {
 	prof, _ := ProfileFor("small")
-	if _, err := GenerateDataset(42, prof, 8); err == nil {
+	if _, err := GenerateDataset(42, prof, 9); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -327,7 +353,7 @@ func TestUnsupportedVersionRejected(t *testing.T) {
 // TestSameSeedSameBytes is the core determinism guarantee: one seed, one artifact.
 func TestSameSeedSameBytes(t *testing.T) {
 	prof, _ := ProfileFor("full")
-	for _, version := range []int{protocol.BenchVersionV2, protocol.BenchVersionV3, protocol.BenchVersionV4, protocol.BenchVersionV5, protocol.BenchVersionV6, protocol.BenchVersionV7} {
+	for _, version := range []int{protocol.BenchVersionV2, protocol.BenchVersionV3, protocol.BenchVersionV4, protocol.BenchVersionV5, protocol.BenchVersionV6, protocol.BenchVersionV7, protocol.BenchVersionV8} {
 		artifactA, err := GenerateDataset(42, prof, version)
 		if err != nil {
 			t.Fatalf("v%d generate a: %v", version, err)
