@@ -220,6 +220,12 @@ var synthesisCats = map[string]bool{
 	"aggregation-count": true, "computed-answer": true, "temporal-reasoning": true,
 	"point-in-time": true, "multi-session": true, "contradiction": true,
 	"abstention": true, "knowledge-update": true,
+	// v5/v6 hard classes.
+	"multi-hop-relational": true, "temporal-depth": true, "multi-query-recall": true,
+	"nonverbatim-computed": true, "passive-consolidation": true,
+	// v7 difficulty classes (reasoning-required; a parser collapses on these).
+	"multi-hop-deep": true, "lifecycle-deep-read": true, "near-miss-abstention": true,
+	"temporal-arithmetic": true, "injection-composed": true,
 }
 
 // ParserSignals is ADVISORY-ONLY telemetry that separates a deterministic

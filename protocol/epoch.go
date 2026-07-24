@@ -41,6 +41,22 @@ import (
 //   - a token-efficiency (waste-penalty) contract the validator applies from
 //     trusted relay telemetry, binding generation, model/provider profile, and the
 //     starter baseline to one immutable contract.
+//
+// v6 is the MEMORY-AS-DATA release: stored-instruction injection, multi-query
+// fan-out, non-verbatim computed answers, and passive cross-session
+// consolidation, all version-gated so v5's bytes are untouched.
+// v7 carries the OpenRouter/gpt-oss-20b inference boundary AND is the DIFFICULTY
+// release (see docs/bench-versions.md): scaled-up profiles, a sharpened
+// memory-type mix, five new reasoning-required memory classes (deep write
+// chains, three-hop joins, near-miss abstention, temporal arithmetic, composed
+// stored-instruction injection), and four new tool classes (negation-cue
+// restraint, stale-context routing, a dependent link chain, a job-chain+recovery
+// composition). Every lever is gated on bench_version >= 7, so v2..v6 regenerate
+// and grade byte-identically. The judge-free deterministic grader is unchanged,
+// and the wire/artifact format stays backward-compatible (additive only). The
+// difficulty is defined and measured, not asserted: on the reasoning-required
+// subset the best non-reasoning strategy scores ~0.10 while a correct oracle
+// scores 1.0 (gen.TestV7NaiveStrategiesCollapse / TestV7OracleSolvable).
 const (
 	BenchVersionV2      = 2
 	BenchVersionV3      = 3
