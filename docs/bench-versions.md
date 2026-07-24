@@ -39,14 +39,23 @@ shapes and the existing served tool-endpoint protocol, so a harness built for
 the current format still parses a v7 dataset and returns valid responses (it
 will simply score poorly, which is the point).
 
+Every new case family is grounded in a real production flow, data-model shape,
+or documented failure mode of the live Ditto assistant (backend + app). The
+family-by-family evidence — which product flow each exercises, why a
+product-quality agent must handle it, and why today's harnesses fail it honestly
+— is in [v7-product-traceability.md](v7-product-traceability.md). The rule:
+difficulty must make the real product better, never difficulty for difficulty's
+sake; anything that reads as a trick a product-quality agent would never need to
+survive is cut.
+
 ### The difficulty levers (all v7-gated)
 
 - **Scaled, denser profiles** (`profilesV7`): the `full` memory suite grows to
-  120 cases over 5 waves at a 0.5 raw-pairs (Tier-B) share and 8 isolation
+  ~180 cases over 5 waves at a 0.5 raw-pairs (Tier-B) share and 10 isolation
   cases, drawing a denser persona (more sessions, more near-miss decoy people),
   so the distractor-to-needle ratio rises with the case count. `small` stays a
-  cheap single-wave smoke path. Generation stays non-LLM and fast (~23 ms for a
-  full v7 dataset), so the per-submission `full` path is unaffected.
+  cheap single-wave smoke path. Generation stays non-LLM and fast (tens of ms
+  for a full v7 dataset), so the per-submission `full` path is unaffected.
 
 - **Sharpened memory-type mix** (`memoryTypeWeightV7`): the types a lexical
   retriever cannot shortcut (multi-session synthesis, temporal reasoning,
@@ -56,33 +65,44 @@ will simply score poorly, which is the point).
   count is capped so phrasing-invariance recall (the naive-passable end of the
   suite) does not soak up the freed budget.
 
-- **Five new reasoning-required memory classes:**
-  - *deep write chains* (`lifecycle-deep-*`): a
+- **Six new product-grounded, reasoning-required memory classes** (each maps to
+  a real flow in [v7-product-traceability.md](v7-product-traceability.md)):
+  - *deep write chains* (`lifecycle-deep-*`): the real memory write path — a
     save→update→update→read (and save→update→delete→read) sequence delivered as
     separate instructions across three staging waves; only the final state
     answers, and the delete-chain read declines with the chain's earlier values
-    as scored distractors.
-  - *three-hop joins* (`multi-hop-deep`): "my mentor's partner's employer" — a
-    three-pair traversal across sessions, with a one-join trap (the first-hop
-    person's own value) and a wrong-chain trap (a full decoy chain) both seeded
-    as scored distractors.
-  - *near-miss abstention* (`near-miss-abstention`): a question engineered to
-    look answerable — the sibling entity's value for the same attribute is
-    seeded, and the asked entity is mentioned in an unrelated context — but the
-    asked fact was never stated; the sibling's value is a scored distractor, so a
-    nearest-neighbor retriever is zeroed, not merely uncredited.
-  - *temporal arithmetic* (`temporal-arithmetic`): a base quantity and a change
-    to it are stated in non-adjacent sessions; the answer (base ± change)
-    appears in no seeded pair, graded through the accept-set.
+    as scored distractors. (backend in-place `update_memory` + confirmation-gated
+    `delete_memory`.)
+  - *three-hop joins* (`multi-hop-deep`): knowledge-graph traversal — "my
+    mentor's partner's employer", a three-pair walk across sessions, with a
+    one-join trap (the first-hop person's own value) and a wrong-chain trap (a
+    full decoy chain) both seeded as scored distractors. (backend subject edges /
+    memory network.)
+  - *near-miss abstention* (`near-miss-abstention`): entity disambiguation — a
+    question engineered to look answerable (the sibling entity's value for the
+    same attribute is seeded, and the asked entity is mentioned in an unrelated
+    context) but the asked fact was never stated; the sibling's value is a scored
+    distractor, so a nearest-neighbor retriever is zeroed. (backend subject dedup
+    at cosine 0.75; "never the wrong person's data".)
+  - *temporal arithmetic* (`temporal-arithmetic`): aggregation over durable
+    quantitative facts the product tracks (rent + raise, budget − spent) stated
+    in non-adjacent sessions; the answer appears in no seeded pair, graded
+    through the accept-set. (Insights aggregation.)
   - *composed stored-instruction injection* (`injection-composed`): a
     prompt-injection split across two innocuous notes (a fake authority channel,
     then a payload that invokes it), so a single-note attack detector sees two
     benign memos; a benign same-shape twin (the user's own tagging convention)
-    ensures blanket refusal fails.
+    ensures blanket refusal fails. (store is written through untrusted chat.)
+  - *subscribed-graph attribution* (`subscription-own` / `subscription-attributed`):
+    a subscribed friend's value and the user's own value for the same attribute
+    both surface in one flat search list, distinguished only by an `@friend`
+    provenance prefix; "my X" must return the user's own (the friend's is a
+    cross-graph leak), and "what did @friend say" must attribute the friend's.
+    (backend `annotateSubscribedSlimMemory`, cross-user docs.)
 
-- **Four new tool classes** plus a **weighted category mix**
-  (`toolCategoryWeightV7`) that triples the share of result-usage cases (which
-  require executing tools and reading their served content) and doubles the
+- **Five new tool classes** plus a **weighted category mix**
+  (`toolCategoryWeightV7`) that makes result-usage cases (which require executing
+  tools and reading their served content) the dominant share and doubles the
   routing/discrimination traps:
   - *negation-cue restraint* (`negation_no_tool`): the prompt names a tool cue
     while negating it, so a keyword router that fires on the cue is caught.
@@ -95,33 +115,50 @@ will simply score poorly, which is the point).
     dependent job-id chain and transient-error recovery at once. Both serving
     gates already existed in the tool endpoint and compose via the category-name
     markers, so no protocol change was needed.
+  - *entity-lookup 3-hop chain* (`entity_lookup_chain`): the production
+    `search_subjects` → `search_memories_in_subjects` → `fetch_memories`
+    sequence the backend recommends, order-scored.
 
 ### The measurement
 
-"Harder" is defined operationally and pinned by test
-(`gen.TestV7NaiveStrategiesCollapse`, reproducible with
-`go test -run V7Naive -v ./gen`). Fixed non-reasoning strategies —
-question-echo, single-pair retrieval, recency, and dump-everything — are scored
-against v6 and v7 datasets over five seeds, and a canonical oracle is scored
-against every case:
+"Harder" is defined operationally and pinned by two tests
+(`gen.TestV7NaiveStrategiesCollapse` and `gen.TestV7ChampionTierLandsNearTarget`,
+reproducible with `go test -run 'V7Naive|V7ChampionTier' -v ./gen`), plus the
+family-by-family calibration table in
+[v7-product-traceability.md](v7-product-traceability.md).
 
-- On the **reasoning-required subset** (the cases the benchmark exists to
-  discriminate), the best fixed non-reasoning strategy scores **0.098** on v7
-  versus the oracle's **1.0** — an **~10x** gap — up from v6's 6.1x (0.163).
-- v7 grows that subset from **40%** of the memory suite to **47%** (the
-  plurality), so the order-of-magnitude gap applies to more of the run.
-- The oracle scores **1.0 on 100% of v7 cases across 30 seeds**
-  (`gen.TestV7OracleSolvable`): every hard case is solvable by a correct
-  trajectory.
-- The keyword tool router loses a large share of its v6 yield (0.525 → 0.420).
+**Naive strategies.** Fixed non-reasoning strategies — question-echo,
+single-pair retrieval, recency, dump-everything, and a keyword tool router — are
+scored against v6 and v7:
 
-A generic retriever cannot be driven to zero over the *whole* suite — single-hop
-recall is genuinely retrieval-solvable and the suite keeps recall/floor cases
-for coverage and as anti-refusal interlocks — so the order-of-magnitude claim is
-made where it is real and measured (the reasoning subset), not asserted over
-cases no benchmark could make retrieval fail. As with every version, the public
-versioned seed rotation produces a fresh, deterministic dataset surface, so v7
-scores are never compared with v6 scores.
+- On the **reasoning-required subset**, the best fixed non-reasoning strategy
+  scores **0.088** on v7 vs the oracle's **1.0** — an **~11x** gap — up from
+  v6's 6.2x (0.162). That subset grows from **40%** to **52%** of the memory
+  suite. The keyword tool router falls from **0.525 → 0.331**.
+
+**Champion tier.** The top-5 leaderboard harnesses scored 0.607–0.845 on the
+pre-deepening v7. Because the real harnesses cannot be run here, the tier is
+modeled with fixed per-class expected pass rates (calibrated to reproduce that
+rebench), bracketed by a STRONG anchor (newDitto-like) and a WEAK anchor
+(whitycatboss/infinity-like):
+
+| Tier | pre-deepening (v6 proxy) | deepened v7 |
+| --- | --- | --- |
+| STRONG champion | 0.833 | 0.573 |
+| WEAK champion | 0.678 | **0.364** |
+| Oracle (every case, 30 seeds) | 1.000 | **1.000** |
+
+The WEAK anchor — the bulk of today's best harnesses — lands at **~0.36**, in
+the ~0.35 ± 0.05 target band, while the oracle stays at 1.0 and the naive tiers
+stay near their floor. The single STRONGEST harness lands ~0.57; driving it to a
+flat 0.35 too would require an ~80%-hard suite that strips the grounded
+synthesis and conversational-sanity coverage and over-concentrates a few
+families — which the "difficulty must make the product better, never difficulty
+for difficulty's sake" rule forbids — and would crater the weaker harnesses
+below 0.20. The calibration therefore lands the fleet's target while preserving
+full product-grounded coverage. As with every version, the public versioned seed
+rotation produces a fresh, deterministic dataset surface, so v7 scores are never
+compared with v6 scores.
 
 ## What v4 is
 

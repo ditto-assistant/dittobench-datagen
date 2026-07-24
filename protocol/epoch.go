@@ -46,17 +46,20 @@ import (
 // fan-out, non-verbatim computed answers, and passive cross-session
 // consolidation, all version-gated so v5's bytes are untouched.
 // v7 carries the OpenRouter/gpt-oss-20b inference boundary AND is the DIFFICULTY
-// release (see docs/bench-versions.md): scaled-up profiles, a sharpened
-// memory-type mix, five new reasoning-required memory classes (deep write
-// chains, three-hop joins, near-miss abstention, temporal arithmetic, composed
-// stored-instruction injection), and four new tool classes (negation-cue
-// restraint, stale-context routing, a dependent link chain, a job-chain+recovery
-// composition). Every lever is gated on bench_version >= 7, so v2..v6 regenerate
+// release (see docs/bench-versions.md and docs/v7-product-traceability.md). Every
+// new case family mirrors a real Ditto product flow, data-model shape, or
+// documented failure mode (deep write chains, three-hop KG joins, near-miss
+// entity-disambiguation abstention, temporal aggregation, composed
+// stored-instruction injection, subscribed-graph attribution; plus dependent
+// tool chains). Every lever is gated on bench_version >= 7, so v2..v6 regenerate
 // and grade byte-identically. The judge-free deterministic grader is unchanged,
 // and the wire/artifact format stays backward-compatible (additive only). The
-// difficulty is defined and measured, not asserted: on the reasoning-required
-// subset the best non-reasoning strategy scores ~0.10 while a correct oracle
-// scores 1.0 (gen.TestV7NaiveStrategiesCollapse / TestV7OracleSolvable).
+// difficulty is defined and measured, not asserted: a modeled champion tier
+// calibrated to the leaderboard rebench drops to ~0.36 (weak) / ~0.57 (strong),
+// the best non-reasoning strategy scores ~0.09 on the reasoning subset, and a
+// correct oracle scores 1.0 on every case across seeds
+// (gen.TestV7ChampionTierLandsNearTarget / TestV7NaiveStrategiesCollapse /
+// TestV7OracleSolvable).
 const (
 	BenchVersionV2      = 2
 	BenchVersionV3      = 3
