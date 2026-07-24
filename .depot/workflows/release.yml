@@ -1,0 +1,120 @@
+# Depot CI Migration
+# Source: .github/workflows/release.yml
+#
+# Changes made:
+# - Changed runs-on from "blacksmith-4vcpu-ubuntu-2404" to "depot-ubuntu-latest" throughout
+
+name: Release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  IMAGE_REPOSITORY: us-central1-docker.pkg.dev/ditto-app-dev/datapipeline/generate
+jobs:
+  release:
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    runs-on: depot-ubuntu-latest # was: blacksmith-4vcpu-ubuntu-2404. Nonstandard GitHub runner label detected, changed to default Depot runner.
+    permissions:
+      contents: write
+    outputs:
+      released: ${{ steps.semantic-release.outputs.released || 'false' }}
+      version: ${{ steps.semantic-release.outputs.version }}
+      tag: ${{ steps.semantic-release.outputs.tag }}
+      commit_sha: ${{ steps.semantic-release.outputs.commit_sha }}
+    steps:
+      - name: Require the standard release token
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [[ -z "$RELEASE_TOKEN" ]]; then
+            echo "RELEASE_TOKEN is not available to this repository" >&2
+            exit 1
+          fi
+      - name: Check out the merged commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+          token: ${{ secrets.RELEASE_TOKEN }}
+      - name: Pin the release branch to the tested merge
+        run: git reset --hard "${{ github.sha }}"
+      - name: Configure the release committer
+        run: |
+          git config user.name github-actions
+          git config user.email actions@users.noreply.github.com
+      - name: Version, tag, and create the GitHub release
+        id: semantic-release
+        uses: python-semantic-release/python-semantic-release@8f4d8c4e3e4fcd2b8df16444b148aa49920cc4d3
+        with:
+          github_token: ${{ secrets.RELEASE_TOKEN }}
+          git_committer_name: github-actions
+          git_committer_email: actions@users.noreply.github.com
+  verify-release:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: depot-ubuntu-latest # was: blacksmith-4vcpu-ubuntu-2404. Nonstandard GitHub runner label detected, changed to default Depot runner.
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the exact release commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.release.outputs.commit_sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: Verify the tagged source and image locally
+        run: scripts/verify-generate-service-release.sh
+  publish-generate-service:
+    needs: [release, verify-release]
+    if: needs.release.outputs.released == 'true'
+    runs-on: depot-ubuntu-latest # was: blacksmith-4vcpu-ubuntu-2404. Nonstandard GitHub runner label detected, changed to default Depot runner.
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the exact release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.commit_sha }}
+          persist-credentials: false
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/22790208601/locations/global/workloadIdentityPools/github/providers/github-actions
+          service_account: github-actions-datagen-release@ditto-app-dev.iam.gserviceaccount.com
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+      - name: Authenticate Docker to Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build and publish the immutable generator image
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: cmd/generate-service/Dockerfile
+          push: true
+          provenance: mode=max
+          build-args: |
+            SOURCE_COMMIT=${{ needs.release.outputs.commit_sha }}
+            SOURCE_TAG=${{ needs.release.outputs.tag }}
+          tags: |
+            ${{ env.IMAGE_REPOSITORY }}:${{ needs.release.outputs.tag }}
+            ${{ env.IMAGE_REPOSITORY }}:sha-${{ needs.release.outputs.commit_sha }}
+      - name: Publish the exact infra pin in the job summary
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo '### Immutable datagen image' >> "$GITHUB_STEP_SUMMARY"
+          printf '%c%s@%s%c\n' 96 "$IMAGE_REPOSITORY" "$DIGEST" 96 >> "$GITHUB_STEP_SUMMARY"
