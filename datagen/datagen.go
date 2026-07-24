@@ -680,6 +680,8 @@ func fillerForVersion(r *rand.Rand, cat string, benchVersion int) string {
 		return p[r.Intn(len(p))]
 	}
 	switch cat {
+	case "entity_lookup_chain":
+		return pick(subjects, nil)
 	case "web_search", "route_web_not_memory", "calendar_search", "stale_context_web":
 		return pick(topics, topicsV5)
 	case "link_read":
@@ -835,7 +837,9 @@ func stratifiedCategoryOrder(r *rand.Rand, n, nc int) []int {
 func toolCategoryWeightV7(name string) int {
 	switch {
 	case IsResultUsage(name):
-		return 3
+		return 8
+	case name == "entity_lookup_chain":
+		return 4
 	case strings.Contains(name, "_not_"),
 		strings.HasPrefix(name, "route_"),
 		strings.HasPrefix(name, "multi_"),
@@ -1033,6 +1037,20 @@ var difficultyCategoriesV7 = []category{
 			"Kick off a job to compute %s, then fetch that job's result — the status check can be flaky, so retry it if it errors — and tell me the exact figure.",
 			"Dispatch a background job for %s, then read the job's status for the precise number; if the status call hiccups, try it again.",
 			"Start a job to work out %s, then pull its result and report the exact figure — retry the status lookup past any transient error.",
+		},
+	},
+	{
+		// The production entity-lookup sequence the backend explicitly recommends
+		// (pkg/mcp/server.go: "search_subjects -> search_memories_in_subjects ->
+		// fetch_memories"): resolve the subject, pull the linked pairs, then fetch
+		// the full memory. A three-hop ORDER-scored trajectory over memory tools
+		// (not served, so scored on names+order); a harness that grabs
+		// search_memories directly, or gets the hop order wrong, fails.
+		name: "entity_lookup_chain", tools: []string{"search_subjects", "search_memories_in_subjects", "fetch_memories"},
+		templates: []string{
+			"Find the subject that covers %s, pull the memories linked to it, then open the full memory.",
+			"Look up the topic for %s, get the pairs under that subject, and fetch the details.",
+			"Which subject holds %s — retrieve its linked memories, then read the full entry.",
 		},
 	},
 }
