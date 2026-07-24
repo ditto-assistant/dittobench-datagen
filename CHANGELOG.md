@@ -2,6 +2,77 @@
 
 <!-- version list -->
 
+## v0.12.0 (2026-07-24)
+
+### Chores
+
+- **v7**: Seed-to-seed variance study for the difficulty release (GO)
+  ([#24](https://github.com/ditto-assistant/dittobench-datagen/pull/24),
+  [`0f544eb`](https://github.com/ditto-assistant/dittobench-datagen/commit/0f544eb8e9387dbab24612e9ff60e4b4da20f813))
+
+### Documentation
+
+- **v7**: Describe the difficulty release and record the measurement
+  ([#23](https://github.com/ditto-assistant/dittobench-datagen/pull/23),
+  [`469ddc5`](https://github.com/ditto-assistant/dittobench-datagen/commit/469ddc5f7a8d8c2e71d440e542e6e268a318a0d1))
+
+- **v7**: Product traceability table and grounded difficulty write-up
+  ([#23](https://github.com/ditto-assistant/dittobench-datagen/pull/23),
+  [`469ddc5`](https://github.com/ditto-assistant/dittobench-datagen/commit/469ddc5f7a8d8c2e71d440e542e6e268a318a0d1))
+
+- **v7**: Record round-2 measured-vs-simulated calibration and refit
+  ([#23](https://github.com/ditto-assistant/dittobench-datagen/pull/23),
+  [`469ddc5`](https://github.com/ditto-assistant/dittobench-datagen/commit/469ddc5f7a8d8c2e71d440e542e6e268a318a0d1))
+
+### Features
+
+- **v7**: Add entity-lookup tool chain and make result-usage dominate the mix
+  ([#23](https://github.com/ditto-assistant/dittobench-datagen/pull/23),
+  [`469ddc5`](https://github.com/ditto-assistant/dittobench-datagen/commit/469ddc5f7a8d8c2e71d440e542e6e268a318a0d1))
+
+- **v7**: Add harder tool classes and dependent link-chain serving
+  ([#23](https://github.com/ditto-assistant/dittobench-datagen/pull/23),
+  [`469ddc5`](https://github.com/ditto-assistant/dittobench-datagen/commit/469ddc5f7a8d8c2e71d440e542e6e268a318a0d1))
+
+- **v7**: Add product-grounded subscribed-graph attribution family
+  ([#23](https://github.com/ditto-assistant/dittobench-datagen/pull/23),
+  [`469ddc5`](https://github.com/ditto-assistant/dittobench-datagen/commit/469ddc5f7a8d8c2e71d440e542e6e268a318a0d1))
+
+- **v7**: Add version-gated hard memory suite and scaled profiles
+  ([#23](https://github.com/ditto-assistant/dittobench-datagen/pull/23),
+  [`469ddc5`](https://github.com/ditto-assistant/dittobench-datagen/commit/469ddc5f7a8d8c2e71d440e542e6e268a318a0d1))
+
+- **v7**: Deepen the round-2 saturated families to bite the strong tier
+  ([#23](https://github.com/ditto-assistant/dittobench-datagen/pull/23),
+  [`469ddc5`](https://github.com/ditto-assistant/dittobench-datagen/commit/469ddc5f7a8d8c2e71d440e542e6e268a318a0d1))
+
+- **v7**: Product-grounded difficulty release with champion-tier calibration
+  ([#23](https://github.com/ditto-assistant/dittobench-datagen/pull/23),
+  [`469ddc5`](https://github.com/ditto-assistant/dittobench-datagen/commit/469ddc5f7a8d8c2e71d440e542e6e268a318a0d1))
+
+- **v7**: Rebalance and scale the difficulty suite for the product-grounded mix
+  ([#23](https://github.com/ditto-assistant/dittobench-datagen/pull/23),
+  [`469ddc5`](https://github.com/ditto-assistant/dittobench-datagen/commit/469ddc5f7a8d8c2e71d440e542e6e268a318a0d1))
+
+- **v7**: Rebalance the mix to the measured per-family means
+  ([#23](https://github.com/ditto-assistant/dittobench-datagen/pull/23),
+  [`469ddc5`](https://github.com/ditto-assistant/dittobench-datagen/commit/469ddc5f7a8d8c2e71d440e542e6e268a318a0d1))
+
+### Testing
+
+- **v7**: Champion-tier calibration, subscription grading, re-pinned vector
+  ([#23](https://github.com/ditto-assistant/dittobench-datagen/pull/23),
+  [`469ddc5`](https://github.com/ditto-assistant/dittobench-datagen/commit/469ddc5f7a8d8c2e71d440e542e6e268a318a0d1))
+
+- **v7**: Oracle-solvability, grading contracts, and difficulty measurement
+  ([#23](https://github.com/ditto-assistant/dittobench-datagen/pull/23),
+  [`469ddc5`](https://github.com/ditto-assistant/dittobench-datagen/commit/469ddc5f7a8d8c2e71d440e542e6e268a318a0d1))
+
+- **v7**: Refit champion-tier sim to measured round-2 data; re-pin vector
+  ([#23](https://github.com/ditto-assistant/dittobench-datagen/pull/23),
+  [`469ddc5`](https://github.com/ditto-assistant/dittobench-datagen/commit/469ddc5f7a8d8c2e71d440e542e6e268a318a0d1))
+
+
 ## v0.11.2 (2026-07-23)
 
 ### Bug Fixes
