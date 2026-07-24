@@ -63,6 +63,7 @@ type MemorySuite struct {
 	NearMissCases          int
 	TempCalcCases          int
 	ComposedInjectionCases int
+	SubscriptionCases      int
 	// LexicalGap is the query↔needle overlap telemetry (NoLiMa): how much
 	// content wording the emitted questions share with their evidence, before and
 	// after the low-overlap rewrite.
@@ -133,13 +134,22 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	// Split into: the always-included canary integrity probe, the abstention
 	// share, and the main pool stratified by type. The canary is never sampled
 	// out: its whole point is a guaranteed per-run integrity check.
-	var absPool, mainPool, canaryPool, twinPool, injTwinPool []persona.Question
+	var absPool, mainPool, canaryPool, twinPool, injTwinPool, recallFloorPool []persona.Question
 	for _, q := range questions {
 		switch {
 		case q.Type == persona.QTCanary:
 			canaryPool = append(canaryPool, q)
 		case strings.HasPrefix(q.TwinGroup, persona.InjectionTwinPrefix):
 			injTwinPool = append(injTwinPool, q) // injection-framing family, reserved separately
+		case v7SaturatedRecall(q.Type, benchVersion):
+			// v7 retires the saturated, low-discrimination single-fact recall
+			// categories from the main pool (gstudy advice: drop categories that
+			// carry ~zero Fisher information at the champion boundary — a grounded
+			// champion aces plain single-pair recall, so it does not discriminate).
+			// v7 spends that budget on the hard product behaviors instead, keeping
+			// only a small representative floor for coverage. Pre-v7 contracts keep
+			// every recall case in the main pool, so their bytes are untouched.
+			recallFloorPool = append(recallFloorPool, q)
 		case q.TwinGroup != "":
 			twinPool = append(twinPool, q) // phrasing-invariance twins kept together
 		case q.Abstain:
@@ -162,7 +172,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	// family makes it a per-run coin flip); small/medium keep one to stay in
 	// budget. Selected before mainQuota so the twin reservation is exact.
 	twinPool = selectTwinFamilies(twinPool, twinFamiliesForVersion(n, benchVersion))
-	nAbs := abstentionQuota(n)
+	nAbs := abstentionQuotaForVersion(n, benchVersion)
 	if nAbs > len(absPool) {
 		nAbs = len(absPool)
 	}
@@ -212,7 +222,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	// from any seeded pair (unit conversion), graded via the accept-set; v6-gated.
 	var nv nonVerbatimSuite
 	if nonVerbatimEnabled(benchVersion) {
-		nv = buildNonVerbatim(r, seed, plan, n, nWaves)
+		nv = buildNonVerbatim(r, seed, plan, n, nWaves, benchVersion)
 	}
 	suite.NonVerbatimCases = len(nv.Cases)
 	// v6 passive-consolidation (gen/consolidation.go): a topic accrued across
@@ -253,15 +263,26 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		ci = buildComposedInj(r, seed, plan, n, nWaves)
 	}
 	suite.ComposedInjectionCases = len(ci.Cases)
+	var sub subscriptionSuite
+	if subscriptionEnabled(benchVersion) {
+		sub = buildSubscription(r, seed, plan, n, nWaves)
+	}
+	suite.SubscriptionCases = len(sub.Cases)
+	// v7 retains only a small representative floor of the saturated recall
+	// categories (empty for pre-v7, where recallFloorPool is empty and every
+	// recall case is already in mainPool). Selected before mainQuota so its slots
+	// are reserved exactly.
+	recallFloor := stratifyByType(r, recallFloorPool, v7RecallFloorFor(benchVersion), benchVersion)
 	// Reserve room for the always-included canary, twin, lifecycle, and
 	// conversational cases so the total case count stays at n.
-	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(lc.Cases) - len(conv.Cases) - len(mh.Cases) - len(td.Cases) - len(si.Cases) - len(mq.Cases) - len(nv.Cases) - len(cons.Cases) -
-		len(dc.Cases) - len(dj.Cases) - len(nm.Cases) - len(tcalc.Cases) - len(ci.Cases)
+	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(recallFloor) - len(lc.Cases) - len(conv.Cases) - len(mh.Cases) - len(td.Cases) - len(si.Cases) - len(mq.Cases) - len(nv.Cases) - len(cons.Cases) -
+		len(dc.Cases) - len(dj.Cases) - len(nm.Cases) - len(tcalc.Cases) - len(ci.Cases) - len(sub.Cases)
 	if mainQuota < 0 {
 		mainQuota = 0
 	}
 	mainSel := stratifyByType(r, mainPool, mainQuota, benchVersion)
 	selected := append([]persona.Question(nil), mainSel...)
+	selected = append(selected, recallFloor...)
 	selected = append(selected, canaryPool...)
 	selected = append(selected, twinPool...)
 	selected = append(selected, injTwinPool...)
@@ -299,6 +320,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 			kept[l], kept[rr] = kept[rr], kept[l] // restore original order
 		}
 		selected = append([]persona.Question(nil), kept...)
+		selected = append(selected, recallFloor...)
 		selected = append(selected, canaryPool...)
 		selected = append(selected, twinPool...)
 		selected = append(selected, injTwinPool...)
@@ -441,6 +463,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	staged = append(staged, nm.Cases...)
 	staged = append(staged, tcalc.Cases...)
 	staged = append(staged, ci.Cases...)
+	staged = append(staged, sub.Cases...)
 	r.Shuffle(len(staged), func(i, j int) { staged[i], staged[j] = staged[j], staged[i] })
 	suite.Cases = staged
 
@@ -491,6 +514,9 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	}
 	if len(ci.Pairs) > 0 {
 		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, ci.Pairs...)
+	}
+	if len(sub.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, sub.Pairs...)
 	}
 	return suite, nil
 }
@@ -668,13 +694,14 @@ var memoryTypeWeight = map[string]int{
 // for coverage without dominating the budget. Pre-v7 contracts keep
 // memoryTypeWeight, so their bytes are untouched.
 var memoryTypeWeightV7 = map[string]int{
-	persona.QTMultiSession:          5,
-	persona.QTTemporal:              5,
-	persona.QTPointInTime:           4,
-	persona.QTPreferenceApplication: 4,
-	persona.QTContradiction:         4,
-	persona.QTKnowledgeUpdate:       4,
-	persona.QTAggregation:           4,
+	persona.QTMultiSession:          8,
+	persona.QTTemporal:              8,
+	persona.QTContradiction:         7,
+	persona.QTKnowledgeUpdate:       7,
+	persona.QTPointInTime:           6,
+	persona.QTComputed:              6,
+	persona.QTAggregation:           6,
+	persona.QTPreferenceApplication: 5,
 	persona.QTInjection:             2,
 	persona.QTAssistantRecall:       1,
 	persona.QTSingleSession:         1,
@@ -836,12 +863,38 @@ func twinFamiliesFor(n int) int {
 }
 
 // v7MaxTwinFamilies caps the v7 twin-family count. Twin cases are
-// phrasing-invariance RECALL questions — the naive-passable end of the suite —
-// and v7's larger n would otherwise carry seven families (~21 cases) of them.
-// Four families keep the metamorphic-consistency factor well-averaged while
-// the freed budget flows to the difficulty classes. Pre-v7 contracts keep the
-// historical n/16, so their bytes are untouched.
-const v7MaxTwinFamilies = 4
+// phrasing-invariance RECALL questions — a grounded champion aces them, so they
+// carry little discrimination — and v7's larger n would otherwise carry seven
+// families (~21 cases) of them. Two families keep the metamorphic-consistency
+// factor averaged while the freed budget flows to the hard product behaviors.
+// Pre-v7 contracts keep the historical n/16, so their bytes are untouched.
+const v7MaxTwinFamilies = 2
+
+// v7SaturatedRecallTypes are the single-pair recall categories v7 retires from
+// the main pool down to a small floor: a grounded champion aces plain recall,
+// so these carry ~zero discrimination at the champion boundary (gstudy's
+// saturated-category advice). Retiring them lets v7 spend its budget on the
+// hard product behaviors instead. Pre-v7 contracts never consult this.
+var v7SaturatedRecallTypes = map[string]bool{
+	persona.QTSingleSession:   true,
+	persona.QTPreference:      true,
+	persona.QTAssistantRecall: true,
+}
+
+// v7SaturatedRecall reports whether a question type is a v7-retired saturated
+// recall category (always false before v7, so pre-v7 pools are unchanged).
+func v7SaturatedRecall(qt string, benchVersion int) bool {
+	return benchVersion >= protocol.BenchVersionV7 && v7SaturatedRecallTypes[qt]
+}
+
+// v7RecallFloorFor is how many saturated-recall cases v7 keeps for coverage
+// (zero for pre-v7, which keep every recall case in the main pool).
+func v7RecallFloorFor(benchVersion int) int {
+	if benchVersion >= protocol.BenchVersionV7 {
+		return 4
+	}
+	return 0
+}
 
 // twinFamiliesForVersion applies the v7 cap; earlier versions get the
 // historical count.
