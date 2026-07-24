@@ -204,6 +204,97 @@ func TestJobChainDependency(t *testing.T) {
 	}
 }
 
+// TestLinkChainDependency verifies the v7 dependent link chain: search_web
+// serves a stable page URL, and read_links reveals the needle ONLY when called
+// with that URL. The bearer is read_links (the LAST content tool), so the
+// search snippet carries the scored decoy, not the answer.
+func TestLinkChainDependency(t *testing.T) {
+	c := protocol.ToolCase{
+		ID:       "clink01",
+		Category: "link_chain_result_usage",
+		ExpectedTools: []protocol.ToolSpec{
+			{Name: "search_web"}, {Name: "read_links"},
+		},
+	}
+	f := BuildFixture(7777, c)
+	if !f.linkDep {
+		t.Fatal("link_chain category should build a link-dependent fixture")
+	}
+	if f.Bearer() != "read_links" {
+		t.Fatalf("bearer should be read_links, got %q", f.Bearer())
+	}
+
+	// Step 1: search returns the stable page URL and the DECOY (not the needle).
+	search, _ := f.Result("search_web", json.RawMessage(`{"queries":["the Veltrix index"]}`))
+	if !strings.Contains(search, f.pageURL) {
+		t.Fatalf("search %q should contain the served page URL %q", search, f.pageURL)
+	}
+	if strings.Contains(search, f.NeedleValue()) {
+		t.Fatalf("search snippet must NOT carry the needle %q, got %q", f.NeedleValue(), search)
+	}
+
+	// Step 2a: read the served URL → needle revealed.
+	ok, _ := f.Result("read_links", json.RawMessage(`{"urls":["`+f.pageURL+`"]}`))
+	if !strings.Contains(ok, f.NeedleValue()) {
+		t.Fatalf("read of the served URL should reveal the needle %q, got %q", f.NeedleValue(), ok)
+	}
+
+	// Step 2b: read a different URL → no needle (cannot answer without threading
+	// the served URL from the search result).
+	bad, _ := f.Result("read_links", json.RawMessage(`{"urls":["https://elsewhere.example/other"]}`))
+	if strings.Contains(bad, f.NeedleValue()) {
+		t.Fatalf("read of a wrong URL must NOT reveal the needle, got %q", bad)
+	}
+}
+
+// TestJobChainRecoveryComposition verifies the v7 composed hard case: the
+// dependent job-id chain AND transient-error recovery apply at once.
+func TestJobChainRecoveryComposition(t *testing.T) {
+	c := protocol.ToolCase{
+		ID:       "cjcr01",
+		Category: "job_chain_recovery_result_usage",
+		ExpectedTools: []protocol.ToolSpec{
+			{Name: "execute_agent_job"}, {Name: "get_agent_job_status"},
+		},
+	}
+	f := BuildFixture(31337, c)
+	if !f.dependent || !f.recovery {
+		t.Fatalf("category should be both dependent and recovery: dependent=%v recovery=%v", f.dependent, f.recovery)
+	}
+	s := NewServer()
+	s.Register(c.ID, BuildFixture(31337, c))
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	post := func(name, args string) protocol.ToolExecResponse {
+		body, _ := json.Marshal(protocol.ToolExecRequest{CaseID: c.ID, Name: name, Args: json.RawMessage(args)})
+		resp, err := http.Post(ts.URL, "application/json", bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("post: %v", err)
+		}
+		defer resp.Body.Close()
+		var out protocol.ToolExecResponse
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return out
+	}
+	disp := post("execute_agent_job", `{"task":"compute it"}`)
+	if disp.Result == "" || !strings.Contains(disp.Result, f.jobID) {
+		t.Fatalf("dispatch should return the job id, got %+v", disp)
+	}
+	// First status call with the correct id STILL flakes (recovery gate).
+	first := post("get_agent_job_status", `{"job_id":"`+f.jobID+`"}`)
+	if first.Error == "" {
+		t.Fatalf("first status call should flake, got %+v", first)
+	}
+	// Retry with the correct id → needle.
+	second := post("get_agent_job_status", `{"job_id":"`+f.jobID+`"}`)
+	if !strings.Contains(second.Result, f.NeedleValue()) {
+		t.Fatalf("retry with the correct id should serve the needle %q, got %q", f.NeedleValue(), second.Result)
+	}
+}
+
 // TestErrorRecoveryGate verifies the first content-tool call flakes and the
 // needle is served only on the retry.
 func TestErrorRecoveryGate(t *testing.T) {

@@ -294,14 +294,20 @@ func TestV6KnownVector(t *testing.T) {
 	}
 }
 
-// TestV7KnownVector pins the OpenRouter gpt-oss-20b execution epoch. Generation
-// and deterministic grading intentionally reuse v6 behavior; the version bump
-// rotates the public deterministic surface and separates scores produced under
-// the new locked inference model from v6 scores.
+// TestV7KnownVector pins the DIFFICULTY release. v7 keeps the OpenRouter
+// gpt-oss-20b execution boundary it already carried and adds a version-gated
+// difficulty suite: scaled-up profiles, a sharpened memory-type mix, five new
+// reasoning-required memory classes (deep write chains, three-hop joins,
+// near-miss abstention, temporal arithmetic, composed stored-instruction
+// injection), and four new tool classes (negation-cue restraint, stale-context
+// routing, a dependent link chain, and a job-chain+recovery composition). All
+// gating is on the version, so v2..v6 bytes above are untouched (their vectors
+// still pass). v7 is pre-launch (epoch 2026-11-01), so this vector is re-pinned
+// as the suite lands. Re-pin on any deliberate v7 generator change.
 func TestV7KnownVector(t *testing.T) {
 	const (
 		seed = int64(123456789)
-		want = "1cfc6e3b9f3f4c04afe04b058a6851f9357f6463170b879867e2cf4588f58fcf"
+		want = "f5f42f7a550e0bfef8ef2b14f810cbbd4b140ca5985e9f0cceaa509689d9e218"
 	)
 	prof, _ := ProfileForVersion("full", protocol.BenchVersionV7)
 	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV7)

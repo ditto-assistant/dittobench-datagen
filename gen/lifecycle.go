@@ -59,6 +59,13 @@ func lifecycleChainsFor(n, nWaves int) int {
 	switch {
 	case nWaves < 2:
 		return 0
+	case n >= 120:
+		// v7: the update and delete lifecycle shapes are covered (deeper) by the
+		// v7 deep write chains (gen/deepchain.go: save->update->update->read and
+		// ->delete->read), so v7 keeps only the single save->read chain here to
+		// avoid redundant, low-discrimination scaffolding cases. Only v7 profiles
+		// reach n>=120, so v5/v6 (n<=85) keep all three shapes and their bytes.
+		return 1
 	case n >= 40:
 		return 3
 	case n >= 20:

@@ -40,6 +40,8 @@ func consolidationCasesFor(n, nWaves int) int {
 	switch {
 	case nWaves < 3:
 		return 0
+	case n >= 100:
+		return 5
 	case n >= 70:
 		return 2
 	case n >= 40:

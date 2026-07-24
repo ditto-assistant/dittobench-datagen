@@ -35,6 +35,8 @@ func nonVerbatimCasesFor(n, nWaves int) int {
 	switch {
 	case nWaves < 2:
 		return 0
+	case n >= 100:
+		return 5
 	case n >= 70:
 		return 3
 	case n >= 40:
@@ -114,8 +116,61 @@ var convSpecs = []convSpec{
 	},
 }
 
+// convSpecsV7Extra are ADDITIONAL non-verbatim domains available only under v7
+// (appended to convSpecs by convSpecsForVersion). They must stay out of the base
+// convSpecs slice: buildNonVerbatim draws r.Perm(len(specs)), so growing the
+// base pool would perturb the v6 RNG stream and move v6's frozen bytes.
+var convSpecsV7Extra = []convSpec{
+	{ // feet -> inches
+		stored: []string{
+			"#lead# the bookshelf I'm building is %s tall.#trail#",
+			"#lead# my new bookshelf stands %s.#trail#",
+		},
+		ask: []string{
+			"How tall is my bookshelf in inches?",
+			"In inches, how tall is the bookshelf?",
+			"The bookshelf height — what's that in inches?",
+		},
+		entries: []convEntry{
+			{storedQty: "4 feet", accept: []string{"48 inches", "forty-eight inches", "48"}},
+			{storedQty: "5 feet", accept: []string{"60 inches", "sixty inches", "60"}},
+			{storedQty: "six feet", accept: []string{"72 inches", "seventy-two inches", "72"}},
+			{storedQty: "three and a half feet", accept: []string{"42 inches", "forty-two inches", "42"}},
+		},
+	},
+	{ // years -> months
+		stored: []string{
+			"#lead# I've been at my job for %s now.#trail#",
+			"#lead# my tenure at the company is %s.#trail#",
+		},
+		ask: []string{
+			"How many months have I been at my job?",
+			"In months, how long have I been at the company?",
+			"My job tenure — how many months is that?",
+		},
+		entries: []convEntry{
+			{storedQty: "two years", accept: []string{"24 months", "twenty-four months", "24"}},
+			{storedQty: "a year and a half", accept: []string{"18 months", "eighteen months", "18"}},
+			{storedQty: "three years", accept: []string{"36 months", "thirty-six months", "36"}},
+			{storedQty: "half a year", accept: []string{"6 months", "six months", "6"}},
+		},
+	},
+}
+
+// convSpecsForVersion returns the base non-verbatim pool for pre-v7 contracts
+// (so their RNG stream and bytes are unchanged) and the base + v7 extras for v7.
+func convSpecsForVersion(benchVersion int) []convSpec {
+	if benchVersion >= protocol.BenchVersionV7 {
+		out := make([]convSpec, 0, len(convSpecs)+len(convSpecsV7Extra))
+		out = append(out, convSpecs...)
+		out = append(out, convSpecsV7Extra...)
+		return out
+	}
+	return convSpecs
+}
+
 // buildNonVerbatim generates the v6 non-verbatim / computed-answer suite.
-func buildNonVerbatim(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves int) nonVerbatimSuite {
+func buildNonVerbatim(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves, benchVersion int) nonVerbatimSuite {
 	var out nonVerbatimSuite
 	nCases := nonVerbatimCasesFor(n, nWaves)
 	if nCases == 0 {
@@ -139,9 +194,10 @@ func buildNonVerbatim(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves in
 		pairIdx++
 	}
 
-	specPerm := r.Perm(len(convSpecs))
+	specs := convSpecsForVersion(benchVersion)
+	specPerm := r.Perm(len(specs))
 	for c := 0; c < nCases; c++ {
-		spec := convSpecs[specPerm[c%len(specPerm)]]
+		spec := specs[specPerm[c%len(specPerm)]]
 		entry := spec.entries[r.Intn(len(spec.entries))]
 		// State the fact in the un-asked unit (grammar-varied lead/trail around the
 		// stored template's %s = the stored quantity phrase).

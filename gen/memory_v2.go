@@ -54,6 +54,16 @@ type MemorySuite struct {
 	MultiQueryCases    int
 	NonVerbatimCases   int
 	ConsolidationCases int
+	// DeepChainCases / DeepJoinCases / NearMissCases / TempCalcCases /
+	// ComposedInjectionCases count the v7 difficulty-suite cases (see
+	// gen/deepchain.go, deepjoin.go, nearmiss.go, tempcalc.go, composedinj.go).
+	// Zero for pre-v7 contracts. Advisory telemetry.
+	DeepChainCases         int
+	DeepJoinCases          int
+	NearMissCases          int
+	TempCalcCases          int
+	ComposedInjectionCases int
+	SubscriptionCases      int
 	// LexicalGap is the query↔needle overlap telemetry (NoLiMa): how much
 	// content wording the emitted questions share with their evidence, before and
 	// after the low-overlap rewrite.
@@ -124,13 +134,22 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	// Split into: the always-included canary integrity probe, the abstention
 	// share, and the main pool stratified by type. The canary is never sampled
 	// out: its whole point is a guaranteed per-run integrity check.
-	var absPool, mainPool, canaryPool, twinPool, injTwinPool []persona.Question
+	var absPool, mainPool, canaryPool, twinPool, injTwinPool, recallFloorPool []persona.Question
 	for _, q := range questions {
 		switch {
 		case q.Type == persona.QTCanary:
 			canaryPool = append(canaryPool, q)
 		case strings.HasPrefix(q.TwinGroup, persona.InjectionTwinPrefix):
 			injTwinPool = append(injTwinPool, q) // injection-framing family, reserved separately
+		case v7SaturatedRecall(q.Type, benchVersion):
+			// v7 retires the saturated, low-discrimination single-fact recall
+			// categories from the main pool (gstudy advice: drop categories that
+			// carry ~zero Fisher information at the champion boundary — a grounded
+			// champion aces plain single-pair recall, so it does not discriminate).
+			// v7 spends that budget on the hard product behaviors instead, keeping
+			// only a small representative floor for coverage. Pre-v7 contracts keep
+			// every recall case in the main pool, so their bytes are untouched.
+			recallFloorPool = append(recallFloorPool, q)
 		case q.TwinGroup != "":
 			twinPool = append(twinPool, q) // phrasing-invariance twins kept together
 		case q.Abstain:
@@ -152,8 +171,8 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	// families for larger runs smooth the metamorphic-consistency factor (a single
 	// family makes it a per-run coin flip); small/medium keep one to stay in
 	// budget. Selected before mainQuota so the twin reservation is exact.
-	twinPool = selectTwinFamilies(twinPool, twinFamiliesFor(n))
-	nAbs := abstentionQuota(n)
+	twinPool = selectTwinFamilies(twinPool, twinFamiliesForVersion(n, benchVersion))
+	nAbs := abstentionQuotaForVersion(n, benchVersion)
 	if nAbs > len(absPool) {
 		nAbs = len(absPool)
 	}
@@ -203,7 +222,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	// from any seeded pair (unit conversion), graded via the accept-set; v6-gated.
 	var nv nonVerbatimSuite
 	if nonVerbatimEnabled(benchVersion) {
-		nv = buildNonVerbatim(r, seed, plan, n, nWaves)
+		nv = buildNonVerbatim(r, seed, plan, n, nWaves, benchVersion)
 	}
 	suite.NonVerbatimCases = len(nv.Cases)
 	// v6 passive-consolidation (gen/consolidation.go): a topic accrued across
@@ -213,14 +232,57 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		cons = buildConsolidation(r, seed, plan, n, nWaves)
 	}
 	suite.ConsolidationCases = len(cons.Cases)
+	// v7 difficulty suite: deep write chains (gen/deepchain.go), three-hop joins
+	// (gen/deepjoin.go), near-miss abstention (gen/nearmiss.go), temporal
+	// arithmetic (gen/tempcalc.go), and composed stored-instruction injection
+	// (gen/composedinj.go). Each is never sampled out, seed-independent in count
+	// per run size, built at a fixed draw position, and v7-gated so v6's bytes
+	// and already-recorded scores are untouched.
+	var dc deepChainSuite
+	if deepChainEnabled(benchVersion) {
+		dc = buildDeepChain(r, seed, plan, n, nWaves)
+	}
+	suite.DeepChainCases = len(dc.Cases)
+	var dj deepJoinSuite
+	if deepJoinEnabled(benchVersion) {
+		dj = buildDeepJoin(r, seed, plan, n, nWaves)
+	}
+	suite.DeepJoinCases = len(dj.Cases)
+	var nm nearMissSuite
+	if nearMissEnabled(benchVersion) {
+		nm = buildNearMiss(r, seed, plan, n, nWaves)
+	}
+	suite.NearMissCases = len(nm.Cases)
+	var tcalc tempCalcSuite
+	if tempCalcEnabled(benchVersion) {
+		tcalc = buildTempCalc(r, seed, plan, n, nWaves)
+	}
+	suite.TempCalcCases = len(tcalc.Cases)
+	var ci composedInjSuite
+	if composedInjEnabled(benchVersion) {
+		ci = buildComposedInj(r, seed, plan, n, nWaves)
+	}
+	suite.ComposedInjectionCases = len(ci.Cases)
+	var sub subscriptionSuite
+	if subscriptionEnabled(benchVersion) {
+		sub = buildSubscription(r, seed, plan, n, nWaves)
+	}
+	suite.SubscriptionCases = len(sub.Cases)
+	// v7 retains only a small representative floor of the saturated recall
+	// categories (empty for pre-v7, where recallFloorPool is empty and every
+	// recall case is already in mainPool). Selected before mainQuota so its slots
+	// are reserved exactly.
+	recallFloor := stratifyByType(r, recallFloorPool, v7RecallFloorFor(benchVersion), benchVersion)
 	// Reserve room for the always-included canary, twin, lifecycle, and
 	// conversational cases so the total case count stays at n.
-	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(lc.Cases) - len(conv.Cases) - len(mh.Cases) - len(td.Cases) - len(si.Cases) - len(mq.Cases) - len(nv.Cases) - len(cons.Cases)
+	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(recallFloor) - len(lc.Cases) - len(conv.Cases) - len(mh.Cases) - len(td.Cases) - len(si.Cases) - len(mq.Cases) - len(nv.Cases) - len(cons.Cases) -
+		len(dc.Cases) - len(dj.Cases) - len(nm.Cases) - len(tcalc.Cases) - len(ci.Cases) - len(sub.Cases)
 	if mainQuota < 0 {
 		mainQuota = 0
 	}
-	mainSel := stratifyByType(r, mainPool, mainQuota)
+	mainSel := stratifyByType(r, mainPool, mainQuota, benchVersion)
 	selected := append([]persona.Question(nil), mainSel...)
+	selected = append(selected, recallFloor...)
 	selected = append(selected, canaryPool...)
 	selected = append(selected, twinPool...)
 	selected = append(selected, injTwinPool...)
@@ -258,6 +320,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 			kept[l], kept[rr] = kept[rr], kept[l] // restore original order
 		}
 		selected = append([]persona.Question(nil), kept...)
+		selected = append(selected, recallFloor...)
 		selected = append(selected, canaryPool...)
 		selected = append(selected, twinPool...)
 		selected = append(selected, injTwinPool...)
@@ -395,6 +458,12 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	staged = append(staged, mq.Cases...)
 	staged = append(staged, nv.Cases...)
 	staged = append(staged, cons.Cases...)
+	staged = append(staged, dc.Cases...)
+	staged = append(staged, dj.Cases...)
+	staged = append(staged, nm.Cases...)
+	staged = append(staged, tcalc.Cases...)
+	staged = append(staged, ci.Cases...)
+	staged = append(staged, sub.Cases...)
 	r.Shuffle(len(staged), func(i, j int) { staged[i], staged[j] = staged[j], staged[i] })
 	suite.Cases = staged
 
@@ -430,6 +499,27 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	}
 	if len(cons.Pairs) > 0 {
 		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, cons.Pairs...)
+	}
+	// v7 difficulty-suite pairs also join wave 0 as raw pairs (no prepared
+	// subject). Deep chains seed nothing: their values exist only in the
+	// instruction turns, which is what makes the read half unfakeable.
+	if len(dj.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, dj.Pairs...)
+	}
+	if len(nm.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, nm.Pairs...)
+	}
+	if len(tcalc.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, tcalc.Pairs...)
+	}
+	if len(ci.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, ci.Pairs...)
+	}
+	if len(sub.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, sub.Pairs...)
+	}
+	if len(dc.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, dc.Pairs...)
 	}
 	return suite, nil
 }
@@ -568,11 +658,16 @@ func personaOptsFor(n int) persona.Opts {
 		// v2/v3/v4 full (Mem 50) lands here; its opts are unchanged so those
 		// contracts' bytes stay frozen.
 		return persona.Opts{Sessions: 9, Projects: 10, Trips: 8, Pets: 5, UpdateChains: 4, Reversals: 3, DecoyPeople: 10, DomainItems: 4, LongChain: 4}
-	default:
-		// v5 full (Mem 70) lands here: a materially larger persona so the haystack
+	case n <= 90:
+		// v5/v6 full (Mem 85) lands here: a materially larger persona so the haystack
 		// and distractor density grow, making retrieval recall the bottleneck rather
 		// than parsing (v5 plan 4.3). No frozen contract generates n>55.
 		return persona.Opts{Sessions: 12, Projects: 14, Trips: 10, Pets: 6, UpdateChains: 6, Reversals: 4, DecoyPeople: 16, DomainItems: 5, LongChain: 5}
+	default:
+		// v7 full (Mem 120) lands here: a denser universe again — more sessions and
+		// near-miss decoy people, so the distractor-to-needle ratio rises with the
+		// case count. No pre-v7 contract generates n>90.
+		return persona.Opts{Sessions: 13, Projects: 15, Trips: 10, Pets: 6, UpdateChains: 7, Reversals: 5, DecoyPeople: 20, DomainItems: 5, LongChain: 5}
 	}
 }
 
@@ -595,29 +690,58 @@ var memoryTypeWeight = map[string]int{
 	persona.QTPreference:            1,
 }
 
-func typeWeight(t string) int {
-	if w, ok := memoryTypeWeight[t]; ok && w > 0 {
+// memoryTypeWeightV7 sharpens the v7 mix using the round-2 MEASURED per-family
+// champion means (docs/v7-product-traceability.md): the persona-synthesis types
+// the strong (scratch) tier still FAILS get the largest share — computed-answer
+// (measured scratch 0.17), multi-session (0.64), aggregation (0.67) — while the
+// types the strong tier already ACES at depth 1 (contradiction 1.0, point-in-time
+// 1.0, knowledge-update 0.95) are down-weighted to a coverage floor, since a
+// saturated category carries ~zero discrimination at the champion boundary
+// (gstudy). temporal-reasoning stays moderate: it is a starter separator
+// (scratch 0.83 / starter 0.25). Pre-v7 contracts keep memoryTypeWeight, so their
+// bytes are untouched.
+var memoryTypeWeightV7 = map[string]int{
+	persona.QTComputed:              10, // measured scratch 0.17 — the strongest persona biter
+	persona.QTMultiSession:          8,  // scratch 0.64
+	persona.QTAggregation:           6,  // scratch 0.67
+	persona.QTTemporal:              4,  // temporal-reasoning: starter separator (0.83/0.25)
+	persona.QTKnowledgeUpdate:       3,  // scratch 0.95 (starter 0.67)
+	persona.QTContradiction:         2,  // saturated for both (1.0)
+	persona.QTPointInTime:           2,  // saturated for scratch (1.0)
+	persona.QTPreferenceApplication: 2,
+	persona.QTInjection:             2,
+	persona.QTAssistantRecall:       1,
+	persona.QTSingleSession:         1,
+	persona.QTPreference:            1,
+}
+
+func typeWeight(t string, benchVersion int) int {
+	table := memoryTypeWeight
+	if benchVersion >= protocol.BenchVersionV7 {
+		table = memoryTypeWeightV7
+	}
+	if w, ok := table[t]; ok && w > 0 {
 		return w
 	}
 	return 1
 }
 
-// weightedTypeQuota splits n across types proportional to memoryTypeWeight,
-// capped by availability, filling any shortfall (from flooring or caps)
-// preferring higher-weight types with spare capacity. Deterministic: the fill
-// order is (weight desc, name asc), independent of the run seed.
-func weightedTypeQuota(types []string, avail map[string]int, n int) map[string]int {
+// weightedTypeQuota splits n across types proportional to the contract's type
+// weights, capped by availability, filling any shortfall (from flooring or
+// caps) preferring higher-weight types with spare capacity. Deterministic: the
+// fill order is (weight desc, name asc), independent of the run seed.
+func weightedTypeQuota(types []string, avail map[string]int, n, benchVersion int) map[string]int {
 	quota := make(map[string]int, len(types))
 	if n <= 0 || len(types) == 0 {
 		return quota
 	}
 	total := 0
 	for _, t := range types {
-		total += typeWeight(t)
+		total += typeWeight(t, benchVersion)
 	}
 	assigned := 0
 	for _, t := range types {
-		q := n * typeWeight(t) / total
+		q := n * typeWeight(t, benchVersion) / total
 		if q > avail[t] {
 			q = avail[t]
 		}
@@ -626,7 +750,7 @@ func weightedTypeQuota(types []string, avail map[string]int, n int) map[string]i
 	}
 	fillOrder := append([]string(nil), types...)
 	sort.SliceStable(fillOrder, func(i, j int) bool {
-		wi, wj := typeWeight(fillOrder[i]), typeWeight(fillOrder[j])
+		wi, wj := typeWeight(fillOrder[i], benchVersion), typeWeight(fillOrder[j], benchVersion)
 		if wi != wj {
 			return wi > wj
 		}
@@ -654,7 +778,8 @@ func weightedTypeQuota(types []string, avail map[string]int, n int) map[string]i
 // stratifyByType selects up to n questions with a fixed, seed-independent
 // per-type quota (like the tool suite's category stratification): WHICH
 // questions within a type varies by seed; HOW MANY of each type does not.
-func stratifyByType(r *rand.Rand, pool []persona.Question, n int) []persona.Question {
+// benchVersion selects the contract's type-weight table.
+func stratifyByType(r *rand.Rand, pool []persona.Question, n, benchVersion int) []persona.Question {
 	if n <= 0 || len(pool) == 0 {
 		return nil
 	}
@@ -671,7 +796,7 @@ func stratifyByType(r *rand.Rand, pool []persona.Question, n int) []persona.Ques
 	for t, qs := range byType {
 		avail[t] = len(qs)
 	}
-	quota := weightedTypeQuota(typeOrder, avail, n)
+	quota := weightedTypeQuota(typeOrder, avail, n, benchVersion)
 
 	var out []persona.Question
 	for _, t := range typeOrder {
@@ -740,6 +865,50 @@ func twinFamiliesFor(n int) int {
 	g := n / 16
 	if g < 1 {
 		g = 1
+	}
+	return g
+}
+
+// v7MaxTwinFamilies caps the v7 twin-family count. Twin cases are
+// phrasing-invariance RECALL questions — a grounded champion aces them, so they
+// carry little discrimination — and v7's larger n would otherwise carry seven
+// families (~21 cases) of them. Two families keep the metamorphic-consistency
+// factor averaged while the freed budget flows to the hard product behaviors.
+// Pre-v7 contracts keep the historical n/16, so their bytes are untouched.
+const v7MaxTwinFamilies = 2
+
+// v7SaturatedRecallTypes are the single-pair recall categories v7 retires from
+// the main pool down to a small floor: a grounded champion aces plain recall,
+// so these carry ~zero discrimination at the champion boundary (gstudy's
+// saturated-category advice). Retiring them lets v7 spend its budget on the
+// hard product behaviors instead. Pre-v7 contracts never consult this.
+var v7SaturatedRecallTypes = map[string]bool{
+	persona.QTSingleSession:   true,
+	persona.QTPreference:      true,
+	persona.QTAssistantRecall: true,
+}
+
+// v7SaturatedRecall reports whether a question type is a v7-retired saturated
+// recall category (always false before v7, so pre-v7 pools are unchanged).
+func v7SaturatedRecall(qt string, benchVersion int) bool {
+	return benchVersion >= protocol.BenchVersionV7 && v7SaturatedRecallTypes[qt]
+}
+
+// v7RecallFloorFor is how many saturated-recall cases v7 keeps for coverage
+// (zero for pre-v7, which keep every recall case in the main pool).
+func v7RecallFloorFor(benchVersion int) int {
+	if benchVersion >= protocol.BenchVersionV7 {
+		return 4
+	}
+	return 0
+}
+
+// twinFamiliesForVersion applies the v7 cap; earlier versions get the
+// historical count.
+func twinFamiliesForVersion(n, benchVersion int) int {
+	g := twinFamiliesFor(n)
+	if benchVersion >= protocol.BenchVersionV7 && g > v7MaxTwinFamilies {
+		g = v7MaxTwinFamilies
 	}
 	return g
 }

@@ -81,6 +81,22 @@ var profilesV5 = map[string]Profile{
 	"full":   {Tools: 110, Mem: 85, Waves: 4, RawPairsFrac: 0.4, IsoCases: 6},
 }
 
+// profilesV7 scales bench_version 7 for the difficulty release (see
+// docs/bench-versions.md). Relative to v5/v6: more memory and tool cases, one
+// more staging wave (so the deep write chains have room for their
+// save -> update -> update -> read/delete sequence), a larger Tier-B raw-pairs
+// share (more of the store must be self-indexed), and more multi-graph
+// isolation cases. The larger Mem also selects a denser persona
+// (personaOptsFor), raising the distractor-to-needle ratio. small stays the
+// cheap single-wave smoke path. Only v7 uses these, so v2..v6 bytes are
+// untouched. Generation stays non-LLM and fast (a full v7 dataset renders in
+// well under a second), so the per-submission `full` path is unaffected.
+var profilesV7 = map[string]Profile{
+	"small":  {Tools: 6, Mem: 6, Waves: 1, RawPairsFrac: 0, IsoCases: 0},
+	"medium": {Tools: 40, Mem: 52, Waves: 4, RawPairsFrac: 0.45, IsoCases: 4},
+	"full":   {Tools: 84, Mem: 185, Waves: 5, RawPairsFrac: 0.5, IsoCases: 10},
+}
+
 // ProfileFor returns the Profile for a run_size, defaulting to small. Uses the
 // historical (v2/v3/v4) sizes; canonical versioned callers use ProfileForVersion.
 func ProfileFor(runSize string) (Profile, bool) {
@@ -96,6 +112,12 @@ func ProfileFor(runSize string) (Profile, bool) {
 // their dataset bytes are unchanged. Deterministic, so any third party holding
 // (seed, run_size, bench_version) regenerates the identical dataset.
 func ProfileForVersion(runSize string, benchVersion int) (Profile, bool) {
+	if benchVersion >= protocol.BenchVersionV7 {
+		if p, ok := profilesV7[runSize]; ok {
+			return p, true
+		}
+		return profilesV7["small"], false
+	}
 	if benchVersion >= protocol.BenchVersionV5 {
 		if p, ok := profilesV5[runSize]; ok {
 			return p, true

@@ -41,6 +41,27 @@ import (
 //   - a token-efficiency (waste-penalty) contract the validator applies from
 //     trusted relay telemetry, binding generation, model/provider profile, and the
 //     starter baseline to one immutable contract.
+//
+// v6 is the MEMORY-AS-DATA release: stored-instruction injection, multi-query
+// fan-out, non-verbatim computed answers, and passive cross-session
+// consolidation, all version-gated so v5's bytes are untouched.
+// v7 carries the OpenRouter/gpt-oss-20b inference boundary AND is the DIFFICULTY
+// release (see docs/bench-versions.md and docs/v7-product-traceability.md). Every
+// new case family mirrors a real Ditto product flow, data-model shape, or
+// documented failure mode (deep write chains, three-hop KG joins, near-miss
+// entity-disambiguation abstention, temporal aggregation, composed
+// stored-instruction injection, subscribed-graph attribution; plus dependent
+// tool chains). Every lever is gated on bench_version >= 7, so v2..v6 regenerate
+// and grade byte-identically. The judge-free deterministic grader is unchanged,
+// and the wire/artifact format stays backward-compatible (additive only). The
+// difficulty is defined and measured, not asserted. The champion tier is REFIT
+// to the leaderboard rebench (five harnesses measured 0.59-0.795 on the
+// round-1-deepened suite); the round-3 refitted sim predicts scratch/starter
+// case-means of 0.758/0.669 (composite ~0.57-0.66 after the observed robustness
+// gate), the best non-reasoning strategy scores ~0.09 on the reasoning subset,
+// and a correct oracle scores 1.0 on every case across seeds
+// (gen.TestV7ChampionTierRefit / TestV7NaiveStrategiesCollapse /
+// TestV7OracleSolvable). See docs/v7-product-traceability.md.
 const (
 	BenchVersionV2      = 2
 	BenchVersionV3      = 3
