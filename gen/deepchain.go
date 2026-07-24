@@ -3,6 +3,7 @@ package gen
 import (
 	"fmt"
 	"math/rand"
+	"time"
 
 	"github.com/ditto-assistant/dittobench-datagen/persona"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
@@ -34,10 +35,19 @@ const (
 	// "canary", so the grader's cross-cutting logic is unaffected.
 	QTDeepChainWrite = "lifecycle-deep-write"
 	QTDeepChainRead  = "lifecycle-deep-read"
+	// QTDeepChainCrossref is a read that resolves an indirect REFERENCE to the
+	// final value of an update chain: a later note says another noun "uses the
+	// same code" as the chained noun, and the question asks that other noun. The
+	// answer is only reachable by (a) tracking the chain to its final value and
+	// (b) joining the reference to it — the production "reuse a code / linked
+	// memory" shape (backend relatedMemories). Neither the chained value nor the
+	// reference states the answer outright, so it cannot be echoed.
+	QTDeepChainCrossref = "lifecycle-deep-crossref"
 )
 
 type deepChainSuite struct {
 	Cases []StagedCase
+	Pairs []protocol.MemoryPair
 }
 
 func deepChainEnabled(benchVersion int) bool {
@@ -139,7 +149,7 @@ var dcDelGrammar = persona.Grammar{
 // buildDeepChain generates the v7 deep write chains. Deterministic per (seed,
 // draw position): grammar expansion and phrasing picks draw from the shared
 // suite rng at a fixed point in GenerateMemorySuite.
-func buildDeepChain(r *rand.Rand, seed int64, n, nWaves int) deepChainSuite {
+func buildDeepChain(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves int) deepChainSuite {
 	var out deepChainSuite
 	nChains := deepChainChainsFor(n, nWaves)
 	if nChains == 0 {
@@ -220,5 +230,37 @@ func buildDeepChain(r *rand.Rand, seed int64, n, nWaves int) deepChainSuite {
 			DistractorAnswers: []string{d1, d2, u1},
 		}, readWave)
 	}
+
+	// Cross-referencing read (v7 round-2 deepening): a standing note says the
+	// user reuses the update chain's code for another thing, WITHOUT restating the
+	// value; the read asks that other thing and must resolve to the chain's final
+	// value u3. Distractors are the chain's stale values (u1, u2), so a harness
+	// that resolves the reference but tracked the wrong chain state is zeroed. The
+	// note is seeded as a wave-0 raw pair (it names no value, so it is not a
+	// spoiler); u3 exists only in the wave-2 instruction, so the join is unfakeable.
+	crossNoun := "wine-cellar tablet PIN"
+	out.Pairs = append(out.Pairs, protocol.MemoryPair{
+		PairID:    "p-dc-xref",
+		SessionID: "sess-dc",
+		Timestamp: persona.TimeAnchor(plan).Add(4 * time.Hour).Format(time.RFC3339),
+		Prompt:    "For my " + crossNoun + " I just reuse the same code as my " + dcUpdNoun + ".",
+		Response:  "Understood — same code for both.",
+	})
+	crossDis := []string{u1, u2}
+	if nChains >= 2 {
+		crossDis = append(crossDis, d1)
+	}
+	addCase(protocol.MemoryCase{
+		QuestionID:   "dc-xref-r",
+		QuestionType: QTDeepChainCrossref,
+		Question: pick([]string{
+			"What's my " + crossNoun + "?",
+			"What code opens my " + crossNoun + "?",
+			"Remind me of my " + crossNoun + ".",
+		}),
+		ExpectedAnswer:    u3,
+		AnswerKind:        protocol.AnswerValue,
+		DistractorAnswers: crossDis,
+	}, readWave)
 	return out
 }

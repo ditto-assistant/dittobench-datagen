@@ -123,39 +123,64 @@ func buildSubscription(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves i
 	friendPerm := r.Perm(len(subFriends))
 	for u := 0; u < nUnits; u++ {
 		attr := subAttrs[attrPerm[u%len(attrPerm)]]
-		friend := subFriends[friendPerm[u%len(friendPerm)]]
 		ownVal := persona.CoinShaped(seed, fmt.Sprintf("sub|own|%d", u))
-		friendVal := persona.CoinShaped(seed, fmt.Sprintf("sub|friend|%d", u))
+
+		// v7 round-2 deepening: seed the SAME attribute across the user's own KG and
+		// THREE subscribed friends' graphs, each with a distinct coined value, all
+		// surfacing in one flat search result list distinguished only by their
+		// "@<friend>" provenance prefix (backend annotateSubscribedSlimMemory fans
+		// out over own + every subscribed graph). At depth-1 the round-1 single-friend
+		// version was saturated (all harnesses ~1.0); with several conflicting values
+		// the agent must disambiguate BY provenance, not just return the one hit — the
+		// production failure documented in docs/CROSSUSER_EXAMPLES.md.
+		friends := make([]string, 3)
+		friendVals := make([]string, 3)
+		for i := range friends {
+			friends[i] = subFriends[friendPerm[(u*3+i)%len(friendPerm)]]
+			friendVals[i] = persona.CoinShaped(seed, fmt.Sprintf("sub|friend|%d|%d", u, i))
+		}
 
 		// The user's own value, stated first-person.
-		seedPair(2*u, fmt.Sprintf("My %s is %s.", attr.noun, ownVal), "Got it.")
-		// The subscribed friend's value, carrying the "@<friend>" provenance the
-		// backend attaches to a subscribed hit (source "@<friend> / shared memory").
-		seedPair(2*u+1,
-			fmt.Sprintf("[from @%s's shared memories] @%s's %s is %s.", friend, friend, attr.noun, friendVal),
-			"Noted from the subscribed graph.")
+		seedPair(4*u, fmt.Sprintf("My %s is %s.", attr.noun, ownVal), "Got it.")
+		// Each subscribed friend's value, carrying its "@<friend>" provenance.
+		for i, fr := range friends {
+			seedPair(4*u+1+i,
+				fmt.Sprintf("[from @%s's shared memories] @%s's %s is %s.", fr, fr, attr.noun, friendVals[i]),
+				"Noted from the subscribed graph.")
+		}
 
-		// OWN: the user's own value is correct; the friend's value is a cross-graph
-		// leak (forbidden), scored 0 like the isolation probe.
+		// OWN: the user's own value is correct; EVERY friend's value is a cross-graph
+		// leak. ForbiddenAnswer carries the first (the dual-path zero fires on any
+		// forbidden hit); the rest ride as distractors so surfacing any friend's
+		// value on "my X" is zeroed.
 		out.Cases = append(out.Cases, StagedCase{Case: protocol.MemoryCase{
-			ID:              protocol.OpaqueCaseID(seed, "memsub", ordinal),
-			QuestionType:    QTSubscriptionOwn,
-			Question:        fmt.Sprintf("What's my %s?", attr.ask),
-			ExpectedAnswer:  ownVal,
-			AnswerKind:      protocol.AnswerValue,
-			ForbiddenAnswer: friendVal,
+			ID:                protocol.OpaqueCaseID(seed, "memsub", ordinal),
+			QuestionType:      QTSubscriptionOwn,
+			Question:          fmt.Sprintf("What's my %s?", attr.ask),
+			ExpectedAnswer:    ownVal,
+			AnswerKind:        protocol.AnswerValue,
+			ForbiddenAnswer:   friendVals[0],
+			DistractorAnswers: []string{friendVals[1], friendVals[2]},
 		}, RunAfterWave: nWaves - 1})
 		ordinal++
 
-		// ATTRIBUTED: the friend's value is correct; returning the user's own value
-		// is the mirror error (a scored distractor).
+		// ATTRIBUTED: ask about ONE specific friend among the three; that friend's
+		// value is correct, and the OTHER two friends' values plus the user's own are
+		// scored distractors, so the agent must attribute to the exact @handle asked.
+		target := r.Intn(3)
+		dis := []string{ownVal}
+		for i := range friends {
+			if i != target {
+				dis = append(dis, friendVals[i])
+			}
+		}
 		out.Cases = append(out.Cases, StagedCase{Case: protocol.MemoryCase{
 			ID:                protocol.OpaqueCaseID(seed, "memsub", ordinal),
 			QuestionType:      QTSubscriptionAttrib,
-			Question:          fmt.Sprintf("What did @%s say their %s is?", friend, attr.ask),
-			ExpectedAnswer:    friendVal,
+			Question:          fmt.Sprintf("What did @%s say their %s is?", friends[target], attr.ask),
+			ExpectedAnswer:    friendVals[target],
 			AnswerKind:        protocol.AnswerValue,
-			DistractorAnswers: []string{ownVal},
+			DistractorAnswers: dis,
 		}, RunAfterWave: nWaves - 1})
 		ordinal++
 	}

@@ -240,7 +240,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	// and already-recorded scores are untouched.
 	var dc deepChainSuite
 	if deepChainEnabled(benchVersion) {
-		dc = buildDeepChain(r, seed, n, nWaves)
+		dc = buildDeepChain(r, seed, plan, n, nWaves)
 	}
 	suite.DeepChainCases = len(dc.Cases)
 	var dj deepJoinSuite
@@ -518,6 +518,9 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	if len(sub.Pairs) > 0 {
 		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, sub.Pairs...)
 	}
+	if len(dc.Pairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, dc.Pairs...)
+	}
 	return suite, nil
 }
 
@@ -687,21 +690,25 @@ var memoryTypeWeight = map[string]int{
 	persona.QTPreference:            1,
 }
 
-// memoryTypeWeightV7 sharpens the v7 mix: the types a lexical retriever
-// cannot shortcut (multi-session synthesis, temporal reasoning, point-in-time,
-// contradiction, aggregation, knowledge-update) take a still-larger share, and
-// the single-pair recall types a good retriever always aces stay at weight 1
-// for coverage without dominating the budget. Pre-v7 contracts keep
-// memoryTypeWeight, so their bytes are untouched.
+// memoryTypeWeightV7 sharpens the v7 mix using the round-2 MEASURED per-family
+// champion means (docs/v7-product-traceability.md): the persona-synthesis types
+// the strong (scratch) tier still FAILS get the largest share — computed-answer
+// (measured scratch 0.17), multi-session (0.64), aggregation (0.67) — while the
+// types the strong tier already ACES at depth 1 (contradiction 1.0, point-in-time
+// 1.0, knowledge-update 0.95) are down-weighted to a coverage floor, since a
+// saturated category carries ~zero discrimination at the champion boundary
+// (gstudy). temporal-reasoning stays moderate: it is a starter separator
+// (scratch 0.83 / starter 0.25). Pre-v7 contracts keep memoryTypeWeight, so their
+// bytes are untouched.
 var memoryTypeWeightV7 = map[string]int{
-	persona.QTMultiSession:          8,
-	persona.QTTemporal:              8,
-	persona.QTContradiction:         7,
-	persona.QTKnowledgeUpdate:       7,
-	persona.QTPointInTime:           6,
-	persona.QTComputed:              6,
-	persona.QTAggregation:           6,
-	persona.QTPreferenceApplication: 5,
+	persona.QTComputed:              10, // measured scratch 0.17 — the strongest persona biter
+	persona.QTMultiSession:          8,  // scratch 0.64
+	persona.QTAggregation:           6,  // scratch 0.67
+	persona.QTTemporal:              4,  // temporal-reasoning: starter separator (0.83/0.25)
+	persona.QTKnowledgeUpdate:       3,  // scratch 0.95 (starter 0.67)
+	persona.QTContradiction:         2,  // saturated for both (1.0)
+	persona.QTPointInTime:           2,  // saturated for scratch (1.0)
+	persona.QTPreferenceApplication: 2,
 	persona.QTInjection:             2,
 	persona.QTAssistantRecall:       1,
 	persona.QTSingleSession:         1,
