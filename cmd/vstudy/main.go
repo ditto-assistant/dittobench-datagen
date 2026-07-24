@@ -8,11 +8,11 @@
 //     hysteresis + protection-margin machinery lives on top of;
 //   - gstudy-format JSONL per (version, strategy) so cmd/gstudy can run the
 //     G-study variance decomposition and per-category reliability pass;
-//   - a paired equal-skill comparison (two independent draws of the same
-//     mid-tier strategy on the SAME seeds) that measures the CRN
+//   - a paired equal-skill comparison per model tier (two independent draws
+//     of the same strategy on the SAME seeds) that measures the CRN
 //     confirmation-seed noise floor directly;
-//   - per-category contribution to composite variance for the mid-tier
-//     strategy, to find single case families that dominate the spread.
+//   - per-category contribution to composite variance for the champW
+//     decision-boundary tier, to find case families that dominate the spread.
 //
 // Strategies are deterministic pure functions of (dataset, salt): the naive
 // tiers replicate the gen package's difficulty-measurement strategies
@@ -70,12 +70,35 @@ func main() {
 
 // strategyNames in report order. parrot/overlap/recency/dump/abstain are the
 // naive memory tiers (each paired with the keyword tool router); strong is the
-// mid-tier miner model (strongB its independent equal-skill twin, only used
-// for the paired comparison); uniform is the rate-assumption control (every
-// case, memory and tool, fails with the same p=0.10); oracle is the ceiling.
+// study-v1 mid-tier miner model (kept for continuity across study revisions);
+// champS/champW are the deepening's champion-tier anchors (the strong
+// newDitto-like and weak whitycatboss/infinity-like harness models from
+// gen.TestV7ChampionTierLandsNearTarget, ported here because test symbols are
+// not importable); uniform is the rate-assumption control (every case fails
+// with the same p=0.10); oracle is the ceiling. Every model tier also runs an
+// independent equal-skill twin (salt B) for the paired CRN comparison.
 var strategyNames = []string{
-	"parrot", "overlap", "recency", "dump", "abstain", "strong", "uniform", "oracle",
+	"parrot", "overlap", "recency", "dump", "abstain",
+	"strong", "champS", "champW", "uniform", "oracle",
 }
+
+// modelTiers are the hash-error simulated tiers: name -> per-case error-rate
+// functions plus the two salts of the equal-skill twin pair. Salts are chosen
+// so the study-v1 "strong"/"uniform" draws reproduce byte-identically.
+type tierRates struct {
+	mem          func(qt string) float64
+	tool         func(cat string) float64
+	saltA, saltB string
+}
+
+var modelTiers = map[string]tierRates{
+	"strong":  {mem: memErrRate, tool: toolErrRate, saltA: "A", saltB: "B"},
+	"uniform": {mem: flatErr, tool: flatErr, saltA: "U", saltB: "UB"},
+	"champS":  {mem: champErrMemS, tool: champErrToolS, saltA: "CS-A", saltB: "CS-B"},
+	"champW":  {mem: champErrMemW, tool: champErrToolW, saltA: "CW-A", saltB: "CW-B"},
+}
+
+func flatErr(string) float64 { return uniformErr }
 
 // seedResult is one strategy's outcome on one dataset seed.
 type seedResult struct {
@@ -96,18 +119,22 @@ type versionResult struct {
 	Seeds        []int64
 	// per strategy -> per seed
 	Runs map[string][]seedResult
-	// strongB composite per seed (equal-skill twin for the paired comparison).
-	StrongB []float64
-	// StrongExp is the EXPECTED strong composite per seed (sum of 1-errRate,
-	// no Bernoulli draws): its across-seed SD is the pure STRUCTURAL
-	// (case-mix difficulty) component of the strong tier's variance.
-	StrongExp []float64
+	// PairB: model tier -> per-seed composite of the salt-B equal-skill twin.
+	PairB map[string][]float64
+	// Exp: model tier -> per-seed EXPECTED composite (sum of 1-errRate, no
+	// Bernoulli draws): its across-seed SD is the pure STRUCTURAL (case-mix
+	// difficulty) component of that tier's variance.
+	Exp map[string][]float64
+	// ExpFlat: model tier -> per-seed expected FLAT mean (all cases pooled,
+	// no 0.5/0.5 side weighting) — comparable to the champion-tier anchor
+	// numbers in gen.TestV7ChampionTierLandsNearTarget.
+	ExpFlat map[string][]float64
 	// per strategy -> per seed -> per case (for gstudy JSONL).
 	Cases map[string][][]caseScore
 	// per seed: category -> weighted contribution to the composite
-	// (0.5*n_cat/N_suite * cat_mean), strong strategy only.
-	StrongCatContrib []map[string]float64
-	OracleFailures   int
+	// (0.5*n_cat/N_suite * cat_mean), champW (decision-boundary tier) only.
+	BoundaryCatContrib []map[string]float64
+	OracleFailures     int
 }
 
 func runVersion(bv int, first int64, n int, outDir string) *versionResult {
@@ -116,6 +143,9 @@ func runVersion(bv int, first int64, n int, outDir string) *versionResult {
 		BenchVersion: bv,
 		Runs:         map[string][]seedResult{},
 		Cases:        map[string][][]caseScore{},
+		PairB:        map[string][]float64{},
+		Exp:          map[string][]float64{},
+		ExpFlat:      map[string][]float64{},
 	}
 	for i := 0; i < n; i++ {
 		seed := first + int64(i)
@@ -128,7 +158,7 @@ func runVersion(bv int, first int64, n int, outDir string) *versionResult {
 		evalSeed(vr, a, bv, seed)
 	}
 	if outDir != "" {
-		for _, s := range []string{"overlap", "strong", "uniform", "oracle"} {
+		for _, s := range []string{"overlap", "strong", "champS", "champW", "uniform", "oracle"} {
 			writeGstudyJSONL(filepath.Join(outDir, fmt.Sprintf("runs_v%d_%s.jsonl", bv, s)), vr.Seeds, vr.Cases[s], s)
 		}
 	}
@@ -154,10 +184,10 @@ func evalSeed(vr *versionResult, a gen.DatasetArtifact, bv int, seed int64) {
 	}
 
 	memScores := map[string][]caseScore{} // strategy -> per-case
-	var strongBMem []float64              // strongB per-case scores
-	catN := map[string]int{}              // strong-side category sizes (memory)
-	catSum := map[string]float64{}        // strong per-category score sums
-	expMem, expTool := 0.0, 0.0           // expected strong scores (structural)
+	pairBMem := map[string]float64{}      // tier -> B-twin score sum
+	expMemT := map[string]float64{}       // tier -> expected score sum
+	catN := map[string]int{}              // champW category sizes
+	catSum := map[string]float64{}        // champW per-category score sums
 	for _, c := range a.MemoryCases {
 		user := c.UserID
 		if user == "" {
@@ -183,24 +213,24 @@ func evalSeed(vr *versionResult, a gen.DatasetArtifact, bv int, seed int64) {
 		}
 		memScores["oracle"] = append(memScores["oracle"], caseScore{Category: c.QuestionType, Score: oSc})
 
-		e := memErrRate(c.QuestionType)
 		key := fmt.Sprintf("%d|%d|mem|%s|%s", bv, seed, c.ID, c.QuestionID)
-		sA, sB := errDraw(key, "A", e)*oSc, errDraw(key, "B", e)*oSc
-		sU := errDraw(key, "U", uniformErr) * oSc
-		memScores["strong"] = append(memScores["strong"], caseScore{Category: c.QuestionType, Score: sA})
-		memScores["uniform"] = append(memScores["uniform"], caseScore{Category: c.QuestionType, Score: sU})
-		strongBMem = append(strongBMem, sB)
-		expMem += 1 - e
-		catN["mem:"+c.QuestionType]++
-		catSum["mem:"+c.QuestionType] += sA
+		for tier, tr := range modelTiers {
+			e := tr.mem(c.QuestionType)
+			sA := errDraw(key, tr.saltA, e) * oSc
+			memScores[tier] = append(memScores[tier], caseScore{Category: c.QuestionType, Score: sA})
+			pairBMem[tier] += errDraw(key, tr.saltB, e) * oSc
+			expMemT[tier] += 1 - e
+			if tier == "champW" {
+				catN["mem:"+c.QuestionType]++
+				catSum["mem:"+c.QuestionType] += sA
+			}
+		}
 	}
 
 	// --- tool side -----------------------------------------------------------
-	toolRouter := []caseScore{}
-	toolStrong := []caseScore{}
-	toolUniform := []caseScore{}
-	toolOracle := []caseScore{}
-	var strongBTool []float64
+	toolScores := map[string][]caseScore{} // router / tiers / oracle
+	pairBTool := map[string]float64{}
+	expToolT := map[string]float64{}
 	for _, c := range a.ToolCases {
 		routed := keywordRoute(c.Prompt)
 		rSc := 0.0
@@ -214,57 +244,53 @@ func evalSeed(vr *versionResult, a gen.DatasetArtifact, bv int, seed int64) {
 				rSc = 1
 			}
 		}
-		toolRouter = append(toolRouter, caseScore{Category: c.Category, Score: rSc})
+		toolScores["router"] = append(toolScores["router"], caseScore{Category: c.Category, Score: rSc})
+		toolScores["oracle"] = append(toolScores["oracle"], caseScore{Category: c.Category, Score: 1})
 
-		e := toolErrRate(c.Category)
 		key := fmt.Sprintf("%d|%d|tool|%s", bv, seed, c.ID)
-		toolStrong = append(toolStrong, caseScore{Category: c.Category, Score: errDraw(key, "A", e)})
-		toolUniform = append(toolUniform, caseScore{Category: c.Category, Score: errDraw(key, "U", uniformErr)})
-		strongBTool = append(strongBTool, errDraw(key, "B", e))
-		toolOracle = append(toolOracle, caseScore{Category: c.Category, Score: 1})
-		expTool += 1 - e
-		catN["tool:"+c.Category]++
-		catSum["tool:"+c.Category] += toolStrong[len(toolStrong)-1].Score
+		for tier, tr := range modelTiers {
+			e := tr.tool(c.Category)
+			sA := errDraw(key, tr.saltA, e)
+			toolScores[tier] = append(toolScores[tier], caseScore{Category: c.Category, Score: sA})
+			pairBTool[tier] += errDraw(key, tr.saltB, e)
+			expToolT[tier] += 1 - e
+			if tier == "champW" {
+				catN["tool:"+c.Category]++
+				catSum["tool:"+c.Category] += sA
+			}
+		}
 	}
 
 	// --- assemble per-strategy runs ------------------------------------------
-	memMean := func(cs []caseScore) float64 {
+	caseMean := func(cs []caseScore) float64 {
 		s := 0.0
 		for _, c := range cs {
 			s += c.Score
 		}
 		return s / float64(len(cs))
 	}
-	toolFor := map[string][]caseScore{
-		"parrot": toolRouter, "overlap": toolRouter, "recency": toolRouter,
-		"dump": toolRouter, "abstain": toolRouter,
-		"strong": toolStrong, "uniform": toolUniform, "oracle": toolOracle,
-	}
+	nMem, nTool := float64(len(a.MemoryCases)), float64(len(a.ToolCases))
 	for _, strat := range strategyNames {
-		mm, tm := memMean(memScores[strat]), memMean(toolFor[strat])
+		tool := toolScores[strat]
+		if tool == nil {
+			tool = toolScores["router"] // naive memory tiers ride the keyword router
+		}
+		mm, tm := caseMean(memScores[strat]), caseMean(tool)
 		vr.Runs[strat] = append(vr.Runs[strat], seedResult{
 			Composite: 0.5*tm + 0.5*mm, MemMean: mm, ToolMean: tm,
 		})
-		all := append(append([]caseScore{}, memScores[strat]...), toolFor[strat]...)
+		all := append(append([]caseScore{}, memScores[strat]...), tool...)
 		vr.Cases[strat] = append(vr.Cases[strat], all)
 	}
-	// strongB composite (same dataset, independent error draws).
-	sb, st := 0.0, 0.0
-	for _, v := range strongBMem {
-		sb += v
+	for tier := range modelTiers {
+		vr.PairB[tier] = append(vr.PairB[tier], 0.5*pairBTool[tier]/nTool+0.5*pairBMem[tier]/nMem)
+		vr.Exp[tier] = append(vr.Exp[tier], 0.5*expToolT[tier]/nTool+0.5*expMemT[tier]/nMem)
+		vr.ExpFlat[tier] = append(vr.ExpFlat[tier], (expMemT[tier]+expToolT[tier])/(nMem+nTool))
 	}
-	for _, v := range strongBTool {
-		st += v
-	}
-	vr.StrongB = append(vr.StrongB,
-		0.5*(st/float64(len(strongBTool)))+0.5*(sb/float64(len(strongBMem))))
-	vr.StrongExp = append(vr.StrongExp,
-		0.5*expTool/float64(len(a.ToolCases))+0.5*expMem/float64(len(a.MemoryCases)))
 
-	// strong per-category composite contribution: w_c*mean_c with
+	// champW per-category composite contribution: w_c*mean_c with
 	// w_c = 0.5*n_c/N_side.
 	contrib := map[string]float64{}
-	nMem, nTool := float64(len(a.MemoryCases)), float64(len(a.ToolCases))
 	for cat := range catN {
 		side := nMem
 		if strings.HasPrefix(cat, "tool:") {
@@ -272,7 +298,7 @@ func evalSeed(vr *versionResult, a gen.DatasetArtifact, bv int, seed int64) {
 		}
 		contrib[cat] = 0.5 * catSum[cat] / side
 	}
-	vr.StrongCatContrib = append(vr.StrongCatContrib, contrib)
+	vr.BoundaryCatContrib = append(vr.BoundaryCatContrib, contrib)
 }
 
 // ---------------------------------------------------------------------------
@@ -349,6 +375,77 @@ func toolErrRate(cat string) float64 {
 	}
 	return 0.05
 }
+
+// ---------------------------------------------------------------------------
+// Champion-tier anchors (study v2, deepened suite)
+//
+// Ported verbatim from gen/v7difficulty_test.go's champion-tier calibration
+// (TestV7ChampionTierLandsNearTarget): per-class expected PASS rates fixed to
+// reproduce the operator's top-5 leaderboard rebench. champS is the strong
+// anchor (newDitto-like, ~0.83 flat mean on the pre-deepening suite); champW
+// derives the weak anchor (whitycatboss/infinity-like) through the same
+// square-ish falloff. Test symbols are not importable, so the tables are
+// duplicated here; TestChampionTablesMatchAnchors pins the calibration
+// outcome so silent drift between the copies is caught.
+// ---------------------------------------------------------------------------
+
+var champStrongMem = map[string]float64{
+	"single-session-recall": 0.97, "preference": 0.97, "assistant-recall": 0.95, "canary": 0.90,
+	"multi-session": 0.82, "temporal-reasoning": 0.75, "point-in-time": 0.72,
+	"contradiction": 0.80, "knowledge-update": 0.80, "aggregation-count": 0.72,
+	"computed-answer": 0.55, "preference-application": 0.75, "abstention": 0.85,
+	"conversational-chitchat": 1.0, "conversational-declarative": 0.92, "conversational-abstention": 0.80,
+	"declarative-write": 1.0, "declarative-write-read": 0.82, "declarative-behavior": 0.75,
+	"memory-write": 0.95, "memory-write-read": 0.85, "lifecycle-deep-write": 0.95, "lifecycle-deep-read": 0.10,
+	"injection-resistance": 0.70, "injection-stored-instruction": 0.62, "stored-instruction-benign": 0.85,
+	"injection-composed": 0.30, "composed-note-benign": 0.82, "isolation": 0.55,
+	"multi-hop-relational": 0.50, "temporal-depth": 0.50, "multi-query-recall": 0.62,
+	"nonverbatim-computed": 0.42, "passive-consolidation": 0.60,
+	"multi-hop-deep": 0.06, "near-miss-abstention": 0.10, "temporal-arithmetic": 0.10,
+	"subscription-own": 0.35, "subscription-attributed": 0.45,
+}
+
+var champStrongTool = map[string]float64{
+	"route_memory_not_web": 0.80, "route_web_not_memory": 0.80, "agent_run_not_read": 0.80,
+	"agent_read_not_run": 0.80, "image_edit_not_create": 0.80, "workflow_not_job": 0.75,
+	"automation_not_job": 0.75, "memory_save_not_search": 0.85, "arg_hallucination": 0.80,
+	"negation_no_tool": 0.30, "stale_context_web": 0.50, "tool_discovery": 0.80,
+	"code_compute_not_agent_job": 0.80,
+	"web_result_usage":           0.70, "multi_web_result_usage": 0.50, "web_recovery_result_usage": 0.55,
+	"job_chain_result_usage": 0.50, "job_chain_recovery_result_usage": 0.40, "link_chain_result_usage": 0.25,
+	"multi_web_read": 0.85, "multi_subject_scope": 0.85, "multi_job_status": 0.85,
+	"multi_image_edit": 0.85, "parallel_web_image": 0.85, "entity_lookup_chain": 0.55,
+}
+
+// champWeakRate maps a strong-anchor pass rate to the weak anchor: near-perfect
+// classes barely move, mid/hard classes fall off sharply.
+func champWeakRate(strong float64) float64 {
+	w := strong * strong * (0.55 + 0.45*strong)
+	if w < 0 {
+		w = 0
+	}
+	return w
+}
+
+func champPassMemS(qt string) float64 {
+	if v, ok := champStrongMem[qt]; ok {
+		return v
+	}
+	return 0.97
+}
+
+func champPassToolS(cat string) float64 {
+	if v, ok := champStrongTool[cat]; ok {
+		return v
+	}
+	return 0.95
+}
+
+// The tier interface works in ERROR rates.
+func champErrMemS(qt string) float64   { return 1 - champPassMemS(qt) }
+func champErrToolS(cat string) float64 { return 1 - champPassToolS(cat) }
+func champErrMemW(qt string) float64   { return 1 - champWeakRate(champPassMemS(qt)) }
+func champErrToolW(cat string) float64 { return 1 - champWeakRate(champPassToolS(cat)) }
 
 // oracleResponse is the canonical correct response keyed on AnswerKind
 // (mirrors the gen package's oracle-solvability sweep).
@@ -553,47 +650,54 @@ func (vr *versionResult) summarize(margin float64) map[string]any {
 	}
 	out["strategies"] = strat
 
-	// Paired equal-skill comparison.
-	strong := vr.Runs["strong"]
-	var diffs []float64
-	over := 0
-	for i, r := range strong {
-		d := r.Composite - vr.StrongB[i]
-		diffs = append(diffs, d)
-		if math.Abs(d) > margin {
-			over++
+	// Paired equal-skill comparison + structural split, per model tier.
+	paired := map[string]PairedSummary{}
+	structural := map[string]map[string]float64{}
+	for tier := range modelTiers {
+		runs := vr.Runs[tier]
+		var diffs []float64
+		over := 0
+		for i, r := range runs {
+			d := r.Composite - vr.PairB[tier][i]
+			diffs = append(diffs, d)
+			if math.Abs(d) > margin {
+				over++
+			}
+		}
+		dm, ds := meanSD(diffs)
+		_, ss := meanSD(compositesOf(runs))
+		ps := PairedSummary{
+			DiffMean:               r4(dm),
+			DiffSD:                 r4(ds),
+			FracOverMargin:         r4(float64(over) / float64(len(diffs))),
+			NormalProbOverMargin:   r4(2 * (1 - phi(margin/ds))),
+			UnpairedProbOverMargin: r4(2 * (1 - phi(margin/(math.Sqrt2*ss)))),
+			SeedsToResolve:         map[string]SeedReq{},
+		}
+		for _, gap := range []float64{0.005, 0.01, 0.02} {
+			ps.SeedsToResolve[fmt.Sprintf("%.3f", gap)] = SeedReq{
+				Detect50: seedsFor(ds, gap, 1.645, 0),
+				Power95:  seedsFor(ds, gap, 1.645, 1.645),
+			}
+		}
+		paired[tier] = ps
+
+		em, es := meanSD(vr.Exp[tier])
+		fm, _ := meanSD(vr.ExpFlat[tier])
+		structural[tier] = map[string]float64{
+			"expected_mean":      r4(em),
+			"expected_flat_mean": r4(fm), // anchor-comparable pooled mean
+			"structural_sd":      r4(es), // SD of the expected composite across seeds
+			"bernoulli_sd":       r4(ds / math.Sqrt2),
+			"total_sd":           r4(ss),
 		}
 	}
-	dm, ds := meanSD(diffs)
-	_, ss := meanSD(compositesOf(strong))
-	ps := PairedSummary{
-		DiffMean:               r4(dm),
-		DiffSD:                 r4(ds),
-		FracOverMargin:         r4(float64(over) / float64(len(diffs))),
-		NormalProbOverMargin:   r4(2 * (1 - phi(margin/ds))),
-		UnpairedProbOverMargin: r4(2 * (1 - phi(margin/(math.Sqrt2*ss)))),
-		SeedsToResolve:         map[string]SeedReq{},
-	}
-	for _, gap := range []float64{0.005, 0.01, 0.02} {
-		ps.SeedsToResolve[fmt.Sprintf("%.3f", gap)] = SeedReq{
-			Detect50: seedsFor(ds, gap, 1.645, 0),
-			Power95:  seedsFor(ds, gap, 1.645, 1.645),
-		}
-	}
-	out["paired_equal_skill"] = ps
+	out["paired_equal_skill"] = paired
+	out["structural"] = structural
 
-	// Structural (case-mix) vs Bernoulli split of the strong tier's variance.
-	em, es := meanSD(vr.StrongExp)
-	out["strong_structural"] = map[string]float64{
-		"expected_mean": r4(em),
-		"structural_sd": r4(es), // SD of the expected composite across seeds
-		"bernoulli_sd":  r4(ds / math.Sqrt2),
-		"total_sd":      r4(ss),
-	}
-
-	// Per-category variance contribution (strong).
+	// Per-category variance contribution (champW, the boundary tier).
 	cats := map[string][]float64{}
-	for _, m := range vr.StrongCatContrib {
+	for _, m := range vr.BoundaryCatContrib {
 		for c, v := range m {
 			cats[c] = append(cats[c], v)
 		}
@@ -616,7 +720,7 @@ func (vr *versionResult) summarize(margin float64) map[string]any {
 	if len(cvs) > 15 {
 		cvs = cvs[:15]
 	}
-	out["strong_top_category_var_shares"] = cvs
+	out["champW_top_category_var_shares"] = cvs
 	return out
 }
 

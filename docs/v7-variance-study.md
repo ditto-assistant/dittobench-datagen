@@ -1,5 +1,14 @@
 # DittoBench v7 variance study (seed-to-seed spread under the ~10x hardening)
 
+> **Revision note.** Sections 1–7 are **study v1**, measured against the
+> pre-deepening v7 suite (full = 120 tools / ~131 memory cases). The suite was
+> subsequently reworked (product-grounded deepening: full = 72 tools / ~187
+> memory cases, ~18 hard families, subscription attribution,
+> entity_lookup_chain, champion-tier calibration to 0.36–0.57). **Section 8
+> (study v2) re-measures everything on the deepened suite and supersedes the
+> v1 verdict**; v1 is retained because its v6 baselines and machinery are
+> unchanged and the deltas are informative.
+
 **Question.** Bench_version 7 made the suite ~10x harder (new memory modules:
 deepchain, deepjoin, near-miss abstention, tempcalc, composedinj; new tool
 categories: negation-cue restraint, stale-context routing, link_chain,
@@ -248,5 +257,183 @@ the headline conclusion (v7 does not meaningfully widen top-tier spread) is
 insensitive to them. Real-model temperature noise is additive to both
 versions and is exactly what CRN confirmation seeds cancel.
 
-**Verdict: GO** — ship v7 at current variance; bump confirmation-seed counts
-~15–20% and leave the 0.007 margin and SE-band machinery as they are.
+**Verdict (v1, superseded by §8): GO** — ship v7 at current variance; bump
+confirmation-seed counts ~15–20% and leave the 0.007 margin and SE-band
+machinery as they are.
+
+---
+
+## 8. Study v2 — the product-grounded deepening (supersedes §1–7 verdict)
+
+The v7-difficulty branch gained the deepening after study v1: full profile is
+now **72 tool / ~187 memory cases** (was 120/~131), the reasoning subset is
+57.6% of the memory suite, result-usage chains dominate the tool mix (30/72
+cases plus 3 entity_lookup_chain), and two new memory families landed
+(subscription-own / subscription-attributed, 8+8 cases). The champion tier
+was recalibrated: the operator's top-5 rebench (0.607–0.845 on the
+pre-deepening suite) is modeled by a STRONG anchor (newDitto-like) and a WEAK
+anchor (whitycatboss/infinity-like) that land **0.573 / 0.364** (flat mean)
+on the deepened suite (`TestV7ChampionTierLandsNearTarget`).
+
+### 8.1 Method changes
+
+`cmd/vstudy` gained two champion tiers, `champS` and `champW`, whose
+per-class expected pass rates are ported verbatim from the gen package's
+calibration tables (test symbols are not importable;
+`TestChampionTablesMatchAnchors` pins the copies against the anchor bands so
+drift is caught). Every model tier (strong, champS, champW, uniform) now runs
+an independent equal-skill twin for the paired CRN comparison plus a
+no-draws expected composite for the structural split. Same N = **300 seeds
+per version**; study-v1 draws for the legacy tiers reproduce byte-identically
+(same salts). Composite remains 0.5·tool + 0.5·mem; the anchor-comparable
+flat means are also reported (`expected_flat_mean`: champW v7 = 0.364,
+champS v7 = 0.573, champS v6 = 0.833 — the port reproduces the calibration).
+Oracle: 1.0 on every memory case of all 600 datasets, **0 failures** — the
+deepened families remain answer-key sufficient at 300 seeds.
+
+### 8.2 Composite spread (300 seeds; SD = single-seed SE)
+
+| tier | v6 mean | v6 SD | deepened-v7 mean | deepened-v7 SD | SD change | v1-v7 SD (old suite) |
+|---|---|---|---|---|---|---|
+| overlap + router (best naive) | 0.4354 | 0.0251 | 0.3137 | 0.0130 | −48% | 0.0178 |
+| uniform p=0.10 (control) | 0.8985 | 0.0222 | 0.8995 | 0.0198 | −11% | 0.0191 |
+| strong (v1 legacy mid tier) | 0.9187 | 0.0179 | 0.8514 | 0.0234 | +31% | 0.0190 |
+| **champS (strong champion)** | 0.8283 | 0.0246 | 0.5976 | 0.0307 | **+25%** | — |
+| **champW (weak champion = today's boundary)** | 0.6720 | 0.0270 | 0.3777 | 0.0270 | **±0%** | — |
+| oracle | 1.0000 | 0 | 1.0000 | 0 | — | — |
+
+Paired equal-skill CRN noise floor (same-seed diff SD of two independent
+equal-skill twins) and margin-crossing probability (m = 0.007):
+
+| tier | v6 diff SD | v7 diff SD | Δ | P(\|Δ\|>m), 1 seed, v6 → v7 |
+|---|---|---|---|---|
+| strong (legacy) | 0.0259 | 0.0348 | +34% | 0.79 → 0.84 |
+| champS | 0.0335 | 0.0443 | +32% | 0.84 → 0.87 |
+| **champW** | **0.0383** | **0.0400** | **+4%** | 0.86 → 0.86 |
+| uniform | 0.0326 | 0.0293 | −10% | 0.83 → 0.81 |
+
+Readings:
+
+- **At the actual decision boundary (champW ≈ today's best harnesses) the
+  deepening does not widen variance at all**: single-seed SD 0.0270 → 0.0270,
+  paired noise floor +4%. The weak champion sat at mid pass rates (max
+  Bernoulli variance) *already on v6*; the deepening moved its mean
+  (0.67 → 0.38), not its spread.
+- Tiers that were previously in the low-variance high-score regime (strong,
+  champS) widen 25–34% because the deepening pushes their pass rates toward
+  0.5 — that is where the binomial is noisiest, and it is exactly the regime
+  the deepening intends champions to occupy while they climb.
+- The uniform control *tightens* again (more total cases, 205 → ~259): the
+  widening is difficulty-mix concentration, never dataset instability.
+- **Correction to study v1's headline**: v1 sized the noise floor off a
+  0.92-composite mid tier (diff SD 0.026). The relevant boundary tier is
+  champW at diff SD **0.040** — v1's confirmation-seed numbers were ~2x too
+  optimistic *for either suite*. The right comparison (champW v6 vs champW
+  deepened v7) is +4%.
+
+### 8.3 Structural (dataset-difficulty) component
+
+SD of the *expected* composite across seeds (no Bernoulli draws):
+
+| tier | v6 | deepened v7 |
+|---|---|---|
+| strong | 0.0003 | 0.0003 |
+| champS | 0.0009 | 0.0006 |
+| champW | 0.0016 | 0.0011 |
+| uniform | 0.0000 | 0.0000 |
+
+Still negligible — **≤ 0.0016 composite points everywhere, ≤ 23% of the
+protection margin, and the deepening *reduced* it at the champion tiers**
+(the rebalanced quotas hold the hard-family mix steadier per seed than the
+pre-deepening mix did). The G-study seed facet agrees: champW seed_frac
+0.33% (v6) → 0.21% (deepened v7); item facet 26.7% → 36.9% (category
+discrimination grew — design intent).
+
+### 8.4 New-family flags and variance offenders (champW tier)
+
+**Floors for today's weak champion** (gstudy, champW v7): multi-hop-deep
+(pass 0.002), lifecycle-deep-read (0.005), near-miss-abstention (0.006),
+temporal-arithmetic (0.007) — ~46 memory cases carrying ~0 Fisher
+information *at the current boundary*. They are not a variance problem
+(floored ⇒ near-zero variance contribution) and they discriminate for champS
+(0.06–0.11) — they are the intended headroom. But they mean ~24% of the
+memory suite is currently dead weight for separating today's top harnesses
+from each other; separation happens on the mid families.
+
+**The new families behave well**: subscription-own / subscription-attributed
+grade at 0.09/0.15 (champW) and 0.35/0.46 (champS) with the highest
+discriminations in the suite (0.29–0.50) and **do not appear in the top-15
+variance shares**. entity_lookup_chain is the largest *new* contributor at
+3.3%.
+
+**Top variance shares are now ALL tool categories** (champW, v7):
+web_result_usage 7.5%, web_recovery_result_usage 5.6%, job_chain_result_usage
+4.6%, multi_web_result_usage 4.2%, entity_lookup_chain 3.3%, … — no memory
+family makes the top 15. No single category dominates (max 7.5%, comparable
+to v1's 7%), but the block exists because of a structural shift:
+
+> **LOUD FLAG — single-tool-case leverage now equals the protection margin.**
+> The deepening cut the tool suite from 120 to 72 cases while the composite
+> still weights the tool side 0.5. One flipped tool case now moves the
+> composite by 0.5/72 = **0.0069 ≈ 0.99 × the 0.007 protection margin**
+> (v6: 0.0045; pre-deepening v7: 0.0042; memory case: 0.0027). A single
+> lucky/unlucky link-chain serve can cross the margin on its own, and the
+> 5-case link_chain family can swing 0.035. The tool side carries ~79% of
+> the champS composite variance (tool-mean SD 0.055 vs memory-mean SD 0.028)
+> despite being 28% of the cases.
+
+**Fix options assessed (none implemented — see §8.6):** partial credit on
+the chains is validator-side and would soften the anti-grep all-or-nothing
+contract (reduces difficulty — out of bounds). Count rebalancing (raising
+Tools 72 → 110 at the same category proportions) keeps every case exactly as
+hard, cuts per-case leverage to 0.0045 and the champW composite SD by ~11%
+(0.0270 → 0.0240, tool-mean SE × √(72/110)); at 144 tools, −19%. That is a
+generation change that **re-pins the v7 byte vector** and overrides the
+deepening's deliberate product-grounded 72-case mix, so it is left as a
+recommendation for the suite owners, not made unilaterally here.
+
+### 8.5 Confirmation seeds at the new boundary (champW, paired CRN)
+
+| true gap Δ | v6 detect / 95% power | deepened-v7 detect / 95% power |
+|---|---|---|
+| 0.005 | 160 / 637 | 173 / 692 |
+| 0.010 | 40 / 160 | 44 / 173 |
+| 0.020 | 10 / 40 | 11 / 44 |
+| = margin 0.007 | 82 / 325 | 89 / 354 |
+
+**Recommendation:** size confirmation seeds from σ_diff = **0.040** (champW).
+That is **+8–10% vs the same tier on v6** — the deepening itself is cheap —
+but **~2.3x study v1's numbers**, which were computed at a 0.92-composite
+tier that no longer exists on this suite. Concretely: ~44 confirmation seeds
+to detect a 0.01 composite gap (band = gap), ~89 to detect a margin-sized
+gap. Single-seed comparisons remain meaningless at the margin (86%
+false-crossing rate for equal-skill agents — true on v6 too).
+
+### 8.6 Verdict (v2, supersedes §7)
+
+**GO** — the deepened suite is variance-safe to ship:
+
+- boundary-tier (champW) single-seed SD unchanged vs v6 (0.0270), paired
+  noise floor +4%;
+- structural dataset-difficulty SD ≤ 0.0011, *smaller* than pre-deepening;
+- seed facet of the G-study shrinks; no new family floors for the strong
+  anchor; oracle solvability 100% over 300 seeds;
+- no single family dominates variance.
+
+Conditions attached to the GO:
+
+1. **Re-size confirmation seeds from σ_diff ≈ 0.040** (≈ +10% vs v6-tier
+   sizing, ≈ 2.3x the numbers study v1 published) — operational only.
+2. **The single-tool-case leverage flag (§8.4) goes to the suite owners**:
+   either accept that one tool case ≈ one protection margin (and lean on
+   confirmation seeds, which handle it), or rebalance tool counts upward in
+   a future v7 revision (−11% composite SD at 110 tools, quantified above).
+   Not implemented here: it re-pins the v7 vector and reverses a deliberate
+   product-grounded mix decision.
+3. Note for leaderboard analytics: ~24% of the memory suite (the four
+   deep-hard families) is floored for today's champions — expected headroom,
+   but per-family telemetry should track when it starts discriminating.
+
+**No generation bytes were touched in this study revision either; the
+deepened v7 vector is unchanged.** Reproduction: same commands as §7 (the
+driver now also emits `runs_v{6,7}_champ{S,W}.jsonl`).
