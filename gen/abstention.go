@@ -12,12 +12,13 @@ const (
 	// modest: generic needle-absent declines are correct for any competent harness
 	// and so don't discriminate, and they compete for budget with the harder types.
 	abstentionDenom = 12
-	// abstentionDenomV7 halves the generic-abstention share for v7: the
-	// discriminating abstention behavior in v7 is near-miss abstention
-	// (gen/nearmiss.go), which is engineered to look answerable; a plain
-	// never-mentioned decline is aced by any competent harness, so v7 keeps only a
-	// small coverage floor and spends the budget on near-miss.
-	abstentionDenomV7 = 24
+	// abstentionDenomV7 cuts the generic-abstention share hard for v7. The round-2
+	// rebench measured generic abstention at ~1.0 for every leaderboard harness
+	// (zero discrimination); the discriminating abstention behavior is near-miss
+	// abstention (gen/nearmiss.go), engineered to look answerable. v7 keeps only a
+	// small coverage floor of generic declines and spends the budget on near-miss
+	// and the measured-hard families.
+	abstentionDenomV7 = 48
 )
 
 // abstentionQuota returns the seed-independent number of abstention cases for a

@@ -44,7 +44,7 @@ func nearMissCasesFor(n, nWaves int) int {
 	case nWaves < 2:
 		return 0
 	case n >= 100:
-		return 12
+		return 8
 	case n >= 40:
 		return 2
 	case n >= 20:

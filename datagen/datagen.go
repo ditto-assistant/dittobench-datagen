@@ -825,28 +825,40 @@ func stratifiedCategoryOrder(r *rand.Rand, n, nc int) []int {
 	return order
 }
 
-// toolCategoryWeightV7 is the bench_version 7 category mix weight: how many
-// stratified slots a category takes relative to the others. The v7 difficulty
-// lever here is the MIX, not just new categories — result-usage cases (which
-// require executing tools and reading their served content, the unfakeable
-// end of the suite) take triple weight, and the routing/discrimination traps
-// double weight, so the share of the run a cue-matching router can solve
-// shrinks. Weights are seed-independent, so between-seed difficulty variance
-// is unchanged (the same stratification argument as stratifiedCategoryOrder).
-// Pre-v7 contracts never consult this table.
+// toolCategoryWeightV7 is the bench_version 7 category mix weight, refit to the
+// round-2 MEASURED per-family champion means (docs/v7-product-traceability.md).
+// The lever is the MIX: give the largest share to the tool families the
+// leaderboard harnesses actually FAIL — the dependent/served-content chains that
+// separate the fleet (link_chain: scratch 1.0/starter 0.30; job_chain_recovery:
+// 0.80/0.06; job_chain_result_usage: 0.47/0.40; web_recovery: 0.93/0.40) and the
+// routing traps that bite the strong tier (stale_context_web: scratch 0.17;
+// negation_no_tool: 0.50). The result-usage families the strong tier already
+// aces (web_result_usage / multi_web_result_usage ~1.0) drop to coverage weight,
+// and entity_lookup_chain is trajectory-scored (harnesses get the order right,
+// so it is coverage, not a discriminator). Weights are seed-independent.
 func toolCategoryWeightV7(name string) int {
+	switch name {
+	// measured separators / strong-tier biters — the honest tool discriminators.
+	case "stale_context_web":
+		return 8 // measured scratch 0.17
+	case "job_chain_result_usage":
+		return 7 // 0.47 / 0.40 — bites both tiers
+	case "link_chain_result_usage", "job_chain_recovery_result_usage":
+		return 6 // starter separators (starter 0.30 / 0.06)
+	case "web_recovery_result_usage":
+		return 5 // 0.93 / 0.40
+	case "negation_no_tool":
+		return 4 // scratch 0.50
+	}
 	switch {
-	case IsResultUsage(name):
-		return 8
-	case name == "entity_lookup_chain":
-		return 4
+	case IsResultUsage(name): // web_result_usage / multi_web_result_usage: scratch ~1.0
+		return 2
 	case strings.Contains(name, "_not_"),
 		strings.HasPrefix(name, "route_"),
 		strings.HasPrefix(name, "multi_"),
 		name == "parallel_web_image",
 		name == "arg_hallucination",
-		name == "negation_no_tool",
-		name == "stale_context_web",
+		name == "entity_lookup_chain",
 		name == "tool_discovery":
 		return 2
 	default:

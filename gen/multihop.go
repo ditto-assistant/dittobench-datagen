@@ -53,7 +53,7 @@ func multiHopCasesFor(n, nWaves int) int {
 	case nWaves < 2:
 		return 0
 	case n >= 100:
-		return 5
+		return 3
 	case n >= 70:
 		return 2
 	case n >= 40:
