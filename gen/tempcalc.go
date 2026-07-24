@@ -43,7 +43,7 @@ func tempCalcCasesFor(n, nWaves int) int {
 	case nWaves < 2:
 		return 0
 	case n >= 100:
-		return 3
+		return 10
 	case n >= 40:
 		return 2
 	case n >= 20:
@@ -142,6 +142,114 @@ var tcDomains = []tcDomain{
 		combine: func(b, d int) int { return b - d },
 		baseLo:  21, baseN: 8, step: 1,
 		deltaLo: 4, deltaN: 9, dstep: 1,
+	},
+	{ // gym sessions logged: base + delta
+		base: []string{
+			"I've logged %s gym sessions this quarter.",
+			"So far this quarter I'm at %s gym sessions.",
+		},
+		change: []string{
+			"Added %s more gym sessions since I last mentioned it.",
+			"Got in %s more gym sessions this month.",
+		},
+		ask: []string{
+			"How many gym sessions have I logged this quarter in total?",
+			"What's my total gym-session count this quarter?",
+			"All up, how many gym sessions am I at this quarter?",
+		},
+		combine: func(b, d int) int { return b + d },
+		baseLo:  18, baseN: 20, step: 2,
+		deltaLo: 6, deltaN: 12, dstep: 2,
+	},
+	{ // subscription budget: base - delta
+		base: []string{
+			"My monthly subscriptions budget is $%s.",
+			"I cap my subscriptions at $%s a month.",
+		},
+		change: []string{
+			"My subscriptions already come to $%s a month.",
+			"I'm currently spending $%s a month on subscriptions.",
+		},
+		ask: []string{
+			"How much room is left in my monthly subscriptions budget?",
+			"How much of my subscriptions budget is unspent each month?",
+			"What's left in my subscriptions budget per month, in dollars?",
+		},
+		combine: func(b, d int) int { return b - d },
+		baseLo:  120, baseN: 14, step: 10,
+		deltaLo: 40, deltaN: 12, dstep: 5,
+	},
+	{ // flight miles: base + delta
+		base: []string{
+			"I had %s airline miles banked.",
+			"My airline miles balance was %s.",
+		},
+		change: []string{
+			"Just earned another %s miles on the last trip.",
+			"Picked up %s more airline miles this month.",
+		},
+		ask: []string{
+			"How many airline miles do I have in total now?",
+			"What's my current airline-miles total?",
+			"All together, how many miles am I sitting on?",
+		},
+		combine: func(b, d int) int { return b + d },
+		baseLo:  8000, baseN: 20, step: 500,
+		deltaLo: 1200, deltaN: 16, dstep: 100,
+	},
+	{ // course modules completed: base + delta
+		base: []string{
+			"I've finished %s modules of the online course.",
+			"I'm %s modules into the course so far.",
+		},
+		change: []string{
+			"Knocked out %s more course modules this week.",
+			"Got through %s more modules of the course.",
+		},
+		ask: []string{
+			"How many course modules have I completed in total?",
+			"What's my total completed-module count?",
+			"All up, how many course modules am I through?",
+		},
+		combine: func(b, d int) int { return b + d },
+		baseLo:  6, baseN: 18, step: 1,
+		deltaLo: 2, deltaN: 8, dstep: 1,
+	},
+	{ // grocery budget: base - delta
+		base: []string{
+			"My weekly grocery budget is $%s.",
+			"I try to keep groceries under $%s a week.",
+		},
+		change: []string{
+			"I've already spent $%s on groceries this week.",
+			"Groceries are at $%s so far this week.",
+		},
+		ask: []string{
+			"How much of my weekly grocery budget is left?",
+			"What's left in my grocery budget this week?",
+			"How many dollars of grocery budget remain this week?",
+		},
+		combine: func(b, d int) int { return b - d },
+		baseLo:  90, baseN: 14, step: 10,
+		deltaLo: 25, deltaN: 12, dstep: 5,
+	},
+	{ // steps to goal: base - delta
+		base: []string{
+			"My daily step goal is %s.",
+			"I aim for %s steps a day.",
+		},
+		change: []string{
+			"I'm at %s steps so far today.",
+			"Clocked %s steps up to now today.",
+		},
+		ask: []string{
+			"How many more steps do I need to hit my goal today?",
+			"How many steps am I short of my daily goal?",
+			"What's my remaining step count for today's goal?",
+		},
+		combine: func(b, d int) int { return b - d },
+		baseLo:  8000, baseN: 8, step: 500,
+		deltaLo: 1500, deltaN: 20, dstep: 250,
 	},
 }
 

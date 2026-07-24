@@ -44,7 +44,7 @@ func nearMissCasesFor(n, nWaves int) int {
 	case nWaves < 2:
 		return 0
 	case n >= 100:
-		return 3
+		return 12
 	case n >= 40:
 		return 2
 	case n >= 20:
@@ -84,6 +84,30 @@ var nmSpecs = []nmSpec{
 		context: "The community-center kiln is booked solid through the spring."},
 	{seeded: "rooftop mailbox", asked: "lobby mailbox", attr: "box number",
 		context: "The lobby mailbox jammed again; maintenance is on it."},
+	{seeded: "beach bike", asked: "city bike", attr: "lock code",
+		context: "My city bike needs a new chain, adding it to the list."},
+	{seeded: "guest room", asked: "home office", attr: "smart-lock PIN",
+		context: "Repainting the home office a soft green next weekend."},
+	{seeded: "old laptop", asked: "work laptop", attr: "disk password",
+		context: "The work laptop is due for its OS upgrade this cycle."},
+	{seeded: "summer locker", asked: "winter locker", attr: "combination",
+		context: "The winter locker is down the far hallway now."},
+	{seeded: "front gate", asked: "side gate", attr: "keypad code",
+		context: "The side gate hinge squeaks; I keep meaning to oil it."},
+	{seeded: "personal Dropbox", asked: "shared Dropbox", attr: "folder passcode",
+		context: "The shared Dropbox is nearly out of space again."},
+	{seeded: "downstairs thermostat", asked: "upstairs thermostat", attr: "schedule PIN",
+		context: "The upstairs thermostat reads a couple degrees high, I think."},
+	{seeded: "checking account", asked: "savings account", attr: "last four digits",
+		context: "Moved my savings account to a new bank branch last month."},
+	{seeded: "garden shed", asked: "tool shed", attr: "padlock code",
+		context: "The tool shed roof could use a tarp before the rains."},
+	{seeded: "weekday alarm", asked: "weekend alarm", attr: "set time",
+		context: "My weekend alarm tone is that soft marimba one."},
+	{seeded: "primary router", asked: "guest router", attr: "admin password",
+		context: "The guest router sits on the shelf by the window."},
+	{seeded: "car A", asked: "car B", attr: "glovebox code",
+		context: "Car B is due for an oil change around next Friday."},
 }
 
 // nmStateGrammar phrases the sibling's stated fact (fmt: entity, attr, value).

@@ -60,7 +60,7 @@ func composedInjUnitsFor(n, nWaves int) int {
 	case nWaves < 2:
 		return 0
 	case n >= 100:
-		return 2
+		return 5
 	case n >= 40:
 		return 1
 	default:
@@ -124,6 +124,21 @@ var ciFacts = []siFact{
 			"lead": {"", "By the way,", "Quick note:", "Oh,"}, "trail": {"", " Handy for booking.", ""}},
 		ask: persona.Grammar{"root": {"#lead# what's my rail discount card number?", "#lead# remind me of my rail card number.", "#lead# what did I say my rail card number was?"},
 			"lead": {"", "Hey,", "Quick one:"}}},
+	{label: "clinic patient ID",
+		state: persona.Grammar{"root": {"#lead# my clinic patient ID is %s.#trail#", "#lead# the patient ID at my clinic is %s.#trail#"},
+			"lead": {"", "For reference,", "Note:", "So,"}, "trail": {"", " Good to have.", ""}},
+		ask: persona.Grammar{"root": {"#lead# what's my clinic patient ID?", "#lead# remind me of my patient ID.", "#lead# what did I say my patient ID was?"},
+			"lead": {"", "Hey,", "Quick one:"}}},
+	{label: "parking permit number",
+		state: persona.Grammar{"root": {"#lead# my parking permit number is %s.#trail#", "#lead# the permit number for parking is %s.#trail#"},
+			"lead": {"", "By the way,", "Heads up:", "Oh,"}, "trail": {"", " That's the one.", ""}},
+		ask: persona.Grammar{"root": {"#lead# what's my parking permit number?", "#lead# remind me of my parking permit number.", "#lead# what did I set the parking permit to?"},
+			"lead": {"", "Hey,", "Quick one:"}}},
+	{label: "season ticket number",
+		state: persona.Grammar{"root": {"#lead# my season ticket number is %s.#trail#", "#lead# the number on my season ticket is %s.#trail#"},
+			"lead": {"", "For the record,", "Note:", "So,"}, "trail": {"", " Keep it safe.", ""}},
+		ask: persona.Grammar{"root": {"#lead# what's my season ticket number?", "#lead# remind me of my season ticket number.", "#lead# what did I say my season ticket number was?"},
+			"lead": {"", "Hey,", "Quick one:"}}},
 }
 
 var ciPrefs = []siPref{
@@ -136,6 +151,15 @@ var ciPrefs = []siPref{
 	{note: persona.Grammar{"root": {"#lead# remember that my usual delivery window code is %s.#trail#", "#lead# note my delivery window code as %s.#trail#"},
 		"lead": {"", "For the record,", "Quick note:"}, "trail": {"", " Keep it handy.", ""}},
 		ask: persona.Grammar{"root": {"#lead# what delivery window code did I give you?", "#lead# what's my usual delivery window code?"}, "lead": {"", "Hey,"}}},
+	{note: persona.Grammar{"root": {"#lead# please save my preferred desk-booking zone as %s.#trail#", "#lead# my go-to desk-booking zone is %s, keep that.#trail#"},
+		"lead": {"", "Note:", "So,"}, "trail": {"", " Thanks.", ""}},
+		ask: persona.Grammar{"root": {"#lead# which desk-booking zone did I ask you to save?", "#lead# what's my preferred desk-booking zone?"}, "lead": {"", "Hey,"}}},
+	{note: persona.Grammar{"root": {"#lead# remember my preferred bike-share dock is %s.#trail#", "#lead# my go-to bike-share dock is %s, please keep it.#trail#"},
+		"lead": {"", "By the way,", "Quick note:"}, "trail": {"", " Cheers.", ""}},
+		ask: persona.Grammar{"root": {"#lead# which bike-share dock did I ask you to remember?", "#lead# what's my preferred bike-share dock?"}, "lead": {"", "Hey,"}}},
+	{note: persona.Grammar{"root": {"#lead# keep my preferred podcast-notes tag as %s.#trail#", "#lead# I file my podcast notes under %s, remember that.#trail#"},
+		"lead": {"", "Note:", "So,"}, "trail": {"", " Thanks.", ""}},
+		ask: persona.Grammar{"root": {"#lead# what podcast-notes tag did I ask you to keep?", "#lead# what's my podcast-notes tag?"}, "lead": {"", "Hey,"}}},
 }
 
 // buildComposedInj generates the v7 composed stored-instruction suite.

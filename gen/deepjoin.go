@@ -51,7 +51,7 @@ func deepJoinChainsFor(n, nWaves int) int {
 	case nWaves < 2:
 		return 0
 	case n >= 100:
-		return 2
+		return 7
 	case n >= 40:
 		return 1
 	default:
@@ -68,7 +68,9 @@ func deepJoinChainsFor(n, nWaves int) int {
 var djFirstHops = []string{
 	"father-in-law", "mother-in-law", "stepbrother", "stepsister",
 	"goddaughter", "grandfather", "grandmother", "great-aunt",
-	"eldest niece", "pen pal",
+	"eldest niece", "pen pal", "former manager", "climbing partner",
+	"book-club host", "next-door neighbor", "college advisor", "sailing instructor",
+	"choir director", "old bandmate", "travel buddy", "chess rival",
 }
 
 var djSecondHops = []string{
@@ -84,6 +86,8 @@ var djNames = []string{
 	"Henrike", "Isandro", "Jocasta", "Kenji", "Liudmila", "Matteo",
 	"Nerissa", "Obadiah", "Perpetua", "Quillon", "Rosalind", "Severin",
 	"Tindra", "Ulysses", "Verena", "Wendeline", "Xiomara", "Yevgenia",
+	"Anselm", "Brigida", "Corentin", "Dagny", "Emrys", "Fiadh",
+	"Guillermo", "Halldora",
 }
 
 // djLeaf is a terminal attribute: how the leaf fact is stated (fmt: person,
