@@ -8,6 +8,7 @@ package datagen
 import (
 	"fmt"
 	"math/rand"
+	"sort"
 	"strings"
 
 	"github.com/ditto-assistant/dittobench-datagen/persona"
@@ -679,7 +680,7 @@ func fillerForVersion(r *rand.Rand, cat string, benchVersion int) string {
 		return p[r.Intn(len(p))]
 	}
 	switch cat {
-	case "web_search", "route_web_not_memory", "calendar_search":
+	case "web_search", "route_web_not_memory", "calendar_search", "stale_context_web":
 		return pick(topics, topicsV5)
 	case "link_read":
 		return pick(urls, urlsV5)
@@ -822,6 +823,81 @@ func stratifiedCategoryOrder(r *rand.Rand, n, nc int) []int {
 	return order
 }
 
+// toolCategoryWeightV7 is the bench_version 7 category mix weight: how many
+// stratified slots a category takes relative to the others. The v7 difficulty
+// lever here is the MIX, not just new categories — result-usage cases (which
+// require executing tools and reading their served content, the unfakeable
+// end of the suite) take triple weight, and the routing/discrimination traps
+// double weight, so the share of the run a cue-matching router can solve
+// shrinks. Weights are seed-independent, so between-seed difficulty variance
+// is unchanged (the same stratification argument as stratifiedCategoryOrder).
+// Pre-v7 contracts never consult this table.
+func toolCategoryWeightV7(name string) int {
+	switch {
+	case IsResultUsage(name):
+		return 3
+	case strings.Contains(name, "_not_"),
+		strings.HasPrefix(name, "route_"),
+		strings.HasPrefix(name, "multi_"),
+		name == "parallel_web_image",
+		name == "arg_hallucination",
+		name == "negation_no_tool",
+		name == "stale_context_web",
+		name == "tool_discovery":
+		return 2
+	default:
+		return 1
+	}
+}
+
+// stratifiedCategoryOrderWeighted is stratifiedCategoryOrder with a per-category
+// weight: category ci receives ~n*w/totalW slots (deterministic remainder
+// distribution: weight-desc then index-asc round robin), then the order is
+// shuffled with the seeded RNG. Like the unweighted version, the per-run MIX is
+// fixed and only the ordering varies by seed.
+func stratifiedCategoryOrderWeighted(r *rand.Rand, n int, weights []int) []int {
+	nc := len(weights)
+	totalW := 0
+	for _, w := range weights {
+		if w < 1 {
+			w = 1
+		}
+		totalW += w
+	}
+	counts := make([]int, nc)
+	assigned := 0
+	for ci, w := range weights {
+		if w < 1 {
+			w = 1
+		}
+		counts[ci] = n * w / totalW
+		assigned += counts[ci]
+	}
+	fillOrder := make([]int, nc)
+	for i := range fillOrder {
+		fillOrder[i] = i
+	}
+	sort.SliceStable(fillOrder, func(i, j int) bool {
+		wi, wj := weights[fillOrder[i]], weights[fillOrder[j]]
+		if wi != wj {
+			return wi > wj
+		}
+		return fillOrder[i] < fillOrder[j]
+	})
+	for k := 0; assigned < n; k = (k + 1) % nc {
+		counts[fillOrder[k]]++
+		assigned++
+	}
+	order := make([]int, 0, n)
+	for ci, c := range counts {
+		for j := 0; j < c; j++ {
+			order = append(order, ci)
+		}
+	}
+	r.Shuffle(len(order), func(i, j int) { order[i], order[j] = order[j], order[i] })
+	return order
+}
+
 // codeModeCategories are the bench_version 5 Code Mode categories: they exercise
 // run_code (the in-process JavaScript compute/orchestration sandbox) and the
 // discrimination between run_code (a pure in-context calculation, no side effects)
@@ -880,17 +956,102 @@ var codeModeCategories = []category{
 	},
 }
 
+// difficultyCategoriesV7 are the bench_version 7 tool categories (the
+// difficulty release; see docs/bench-versions.md):
+//
+//   - negation_no_tool: the prompt NAMES a tool-cue ("search", "image", "agent")
+//     while negating it — the correct behavior is no tool at all, so a keyword
+//     router that fires on cue words is actively caught rather than merely
+//     unlucky.
+//   - stale_context_web: a memory-anchored phrasing ("I told you my take on X")
+//     whose actual request is CURRENT public information — the tempting route is
+//     search_memories, the correct one is search_web.
+//   - link_chain_result_usage: a dependent-arg content chain. search_web serves
+//     a STABLE page URL; read_links returns the answer needle ONLY when called
+//     with that URL (toolexec link-chain gate), so the harness must read the
+//     first result and thread the URL into the second call — the trajectory
+//     cannot be faked and the snippet cannot be grepped (it carries the scored
+//     decoy).
+//   - job_chain_recovery_result_usage: the composed hard case — the dependent
+//     job-id chain AND transient-error recovery at once. The first
+//     get_agent_job_status call returns a transient error; the retry must carry
+//     the job id execute_agent_job served. Both gates already exist in toolexec
+//     and are selected by the category-name markers ("job_chain", "recovery").
+//
+// Gated on v7 via categoriesForVersion so v2..v6 tool bytes stay frozen.
+var difficultyCategoriesV7 = []category{
+	{
+		name: "negation_no_tool", tool: "",
+		grammar: persona.Grammar{
+			"root": {
+				"Don't search the web for this — just from general knowledge, #gk#?",
+				"No need to run a web search; off the top of your head, #gk#?",
+				"Skip the image tools — just describe #img# in words for me.",
+				"Don't generate a picture; paint #img# for me in words instead.",
+				"No background jobs please — just talk me through how you'd #plan#.",
+				"Don't kick off an agent for this; simply outline how you'd #plan#, step by step.",
+				"Leave my settings alone — I'm just curious what theme options exist besides dark and light.",
+				"Don't touch my calendar; just tell me whether a Tuesday or a Thursday works better for a weekly review, generally.",
+			},
+			"gk": {
+				"is espresso stronger than drip coffee per ounce",
+				"do marathon runners train every single day",
+				"is fresh pasta cooked faster than dried",
+				"are more people left-handed or right-handed",
+			},
+			"img": {
+				"a foggy harbor at dawn", "a maple leaf in late October",
+				"a night market in the rain", "a lighthouse against a storm",
+			},
+			"plan": {
+				"organize a garage sale", "plan a three-course dinner for six",
+				"structure a two-week language-learning sprint", "lay out a small vegetable garden",
+			},
+		},
+	},
+	{
+		// The mirror trap of route_web_not_memory, made more tempting: the prompt
+		// explicitly ANCHORS on stored memory before asking for live information.
+		name: "stale_context_web", tool: "search_web",
+		templates: []string{
+			"I know I told you my take on %s a while back, but what's the latest on it right now?",
+			"Forget what I said about %s before — pull up what's current today.",
+			"You have my old notes on %s; check what's actually changed since then.",
+		},
+	},
+	{
+		name: "link_chain_result_usage", tools: []string{"search_web", "read_links"},
+		templates: []string{
+			"Find the page about %s, open the link the search points to, and tell me the exact figure that page reports.",
+			"Search for %s, follow the result link, and give me the precise number from the page itself.",
+			"Look up %s, read the linked page (not just the snippet), and report the exact figure it cites.",
+		},
+	},
+	{
+		name: "job_chain_recovery_result_usage", tools: []string{"execute_agent_job", "get_agent_job_status"}, allowExtra: true,
+		templates: []string{
+			"Kick off a job to compute %s, then fetch that job's result — the status check can be flaky, so retry it if it errors — and tell me the exact figure.",
+			"Dispatch a background job for %s, then read the job's status for the precise number; if the status call hiccups, try it again.",
+			"Start a job to work out %s, then pull its result and report the exact figure — retry the status lookup past any transient error.",
+		},
+	},
+}
+
 // categoriesForVersion returns the tool category set for a bench version. v5 adds
-// the Code Mode categories; earlier versions get exactly the historical set, so
-// their dataset bytes (and the known-vector hashes) are unchanged.
+// the Code Mode categories and v7 the difficulty categories; earlier versions get
+// exactly the historical set, so their dataset bytes (and the known-vector
+// hashes) are unchanged.
 func categoriesForVersion(benchVersion int) []category {
-	if benchVersion >= protocol.BenchVersionV5 {
-		out := make([]category, 0, len(categories)+len(codeModeCategories))
-		out = append(out, categories...)
-		out = append(out, codeModeCategories...)
-		return out
+	if benchVersion < protocol.BenchVersionV5 {
+		return categories
 	}
-	return categories
+	out := make([]category, 0, len(categories)+len(codeModeCategories)+len(difficultyCategoriesV7))
+	out = append(out, categories...)
+	out = append(out, codeModeCategories...)
+	if benchVersion >= protocol.BenchVersionV7 {
+		out = append(out, difficultyCategoriesV7...)
+	}
+	return out
 }
 
 // GenerateCases emits n raw tool cases from an existing RNG. Exported so the gen
@@ -920,7 +1081,16 @@ func GenerateCasesWithFillersForVersion(r *rand.Rand, seed int64, n, benchVersio
 		n = 1
 	}
 	cats := categoriesForVersion(benchVersion)
-	order := stratifiedCategoryOrder(r, n, len(cats))
+	var order []int
+	if benchVersion >= protocol.BenchVersionV7 {
+		weights := make([]int, len(cats))
+		for i, c := range cats {
+			weights[i] = toolCategoryWeightV7(c.name)
+		}
+		order = stratifiedCategoryOrderWeighted(r, n, weights)
+	} else {
+		order = stratifiedCategoryOrder(r, n, len(cats))
+	}
 	cases := make([]protocol.ToolCase, 0, n)
 	fillers := make([]string, 0, n)
 	for i := 0; i < n; i++ {

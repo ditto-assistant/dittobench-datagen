@@ -105,6 +105,8 @@ type Fixture struct {
 	jobID     string // the stable job id execute_agent_job serves for this case
 	dependent bool   // a dependent-arg chain: get_agent_job_status gates the needle on jobID
 	recovery  bool   // an error-recovery case: the first content-tool call returns a transient error
+	linkDep   bool   // a dependent link chain: read_links gates the needle on pageURL
+	pageURL   string // the stable URL search_web serves for a link chain
 }
 
 // jobChainMarker tags a dependent-arg result-usage category: execute_agent_job
@@ -125,12 +127,27 @@ const recoveryMarker = "recovery"
 // IsErrorRecovery reports whether a category is an error-recovery case.
 func IsErrorRecovery(category string) bool { return strings.Contains(category, recoveryMarker) }
 
+// linkChainMarker tags a dependent-arg LINK chain (bench_version 7):
+// search_web serves a STABLE page URL for the case, and read_links returns the
+// answer needle ONLY when called with that URL. Like the job chain, the
+// trajectory cannot be faked: the harness must read the search result and
+// thread the served URL into the read call. Markers compose — a category name
+// may select several gates at once (e.g. "job_chain_recovery_result_usage").
+const linkChainMarker = "link_chain"
+
+// IsLinkChain reports whether a category is a dependent-arg link chain.
+func IsLinkChain(category string) bool { return strings.Contains(category, linkChainMarker) }
+
 // BuildFixture derives the deterministic mock environment for one tool case.
 func BuildFixture(masterSeed int64, c protocol.ToolCase) Fixture {
 	f := Fixture{seed: caseSeed(masterSeed, c.ID)}
 	f.jobID = jobIDForSeed(f.seed)
 	f.dependent = IsJobChain(c.Category)
 	f.recovery = IsErrorRecovery(c.Category)
+	if IsLinkChain(c.Category) {
+		f.linkDep = true
+		f.pageURL = pageURLForSeed(f.seed)
+	}
 	if caseCarriesNeedle(c) {
 		f.needle = NeedleFor(masterSeed, c.ID)
 		f.has = true
@@ -260,8 +277,22 @@ func (f Fixture) Result(name string, args json.RawMessage) (string, bool) {
 		if serveNeedle {
 			body = f.needleSentence()
 		}
-		return fmt.Sprintf("Top result from %s: %s More at %s.", src, body, coinedURL(r)), true
+		url := coinedURL(r)
+		if f.linkDep {
+			// Dependent link chain: the served URL is the case's STABLE pageURL
+			// (args-independent), so the harness has a fixed value to thread into
+			// read_links. The rng draw above still happens, keeping every other
+			// case's served bytes identical.
+			url = f.pageURL
+		}
+		return fmt.Sprintf("Top result from %s: %s More at %s.", src, body, url), true
 	case "read_links":
+		if f.linkDep && !calledWithURL(args, f.pageURL) {
+			// Dependent link chain: the needle exists only behind the URL that
+			// search_web served. A harness that did not read+forward it gets a
+			// not-found and cannot produce the answer value.
+			return "Could not open that link: page not found. Follow the URL given in the search result.", true
+		}
 		body := f.decoySentence(r)
 		if serveNeedle {
 			body = f.needleSentence()
@@ -504,6 +535,26 @@ func jobID(r *rand.Rand) string { return fmt.Sprintf("job-%05d", r.Intn(100000))
 // served result and a dependent get_agent_job_status gate agree.
 func jobIDForSeed(caseSeed int64) string {
 	return fmt.Sprintf("job-%05d", uint64(caseSeed)%100000)
+}
+
+// pageURLForSeed derives the stable page URL a link-chain case's search_web
+// serves, from the case seed alone, so the served result and the read_links
+// gate agree.
+func pageURLForSeed(caseSeed int64) string {
+	r := rand.New(rand.NewSource(caseSeed ^ int64(fnv1a("link-chain-url"))))
+	return coinedURL(r)
+}
+
+// calledWithURL reports whether a tool call's args reference the given URL.
+// The check is a raw containment over the args JSON (tolerating either a
+// string or an array "urls" value, and JSON \/-escaped slashes), so any honest
+// arg shape that carries the served URL passes the gate.
+func calledWithURL(raw json.RawMessage, url string) bool {
+	if len(raw) == 0 || url == "" {
+		return false
+	}
+	s := strings.ReplaceAll(string(raw), `\/`, "/")
+	return strings.Contains(s, url)
 }
 
 // calledJobID extracts the job_id argument from a get_agent_job_status call
