@@ -50,33 +50,90 @@ document leads with; v7 raises their share rather than inventing new gimmicks.
   product actually tracks (rent, PTO, savings, budgets, miles, pages, steps,
   course modules) — not arbitrary math word problems.
 
-## Difficulty calibration (measured, not asserted)
+## Difficulty calibration — round-2 REFIT to measured data
 
-The champion-equivalent tier is modeled with fixed per-class expected pass rates
-calibrated to the operator's rebench (top-5 harnesses scored 0.607–0.845 on the
-pre-deepening v7). Two anchors bracket the fleet: a STRONG anchor
-(newDitto-like) and a WEAK anchor (whitycatboss/infinity-like). See
-`gen.TestV7ChampionTierLandsNearTarget` (reproduce with
-`go test -run V7ChampionTier -v ./gen`) and `gen.TestV7NaiveStrategiesCollapse`.
+Round-1's simulated champion tier OVERSTATED the collapse: it projected the top-5
+harnesses to 0.35–0.58, but the round-2 rebench (all five re-run on the
+round-1-deepened suite, full profile, observed execution) measured **0.590–0.795,
+median ~0.70**, and one harness (infinity) actually ROSE (0.634→0.701). The tier
+model is therefore refit directly to the round-2 per-family means, and the
+per-family evidence below drives the round-3 rebalance.
 
-| Tier | pre-deepening (v6 proxy) | deepened v7 |
-| --- | --- | --- |
-| STRONG champion (newDitto-like) | 0.833 | 0.573 |
-| WEAK champion (whitycatboss/infinity-like) | 0.678 | **0.364** |
-| Best fixed non-reasoning strategy (whole suite) | 0.342 | 0.341 |
-| Best fixed non-reasoning strategy (reasoning subset) | 0.162 | 0.088 |
-| Oracle (canonical answer, every case, 30 seeds) | 1.000 | **1.000** |
+### The refit instrument
 
-Per-harness projection of the modeled strong-anchor drop (≈0.26) applied to the
-rebench composites: newDitto 0.845→0.58, cliM@X 0.800→0.54, ditto-agent-v2
-0.799→0.54, infinity 0.634→0.37, whitycatboss 0.607→0.35.
+Two tiers, each the mean of its measured harnesses (see
+`gen.TestV7ChampionTierRefit`, `champScratchRate` / `champStarterRate`):
 
-The WEAK anchor — the bulk of "today's best harnesses" — lands at ~0.36, in the
-operator's ~0.35 ± 0.05 target band, while the oracle stays at 1.0 and the naive
-tiers stay near their floor. The single STRONGEST harness lands ~0.57: driving it
-to a flat 0.35 too would require an ~80%-hard suite that removes the grounded
-synthesis and conversational-sanity coverage above and over-concentrates a few
-families — which the "difficulty must make the product better, never difficulty
-for difficulty's sake" directive forbids — and would crater the weaker harnesses
-below 0.20, which is worse benchmark design. The calibration therefore lands the
-fleet's target while preserving full product-grounded coverage.
+- **SCRATCH** = mean(newDitto-v0, ditto-agent-v2, cliM@X-v0) — dittobench-scratch
+- **STARTER** = mean(infinity, whitycatboss v4) — starter-kit + ditto-harness
+
+The rates ARE the measured per-family means, so the instrument reproduces the
+measured per-family means and case-means by construction (Python cross-check:
+predicted scratch case-mean 0.838 vs measured 0.841; starter 0.739 vs 0.741 —
+residual < 0.003). The predicted composite is the case-count-weighted mean; the
+final validator composite additionally applies harness-behavioral
+transform-robustness / metamorphic / conversational gates (in dittobench-api,
+NOT dataset-determined) — observed composite/case-mean ratios ran 0.75–0.94,
+mean ~0.87 (newDitto's transform gate alone took 0.827→0.618).
+
+### What the measured per-family means showed (the round-3 levers)
+
+| Class | scratch | starter | round-3 action |
+| --- | --- | --- | --- |
+| multi-hop-deep (n=14) | 0.33 | 0.11 | GREW to 24 — proven honest biter, measured |
+| injection-composed (n=10) | 0.30 | 0.15 | GREW to 12 — proven honest biter |
+| computed-answer (n=3) | **0.17** | 0.83 | UP-weighted (memoryTypeWeightV7=10) — the one persona family that bites scratch hardest |
+| job_chain_result_usage (n=5) | 0.47 | 0.40 | GREW (tool weight 7) — bites both |
+| stale_context_web (n=2) | 0.17 | 0.42 | GREW (tool weight 8) — bites scratch |
+| near-miss / link_chain / job_chain_recovery / lifecycle-deep-read | 0.92 / 1.0 / 0.80 / 1.0 | 0.17 / 0.30 / 0.06 / 0.25 | KEPT as STARTER separators |
+| entity_lookup_chain, subscription-*, composed-note-benign, lifecycle-deep-write | ~1.0 | ~1.0 | SATURATED — DEEPENED (below) |
+| contradiction, point-in-time, temporal-depth, multi-hop-relational, isolation, generic abstention | 0.8–1.0 | 0.8–1.0 | scratch-saturated — DOWN-weighted / trimmed to coverage floor (gstudy) |
+
+### Deepening the saturated families (kept, made harder)
+
+The families all five harnesses solved at depth 1 are real product flows solved
+"at depth 1"; round-3 deepens their shape so they discriminate again (each keeps
+its traceability row above):
+
+- **subscription-own / subscription-attributed**: now seed the SAME attribute
+  across the user's KG and THREE subscribed friends' graphs with conflicting
+  values; "my X" must reject all three friends' values, and "what did @friend
+  say" must attribute to the exact @handle among the three. (backend fan-out over
+  own + every subscribed graph; `annotateSubscribedSlimMemory`.)
+- **lifecycle-deep-crossref** (new): a later note reuses the update chain's code
+  for another thing without restating it; the read must thread the chain's final
+  value through the reference. (backend `relatedMemories` / reused codes.)
+- **composed-note-benign**: now files TWO `[KEEP]` notes for different contexts;
+  the ask names one, so the agent must DISTINGUISH rather than rubber-stamp the
+  single hit. (backend subjects grouping many pairs under one label.)
+- **entity_lookup_chain**: NOT deepened — it is trajectory-scored (harnesses get
+  the call order right), so it cannot bite via the tool endpoint; that difficulty
+  lives in the memory `multi-hop-deep` family instead. Kept as product coverage.
+
+### Round-3 refitted-sim prediction
+
+| Tier | round-2 measured (round-1 suite) | round-3 predicted case-mean | round-3 predicted composite (×0.75–0.87 gate) |
+| --- | --- | --- | --- |
+| SCRATCH (newDitto/ditto-agent/cliM@X) | 0.841 | 0.758 | ~0.57–0.66 |
+| STARTER (infinity/whitycatboss) | 0.741 | 0.669 | ~0.60 |
+| Best fixed non-reasoning strategy (reasoning subset) | — | 0.090 | oracle/naive = 11.1× |
+| Oracle (canonical answer, every case, 30 seeds) | — | 1.000 | 1.000 |
+
+Reproduce: `go test -run 'V7ChampionTierRefit|V7Naive|V7Oracle' -v ./gen`.
+
+### Honest gap to the 0.35 target
+
+The refit confirms with real data that the scratch tier is a genuine
+near-champion: it passes most product behaviors, and only computed-answer (0.17),
+stale_context (0.17), injection-composed (0.30), and multi-hop-deep (0.33)
+defeat it outright at measured rates. Round-3 grows exactly those (measured, not
+estimated) and deepens the saturated families with grounded harder shapes, pinning
+the scratch tier to a predicted ~0.57–0.66 composite — a real drop from the
+measured 0.70 median, but above 0.35. Closing the rest honestly requires the
+deepened families to bite at their estimated ~0.38–0.50 (to be MEASURED in round
+3 — round-1 showed estimates are unreliable in both directions), because the only
+other lever — concentrating ~80% of the suite on the 3–4 proven biters — would
+gut the grounded synthesis/interlock coverage and read as monotonous
+difficulty-for-its-sake, which the product-grounding rule forbids. The deepened
+families' true rates from round 3 will either close the gap or identify the next
+honest biters to grow.

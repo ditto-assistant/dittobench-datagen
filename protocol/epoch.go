@@ -54,12 +54,14 @@ import (
 // tool chains). Every lever is gated on bench_version >= 7, so v2..v6 regenerate
 // and grade byte-identically. The judge-free deterministic grader is unchanged,
 // and the wire/artifact format stays backward-compatible (additive only). The
-// difficulty is defined and measured, not asserted: a modeled champion tier
-// calibrated to the leaderboard rebench drops to ~0.36 (weak) / ~0.57 (strong),
-// the best non-reasoning strategy scores ~0.09 on the reasoning subset, and a
-// correct oracle scores 1.0 on every case across seeds
-// (gen.TestV7ChampionTierLandsNearTarget / TestV7NaiveStrategiesCollapse /
-// TestV7OracleSolvable).
+// difficulty is defined and measured, not asserted. The champion tier is REFIT
+// to the leaderboard rebench (five harnesses measured 0.59-0.795 on the
+// round-1-deepened suite); the round-3 refitted sim predicts scratch/starter
+// case-means of 0.758/0.669 (composite ~0.57-0.66 after the observed robustness
+// gate), the best non-reasoning strategy scores ~0.09 on the reasoning subset,
+// and a correct oracle scores 1.0 on every case across seeds
+// (gen.TestV7ChampionTierRefit / TestV7NaiveStrategiesCollapse /
+// TestV7OracleSolvable). See docs/v7-product-traceability.md.
 const (
 	BenchVersionV2      = 2
 	BenchVersionV3      = 3

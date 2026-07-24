@@ -119,46 +119,46 @@ survive is cut.
     `search_subjects` → `search_memories_in_subjects` → `fetch_memories`
     sequence the backend recommends, order-scored.
 
-### The measurement
+### The measurement — refit to the round-2 rebench
 
-"Harder" is defined operationally and pinned by two tests
-(`gen.TestV7NaiveStrategiesCollapse` and `gen.TestV7ChampionTierLandsNearTarget`,
-reproducible with `go test -run 'V7Naive|V7ChampionTier' -v ./gen`), plus the
-family-by-family calibration table in
-[v7-product-traceability.md](v7-product-traceability.md).
+The champion tier is REFIT to real measured data. All five leaderboard harnesses
+were re-run on the round-1-deepened suite (full profile, observed execution) and
+measured **0.590–0.795, median ~0.70** — round-1's simulated 0.35–0.58 projection
+overstated the collapse. The tier is now modeled directly from the round-2
+per-family means (two tiers: SCRATCH = dittobench-scratch harnesses, STARTER =
+starter-kit harnesses), reproducing the measured per-family means and case-means
+by construction (residual < 0.003). The full family-by-family evidence and the
+refit residuals are in [v7-product-traceability.md](v7-product-traceability.md).
+Pinned by `gen.TestV7ChampionTierRefit` and `gen.TestV7NaiveStrategiesCollapse`
+(`go test -run 'V7ChampionTierRefit|V7Naive|V7Oracle' -v ./gen`).
 
-**Naive strategies.** Fixed non-reasoning strategies — question-echo,
-single-pair retrieval, recency, dump-everything, and a keyword tool router — are
-scored against v6 and v7:
+**Naive strategies.** On the reasoning-required subset the best fixed
+non-reasoning strategy scores **0.090** vs the oracle's **1.0** (an **~11x** gap,
+up from v6's 6.1x); that subset grows from **40% → 58%** of the memory suite, and
+the keyword tool router falls **0.525 → 0.350**.
 
-- On the **reasoning-required subset**, the best fixed non-reasoning strategy
-  scores **0.088** on v7 vs the oracle's **1.0** — an **~11x** gap — up from
-  v6's 6.2x (0.162). That subset grows from **40%** to **52%** of the memory
-  suite. The keyword tool router falls from **0.525 → 0.331**.
+**Champion tier (refitted prediction).**
 
-**Champion tier.** The top-5 leaderboard harnesses scored 0.607–0.845 on the
-pre-deepening v7. Because the real harnesses cannot be run here, the tier is
-modeled with fixed per-class expected pass rates (calibrated to reproduce that
-rebench), bracketed by a STRONG anchor (newDitto-like) and a WEAK anchor
-(whitycatboss/infinity-like):
+| Tier | round-2 measured (round-1 suite) | round-3 predicted case-mean | round-3 composite (×0.75–0.87 gate) |
+| --- | --- | --- | --- |
+| SCRATCH (newDitto/ditto-agent/cliM@X) | 0.841 | 0.758 | ~0.57–0.66 |
+| STARTER (infinity/whitycatboss) | 0.741 | 0.669 | ~0.60 |
+| Oracle (every case, 30 seeds) | — | 1.000 | **1.000** |
 
-| Tier | pre-deepening (v6 proxy) | deepened v7 |
-| --- | --- | --- |
-| STRONG champion | 0.833 | 0.573 |
-| WEAK champion | 0.678 | **0.364** |
-| Oracle (every case, 30 seeds) | 1.000 | **1.000** |
-
-The WEAK anchor — the bulk of today's best harnesses — lands at **~0.36**, in
-the ~0.35 ± 0.05 target band, while the oracle stays at 1.0 and the naive tiers
-stay near their floor. The single STRONGEST harness lands ~0.57; driving it to a
-flat 0.35 too would require an ~80%-hard suite that strips the grounded
-synthesis and conversational-sanity coverage and over-concentrates a few
-families — which the "difficulty must make the product better, never difficulty
-for difficulty's sake" rule forbids — and would crater the weaker harnesses
-below 0.20. The calibration therefore lands the fleet's target while preserving
-full product-grounded coverage. As with every version, the public versioned seed
-rotation produces a fresh, deterministic dataset surface, so v7 scores are never
-compared with v6 scores.
+Round-3 grows the measured-honest biters (multi-hop-deep, injection-composed,
+computed-answer, job-chain/stale-context tools), deepens the four saturated
+families with grounded harder shapes (multi-friend subscription conflicts, a
+lifecycle cross-referencing read, distinguishing benign twins), and trims the
+scratch-saturated coverage to a floor — pinning both tiers below their round-2
+measured level while the oracle stays 1.0. It does **not** reach a flat 0.35 for
+the strong tier: the refit proves that tier is a genuine near-champion (only
+computed-answer, stale-context, injection-composed, and multi-hop-deep defeat it
+at measured rates), so closing the rest requires either the deepened families
+biting at their estimated ~0.4–0.5 (to be MEASURED in round 3) or concentrating
+~80% of the suite on 3–4 families, which would gut grounded coverage and read as
+difficulty-for-its-sake — forbidden by the product-grounding rule. As with every
+version, the public versioned seed rotation produces a fresh, deterministic
+dataset surface, so v7 scores are never compared with v6 scores.
 
 ## What v4 is
 
