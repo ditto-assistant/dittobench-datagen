@@ -62,6 +62,94 @@ type argIntent struct {
 	value  string
 }
 
+// v8ArgIntents makes scored arguments derivations rather than copied spans.
+// Closed-enum values are described by intent; open strings are assembled from
+// explicitly ordered components. The expected value never appears as one
+// contiguous prompt span, while the derivation remains deterministic and
+// judge-free.
+var v8ArgIntents = map[string][]argIntent{
+	"link_read": {
+		{"Open the secure address formed from `https`, `docs.example.io`, and `/api/v3`, then summarize it.", "https://docs.example.io/api/v3"},
+		{"Read the page formed by the HTTPS scheme, host `research.example.edu`, and path `/paper-42`.", "https://research.example.edu/paper-42"},
+	},
+	"agent_job": {
+		{"Run a background task whose exact words, in order, are `refactor` / `the` / `auth` / `module`.", "refactor the auth module"},
+		{"Dispatch a job whose exact words are `generate` / `unit` / `tests`.", "generate unit tests"},
+	},
+	"settings": {
+		{"Use the theme that follows daylight automatically instead of forcing dark or light.", "system"},
+		{"Use the theme named for the middle of the night.", "midnight"},
+	},
+	"workflow_not_job": {
+		{"Run parallel workers for the exact goal assembled as `a comparison` / `of our top five competitors`.", "a comparison of our top five competitors"},
+		{"Split the exact goal `an audit` / `of our three services` / `for risks` across workers.", "an audit of our three services for risks"},
+	},
+	"memory_fetch": {
+		{"Fetch the memory whose identifier is the prefix `mem`, a hyphen, and the digits 1042.", "mem-1042"},
+		{"Fetch the memory whose identifier joins `mem`, `-`, and `7761`.", "mem-7761"},
+	},
+	"agent_workflow": {
+		{"Use parallel agents for the exact goal assembled as `a market scan` / `across several regions` / `with a combined summary`.", "a market scan across several regions with a combined summary"},
+		{"Use a workflow for the exact goal `a review of the codebase` / `for security, performance, and correctness`.", "a review of the codebase for security, performance, and correctness"},
+	},
+	"feedback": {
+		{"File feedback using these words in reverse order: `mobile / on / broken / is / button / export / the`.", "the export button is broken on mobile"},
+		{"File feedback using these words in reverse order: `artifacts / to / mode / dark / add / please`.", "please add dark mode to artifacts"},
+	},
+	"set_model": {
+		{"Use the OpenAI model whose name is the letters GPT followed by a hyphen and the number five.", "gpt-5"},
+		{"Use the Google model whose canonical name joins `gemini`, `3`, and `pro` with hyphens.", "gemini-3-pro"},
+	},
+	"set_effort": {
+		{"Reason as deeply and carefully as possible from now on.", "high"},
+		{"Keep reasoning balanced rather than minimal or exhaustive.", "medium"},
+	},
+	"set_tool_prefs": {
+		{"Set the exact preference formed from `disable` / `web` / `search`.", "disable web search"},
+		{"Set the exact preference formed from `enable` / `image` / `tools`.", "enable image tools"},
+	},
+	"automation_not_job": {
+		{"Schedule it at the exact cadence assembled from `every` / `Friday` / `at noon`.", "every Friday at noon"},
+		{"Schedule it at the exact cadence assembled from `each` / `weekday` / `evening`.", "each weekday evening"},
+	},
+	"recipe_create": {
+		{"Create the reusable recipe whose name joins `weekly` and `review` with a hyphen.", "weekly-review"},
+		{"Create the recipe whose name joins `invoice` and `run` with a hyphen.", "invoice-run"},
+	},
+	"recipe_apply": {
+		{"Run the recipe whose name joins `trip` and `planner` with a hyphen.", "trip-planner"},
+		{"Apply the recipe whose name joins `content` and `pipeline` with a hyphen.", "content-pipeline"},
+	},
+	"memory_update": {
+		{"Update the memory whose identifier joins `mem`, a hyphen, and `2087`.", "mem-2087"},
+		{"Correct the memory whose identifier joins `mem`, `-`, and `9024`.", "mem-9024"},
+	},
+	"memory_delete": {
+		{"Delete the memory whose identifier joins `mem`, a hyphen, and `3310`.", "mem-3310"},
+		{"Forget the memory whose identifier joins `mem`, `-`, and `7761`.", "mem-7761"},
+	},
+	"calendar_create": {
+		{"Add the event whose exact title is built from `team` followed by `offsite`.", "team offsite"},
+		{"Create the event whose exact title is built from `birthday` followed by `dinner`.", "birthday dinner"},
+	},
+	"calendar_search": {
+		{"Search the calendar with the exact query built from `quantum` followed by `computing`.", "quantum computing"},
+		{"Search with the exact query built from `electric` followed by `vehicles`.", "electric vehicles"},
+	},
+	"email_send": {
+		{"Email the address formed from `sam`, an at-sign, `example`, a dot, and `com`.", "sam@example.com"},
+		{"Email the address formed from `jordan`, `@`, `example`, `.`, and `com`.", "jordan@example.com"},
+	},
+	"set_accent": {
+		{"Use the blue-green accent whose name starts with t and ends with l.", "teal"},
+		{"Use the deep blue-purple accent commonly named after a dye.", "indigo"},
+	},
+	"set_font": {
+		{"Use the monospace typeface named for JetBrains.", "JetBrains Mono"},
+		{"Use the serif typeface named for a U.S. state.", "Georgia"},
+	},
+}
+
 // word pools used to vary entities/phrasings across seeds.
 var (
 	subjects = []string{
@@ -914,6 +1002,56 @@ func stratifiedCategoryOrderWeighted(r *rand.Rand, n int, weights []int) []int {
 	return order
 }
 
+// sampledCategoryOrderV8 varies the category histogram by seed while retaining
+// the v7 expected weights. When the run can hold the catalog, every family gets
+// one slot; smaller profiles sample without replacement first. Remaining slots
+// are weighted draws. This keeps generation reproducible and prevents any
+// family from being permanently dead across seeds.
+func sampledCategoryOrderV8(r *rand.Rand, n int, weights []int) []int {
+	if n <= 0 || len(weights) == 0 {
+		return nil
+	}
+	counts := make([]int, len(weights))
+	remaining := n
+	perm := r.Perm(len(weights))
+	floor := len(weights)
+	if floor > n {
+		floor = n
+	}
+	for _, ci := range perm[:floor] {
+		counts[ci]++
+		remaining--
+	}
+	totalWeight := 0
+	for _, weight := range weights {
+		if weight < 1 {
+			weight = 1
+		}
+		totalWeight += weight
+	}
+	for ; remaining > 0; remaining-- {
+		draw := r.Intn(totalWeight)
+		for ci, weight := range weights {
+			if weight < 1 {
+				weight = 1
+			}
+			if draw < weight {
+				counts[ci]++
+				break
+			}
+			draw -= weight
+		}
+	}
+	order := make([]int, 0, n)
+	for ci, count := range counts {
+		for range count {
+			order = append(order, ci)
+		}
+	}
+	r.Shuffle(len(order), func(i, j int) { order[i], order[j] = order[j], order[i] })
+	return order
+}
+
 // codeModeCategories are the bench_version 5 Code Mode categories: they exercise
 // run_code (the in-process JavaScript compute/orchestration sandbox) and the
 // discrimination between run_code (a pure in-context calculation, no side effects)
@@ -1067,6 +1205,77 @@ var difficultyCategoriesV7 = []category{
 	},
 }
 
+const v8StateRoutedCategory = "state_routed_action"
+
+// v8StateRoutedTools deliberately mixes unrelated production capabilities.
+// The visible request never identifies which entry is correct: that mapping is
+// a fresh fact in the case's prerequisite memory pair. A model-free prompt
+// table therefore cannot recover the route across held-out seeds.
+var v8StateRoutedTools = []string{
+	"search_web",
+	"read_links",
+	"create_image",
+	"edit_image",
+	"artifacts",
+	"execute_agent_job",
+	"execute_agent_workflow",
+	"list_agent_jobs",
+	"list_automations",
+	"discover_capabilities",
+	"run_code",
+	"search_tools",
+}
+
+var v8RouteCodeWords = []string{
+	"amber-kite", "cobalt-fern", "delta-orchid", "ember-lantern",
+	"frost-canvas", "granite-wren", "harbor-iris", "indigo-cedar",
+	"juniper-comet", "lilac-anchor", "marble-finch", "opal-river",
+	"quartz-pine", "saffron-brook", "topaz-meadow", "violet-sparrow",
+}
+
+func applyV8StateRouting(r *rand.Rand, seed int64, cases []protocol.ToolCase) {
+	// Keep a representative quarter of the historical catalog in every full
+	// run. The other cases exercise seed-bound routing; small profiles retain at
+	// least one ordinary catalog case. This changes the mix, not the envelope.
+	nState := len(cases) * 3 / 4
+	if nState >= len(cases) {
+		nState = len(cases) - 1
+	}
+	converted := 0
+	for i := 0; i < len(cases) && converted < nState; i++ {
+		// set_effort is a per-run contract probe, not merely catalog coverage.
+		// Keep it visible even when its shuffled position falls in the routed
+		// share.
+		if cases[i].Category == "set_effort" {
+			continue
+		}
+		code := v8RouteCodeWords[r.Intn(len(v8RouteCodeWords))] + fmt.Sprintf("-%04x", r.Intn(1<<16))
+		tool := v8StateRoutedTools[r.Intn(len(v8StateRoutedTools))]
+		caseID := cases[i].ID
+		pairID := protocol.OpaqueCaseID(seed, "route-policy", i)
+		cases[i] = protocol.ToolCase{
+			ID:       caseID,
+			Category: v8StateRoutedCategory,
+			Prompt: fmt.Sprintf(
+				"Carry out operation %s now. Use the private routing policy I gave you earlier; do not guess the capability from this request.",
+				code,
+			),
+			ExpectedTools:    []protocol.ToolSpec{{Name: tool}},
+			MaxToolCalls:     1,
+			AllowExtraTools:  false,
+			ExpectedBehavior: "retrieve the seed-bound routing policy and call its capability exactly once",
+			PrerequisitePairs: []protocol.MemoryPair{{
+				PairID:    pairID,
+				SessionID: "routing-" + code,
+				Timestamp: "2026-01-01T00:00:00Z",
+				Prompt:    "Remember the private capability routing policy for operation " + code + ".",
+				Response:  "The only authorized capability for operation " + code + " is " + tool + ".",
+			}},
+		}
+		converted++
+	}
+}
+
 // categoriesForVersion returns the tool category set for a bench version. v5 adds
 // the Code Mode categories and v7 the difficulty categories; earlier versions get
 // exactly the historical set, so their dataset bytes (and the known-vector
@@ -1112,7 +1321,27 @@ func GenerateCasesWithFillersForVersion(r *rand.Rand, seed int64, n, benchVersio
 	}
 	cats := categoriesForVersion(benchVersion)
 	var order []int
-	if benchVersion >= protocol.BenchVersionV7 {
+	if benchVersion >= protocol.BenchVersionV8 {
+		weights := make([]int, len(cats))
+		setEffortIndex := -1
+		for i, c := range cats {
+			weights[i] = toolCategoryWeightV7(c.name)
+			if c.name == "set_effort" {
+				setEffortIndex = i
+			}
+		}
+		order = sampledCategoryOrderV8(r, n, weights)
+		// set_effort is a per-run contract probe, including small and medium
+		// practice profiles. If sampling omitted it, replace one sampled family;
+		// cross-seed catalog coverage is still measured over the full profile.
+		found := false
+		for _, ci := range order {
+			found = found || ci == setEffortIndex
+		}
+		if !found && setEffortIndex >= 0 {
+			order[len(order)-1] = setEffortIndex
+		}
+	} else if benchVersion >= protocol.BenchVersionV7 {
 		weights := make([]int, len(cats))
 		for i, c := range cats {
 			weights[i] = toolCategoryWeightV7(c.name)
@@ -1155,10 +1384,15 @@ func GenerateCasesWithFillersForVersion(r *rand.Rand, seed int64, n, benchVersio
 		// prompt is about ("" = the prompt has no such entity).
 		argValue := filler
 		usedFiller := ""
-		useIntent := len(cat.intents) > 0 && r.Intn(2) == 0
+		intents := cat.intents
+		useIntent := len(intents) > 0 && r.Intn(2) == 0
+		if benchVersion >= protocol.BenchVersionV8 && cat.argKey != "" {
+			intents = v8ArgIntents[cat.name]
+			useIntent = len(intents) > 0
+		}
 		switch {
 		case useIntent:
-			it := cat.intents[r.Intn(len(cat.intents))]
+			it := intents[r.Intn(len(intents))]
 			prompt = it.prompt
 			argValue = it.value
 			// Only a near-miss intent (value appears literally) records the token; a
@@ -1227,6 +1461,9 @@ func GenerateCasesWithFillersForVersion(r *rand.Rand, seed int64, n, benchVersio
 
 		cases = append(cases, tc)
 		fillers = append(fillers, usedFiller)
+	}
+	if benchVersion >= protocol.BenchVersionV8 {
+		applyV8StateRouting(r, seed, cases)
 	}
 	return cases, fillers
 }

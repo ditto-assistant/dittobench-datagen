@@ -19,6 +19,29 @@ applied to an existing version. It ships as a new one.
 | 5 | `2026-09-01` | Conversational grounding, broader capability coverage, and token-efficiency scoring. |
 | 6 | `2026-10-01` | Memory-as-data and the complexity suite; retains the v5 scoring contract. |
 | 7 | `2026-11-01` | Platform-owned OpenRouter inference with locked `openai/gpt-oss-20b`, and the difficulty release: a version-gated hard-case suite roughly an order of magnitude harder for a non-reasoning harness while a correct trajectory still scores full marks. |
+| 8 | `2026-12-01` | The answering-machine-proof release: seed-bound tool routing, non-verbatim required arguments, a larger computed-memory share, and stricter deterministic answer grading. |
+
+## What v8 is
+
+V8 keeps v7's model, run sizes, case counts, timeouts, and deterministic scoring
+envelope. It changes derivability. Three quarters of tool cases receive a fresh
+private routing policy through the ordinary memory seed contract; the visible
+request identifies only an opaque operation, so the correct capability cannot
+be recovered from prompt surface across held-out seeds. Required arguments are
+derived rather than copied, computed/non-verbatim memory families receive a
+fixed floor, and permissive prose fallbacks are narrowed without adding an LLM
+judge. Every change is gated on `bench_version >= 8`; the v7 known vector stays
+frozen.
+
+The release gate includes a public model-free 1-nearest-neighbor prompt prober:
+
+```sh
+go run ./cmd/toolprobe -bench-version 8 -run-size full -train-seeds 30 -held-out-seeds 10
+```
+
+The candidate must remain below 50% expected-tool-sequence accuracy on the ten
+held-out seeds. The pinned candidate measures 28.57%; its deterministic oracle
+remains 100% scoreable.
 
 ## What v7 is
 

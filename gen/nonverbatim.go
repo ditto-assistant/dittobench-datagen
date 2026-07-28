@@ -46,6 +46,22 @@ func nonVerbatimCasesFor(n, nWaves int) int {
 	}
 }
 
+func nonVerbatimCasesForVersion(n, nWaves, benchVersion int) int {
+	if benchVersion >= protocol.BenchVersionV8 {
+		switch {
+		case nWaves < 2:
+			return 0
+		case n >= 100:
+			return 30
+		case n >= 40:
+			return 8
+		default:
+			return 0
+		}
+	}
+	return nonVerbatimCasesFor(n, nWaves)
+}
+
 // convSpec is a stated fact whose answer requires a unit conversion. stored is how
 // the user states it (the un-asked unit); ask asks for the converted unit; accept is
 // the set of correct converted surface forms; the stored form is deliberately absent
@@ -172,7 +188,7 @@ func convSpecsForVersion(benchVersion int) []convSpec {
 // buildNonVerbatim generates the v6 non-verbatim / computed-answer suite.
 func buildNonVerbatim(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves, benchVersion int) nonVerbatimSuite {
 	var out nonVerbatimSuite
-	nCases := nonVerbatimCasesFor(n, nWaves)
+	nCases := nonVerbatimCasesForVersion(n, nWaves, benchVersion)
 	if nCases == 0 {
 		return out
 	}

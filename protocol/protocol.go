@@ -31,6 +31,11 @@ type ToolCase struct {
 	AllowExtraTools  bool       `json:"allow_extra_tools"`
 	Unordered        bool       `json:"unordered,omitempty"`
 	ExpectedBehavior string     `json:"expected_behavior,omitempty"`
+	// PrerequisitePairs are validator-internal, seed-bound routing facts that
+	// must be loaded before this tool case runs. They are emitted only by v8+;
+	// v7 and earlier artifacts therefore retain their exact bytes. The harness
+	// sees the pairs through the ordinary /seed contract, never in /run.
+	PrerequisitePairs []MemoryPair `json:"prerequisite_pairs,omitempty"`
 }
 
 // AnswerKind values: how a memory case is graded deterministically. Grading is
@@ -90,6 +95,10 @@ const (
 // answer from its seeded memory. ExpectedAnswer is the oracle answer, graded
 // deterministically per AnswerKind.
 type MemoryCase struct {
+	// BenchVersion selects version-gated deterministic grading behavior. It is
+	// validator-internal and is set only for v8+ so frozen v7 artifacts retain
+	// their exact JSON bytes.
+	BenchVersion   int    `json:"bench_version,omitempty"`
 	ID             string `json:"id"`
 	QuestionID     string `json:"question_id"`
 	QuestionType   string `json:"question_type"`

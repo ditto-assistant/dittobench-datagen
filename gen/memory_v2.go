@@ -273,15 +273,22 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	// recall case is already in mainPool). Selected before mainQuota so its slots
 	// are reserved exactly.
 	recallFloor := stratifyByType(r, recallFloorPool, v7RecallFloorFor(benchVersion), benchVersion)
+	// v8 reserves the reasoning families before fixed product suites consume the
+	// residual main quota. These are the existing non-extractable families: they
+	// require counting, temporal reasoning, aggregation, or a filtered join. The
+	// floor is capped by availability and changes no case count or runtime budget.
+	reasoningFloor, remainingMainPool := reserveV8ReasoningFloor(r, mainPool, n, benchVersion)
+	mainPool = remainingMainPool
 	// Reserve room for the always-included canary, twin, lifecycle, and
 	// conversational cases so the total case count stays at n.
-	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(recallFloor) - len(lc.Cases) - len(conv.Cases) - len(mh.Cases) - len(td.Cases) - len(si.Cases) - len(mq.Cases) - len(nv.Cases) - len(cons.Cases) -
+	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(recallFloor) - len(reasoningFloor) - len(lc.Cases) - len(conv.Cases) - len(mh.Cases) - len(td.Cases) - len(si.Cases) - len(mq.Cases) - len(nv.Cases) - len(cons.Cases) -
 		len(dc.Cases) - len(dj.Cases) - len(nm.Cases) - len(tcalc.Cases) - len(ci.Cases) - len(sub.Cases)
 	if mainQuota < 0 {
 		mainQuota = 0
 	}
 	mainSel := stratifyByType(r, mainPool, mainQuota, benchVersion)
 	selected := append([]persona.Question(nil), mainSel...)
+	selected = append(selected, reasoningFloor...)
 	selected = append(selected, recallFloor...)
 	selected = append(selected, canaryPool...)
 	selected = append(selected, twinPool...)
@@ -320,6 +327,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 			kept[l], kept[rr] = kept[rr], kept[l] // restore original order
 		}
 		selected = append([]persona.Question(nil), kept...)
+		selected = append(selected, reasoningFloor...)
 		selected = append(selected, recallFloor...)
 		selected = append(selected, canaryPool...)
 		selected = append(selected, twinPool...)
@@ -430,6 +438,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		}
 		staged = append(staged, StagedCase{
 			Case: protocol.MemoryCase{
+				BenchVersion:      memoryCaseVersion(benchVersion),
 				ID:                protocol.OpaqueCaseID(seed, "mem", i),
 				QuestionID:        q.ID,
 				QuestionType:      q.Type,
@@ -464,6 +473,11 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	staged = append(staged, tcalc.Cases...)
 	staged = append(staged, ci.Cases...)
 	staged = append(staged, sub.Cases...)
+	if benchVersion >= protocol.BenchVersionV8 {
+		for i := range staged {
+			staged[i].Case.BenchVersion = benchVersion
+		}
+	}
 	r.Shuffle(len(staged), func(i, j int) { staged[i], staged[j] = staged[j], staged[i] })
 	suite.Cases = staged
 
@@ -522,6 +536,47 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, dc.Pairs...)
 	}
 	return suite, nil
+}
+
+func reserveV8ReasoningFloor(r *rand.Rand, pool []persona.Question, n, benchVersion int) ([]persona.Question, []persona.Question) {
+	if benchVersion < protocol.BenchVersionV8 || n <= 0 {
+		return nil, pool
+	}
+	isReasoning := func(q persona.Question) bool {
+		switch q.Type {
+		case persona.QTComputed, persona.QTMultiSession, persona.QTAggregation, persona.QTTemporal:
+			return true
+		default:
+			return false
+		}
+	}
+	var candidates, other []persona.Question
+	for _, q := range pool {
+		if isReasoning(q) {
+			candidates = append(candidates, q)
+		} else {
+			other = append(other, q)
+		}
+	}
+	target := (3*n + 9) / 10
+	selected := stratifyByType(r, candidates, target, benchVersion)
+	chosen := make(map[string]bool, len(selected))
+	for _, q := range selected {
+		chosen[q.ID] = true
+	}
+	for _, q := range candidates {
+		if !chosen[q.ID] {
+			other = append(other, q)
+		}
+	}
+	return selected, other
+}
+
+func memoryCaseVersion(benchVersion int) int {
+	if benchVersion >= protocol.BenchVersionV8 {
+		return benchVersion
+	}
+	return 0
 }
 
 // GenerateMemoryV2 is the single-wave, all-Tier-A view of the suite, retained

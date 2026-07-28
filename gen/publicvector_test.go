@@ -323,9 +323,31 @@ func TestV7KnownVector(t *testing.T) {
 	}
 }
 
+// TestV8KnownVector pins the answering-machine-proof release. V8 retains the
+// v7 execution envelope while making the tool route depend on fresh seeded
+// state and increasing the share of computed/non-verbatim memory cases.
+func TestV8KnownVector(t *testing.T) {
+	const (
+		seed = int64(123456789)
+		want = "7c2945b233fb0dd104559a4a42b8375ecf19d921075d71d149b58f78e2c355b7"
+	)
+	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
+	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV8)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	got, _, err := artifact.SHA256Hex()
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	if got != want {
+		t.Fatalf("v8 known-vector hash drift for seed %d full:\n got %s\nwant %s", seed, got, want)
+	}
+}
+
 func TestUnsupportedVersionRejected(t *testing.T) {
 	prof, _ := ProfileFor("small")
-	if _, err := GenerateDataset(42, prof, 8); err == nil {
+	if _, err := GenerateDataset(42, prof, 9); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -333,7 +355,7 @@ func TestUnsupportedVersionRejected(t *testing.T) {
 // TestSameSeedSameBytes is the core determinism guarantee: one seed, one artifact.
 func TestSameSeedSameBytes(t *testing.T) {
 	prof, _ := ProfileFor("full")
-	for _, version := range []int{protocol.BenchVersionV2, protocol.BenchVersionV3, protocol.BenchVersionV4, protocol.BenchVersionV5, protocol.BenchVersionV6, protocol.BenchVersionV7} {
+	for _, version := range []int{protocol.BenchVersionV2, protocol.BenchVersionV3, protocol.BenchVersionV4, protocol.BenchVersionV5, protocol.BenchVersionV6, protocol.BenchVersionV7, protocol.BenchVersionV8} {
 		artifactA, err := GenerateDataset(42, prof, version)
 		if err != nil {
 			t.Fatalf("v%d generate a: %v", version, err)

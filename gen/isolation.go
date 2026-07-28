@@ -157,6 +157,11 @@ func GenerateIsolationForVersion(seed int64, primaryN, nWaves, isoCases, benchVe
 		secondary.Pairs = append(secondary.Pairs, xPairs...)
 		cases = append(cases, xCases...)
 	}
+	if benchVersion >= protocol.BenchVersionV8 {
+		for i := range cases {
+			cases[i].Case.BenchVersion = benchVersion
+		}
+	}
 
 	return IsolationSuite{SecondaryWave: secondary, Cases: cases}, nil
 }
