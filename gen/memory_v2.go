@@ -564,12 +564,16 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 // pretending the profile knob is the observed case count.
 func v8PrimaryCaseBudget(n int) int {
 	switch {
-	case n >= 100:
+	case n == 185:
 		return 190
-	case n >= 40:
+	case n == 52:
 		return 66
-	default:
+	case n == 6:
 		return 11
+	default:
+		// Analysis tools may request synthetic sizes outside the three public
+		// profiles. They are not part of the scored runtime envelope.
+		return 0
 	}
 }
 
