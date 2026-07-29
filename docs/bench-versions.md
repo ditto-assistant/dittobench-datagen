@@ -62,7 +62,7 @@ seed-bound required arguments, and the served result where applicable. This is
 deliberately not merely a tool-name classifier—guessing `gmail_send` from the
 word “email” does not solve a case. The candidate must remain below 50% complete
 tool-outcome accuracy on ten held-out seeds. The pinned candidate measures
-28.45%; its deterministic oracle remains 100% scoreable.
+26.55%; its deterministic oracle remains 100% scoreable.
 
 ## What v7 is
 

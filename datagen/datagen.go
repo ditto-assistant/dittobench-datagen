@@ -69,41 +69,25 @@ type argIntent struct {
 // puzzles. Free-form fields are intentionally absent and are tool-scored only,
 // because many paraphrases are equally valid.
 var v8ArgIntents = map[string][]argIntent{
-	"link_read": {
-		{"Can you summarize https://docs.example.io/api/v3 for me?", "https://docs.example.io/api/v3"},
-		{"Read https://research.example.edu/paper-42 and tell me the main takeaway.", "https://research.example.edu/paper-42"},
-	},
 	"settings": {
 		{"Please match Ditto's light or dark mode to my device.", "system"},
 		{"Make the app dark mode.", "dark"},
 	},
 	"set_model": {
-		{"Switch my main chat model to gpt-5.", "gpt-5"},
-		{"Use gemini-3-pro for my chats from now on.", "gemini-3-pro"},
+		{"Use GPT for my main chats; pick the current standard GPT option.", "gpt-5"},
+		{"Switch my chats to Claude; use the available Sonnet option.", "claude-sonnet-5"},
 	},
 	"set_effort": {
 		{"Reason as deeply and carefully as possible from now on.", "high"},
 		{"Keep the reasoning balanced for everyday questions.", "medium"},
 	},
-	"memory_update": {
-		{"Update memory mem-2087 with my new address.", "mem-2087"},
-		{"Correct the information in memory mem-9024.", "mem-9024"},
-	},
-	"memory_delete": {
-		{"Delete memory mem-3310.", "mem-3310"},
-		{"Forget what is stored in memory mem-7761.", "mem-7761"},
-	},
-	"email_send": {
-		{"Email sam@example.com to let them know I will be late.", "sam@example.com"},
-		{"Send jordan@example.com a quick update about the meeting.", "jordan@example.com"},
-	},
 	"set_accent": {
-		{"Make my accent color teal.", "teal"},
-		{"Switch the app accent to indigo.", "indigo"},
+		{"Make my accent color teal-ish; check the option if I misspelled it.", "teal"},
+		{"Switch the app accent to INDIGO, whatever capitalization the setting uses.", "indigo"},
 	},
 	"set_font": {
-		{"Use JetBrains Mono in chat.", "JetBrains Mono"},
-		{"Change my chat font to Georgia.", "Georgia"},
+		{"Use jetbrians mono in chat; check the available font spelling.", "JetBrains Mono"},
+		{"Change my chat font to GEORGIA, case-insensitively.", "Georgia"},
 	},
 }
 
@@ -1202,16 +1186,11 @@ func applyV8WorldActions(seed int64, cases []protocol.ToolCase) {
 		var tc protocol.ToolCase
 		switch converted % 8 {
 		case 0, 5: // resolve a vague referent, research a live fact, and email it
-			p := world.People[(converted+i)%len(world.People)]
-			needle := toolexec.NeedleFor(seed, caseID)
-			tc = fuzzyWorldTool(caseID, "world_contact_research_email_result_usage", fmt.Sprintf("Look up %s, then email the exact current figure to %s — my %s in %s who handled the %s. Mention the figure in the email and in your confirmation; use their corrected address, not the old one.", needle.Subject, misspellAlias(p.Nickname, converted), p.Relation, p.City, p.Context), []protocol.ToolSpec{{Name: "search_web"}, {Name: "gmail_send", RequiredArgs: map[string]string{"to": p.Email, "body": needle.Value}}}, "resolve the person and corrected address, research the live value, and send that value to the right person")
+			tc = v8WorldContactEmail(seed, caseID, world, converted+i)
 		case 1: // description -> target pair -> destructive action
-			p := world.People[(converted+2*i+1)%len(world.People)]
-			tc = fuzzyWorldTool(caseID, "world_memory_delete", fmt.Sprintf("Delete the memory where I corrected %s's old email after the %s — they're my %s at %s. Don't delete the original relationship note.", p.Nickname, p.Context, p.Relation, p.Employer), []protocol.ToolSpec{{Name: "delete_memory", RequiredArgs: map[string]string{"pair_id": p.CorrectionPairID}}}, "resolve the uniquely described memory and delete that pair")
+			tc = v8WorldMemoryDelete(caseID, world, converted+2*i+1)
 		case 2: // description -> target pair -> update action
-			p := world.Projects[(converted+i)%len(world.Projects)]
-			lead := world.People[p.Lead]
-			tc = fuzzyWorldTool(caseID, "world_memory_update", fmt.Sprintf("Update the memory that says who owns %q for %s — the %s project led by %s at %s. Add that the handoff is Friday; leave the invoice correction alone.", p.Alias, p.Client, p.Purpose, lead.Nickname, lead.Employer), []protocol.ToolSpec{{Name: "update_memory", RequiredArgs: map[string]string{"pair_id": p.ContextPairID, "content": "handoff is Friday"}}}, "resolve the project-context memory and update that pair with the Friday handoff")
+			tc = v8WorldMemoryUpdate(caseID, world, converted+i)
 		case 3: // capability discovery + fuzzy/case-insensitive setting
 			tc = fuzzyWorldTool(caseID, "world_theme_discover_set", fmt.Sprintf("Make Ditto use my usual %s-ish accent — the personal app preference, not one of the client brand colors. If I mangled the spelling, check the available appearance options first.", misspellAlias(world.Accent, converted)), []protocol.ToolSpec{{Name: "discover_capabilities"}, {Name: "set_accent_color", RequiredArgs: map[string]string{"color": world.Accent}}}, "discover the available appearance setting and apply the user's personal accent")
 		case 4: // messy business context -> reusable workflow outcome
@@ -1219,8 +1198,7 @@ func applyV8WorldActions(seed int64, cases []protocol.ToolCase) {
 			lead := world.People[p.Lead]
 			tc = fuzzyWorldTool(caseID, "world_business_workflow", fmt.Sprintf("Check whether I already have a workflow for %q. If not, create one for its recurring reconciliation: compare %s's corrected invoice with payments, have %s review the remainder, and prepare the client update for %s.", p.Alias, p.Vendor, lead.Nickname, p.Client), []protocol.ToolSpec{{Name: "list_workflows"}, {Name: "create_workflow", RequiredArgs: map[string]string{"name": p.Alias, "steps": p.Vendor}}}, "resolve the project, vendor, lead, and client, check existing workflows, and create the requested reusable workflow")
 		case 6: // outcome proves a search -> dynamic-link -> read chain
-			needle := toolexec.NeedleFor(seed, caseID)
-			tc = fuzzyWorldTool(caseID, "world_link_chain_result_usage", fmt.Sprintf("Search the web for %s, follow whichever result actually contains the current figure, and tell me the exact value. I may call the site X or Twitter; use the live result rather than an old saved link.", needle.Subject), []protocol.ToolSpec{{Name: "search_web"}, {Name: "read_links"}}, "find and read the live source, then report the served value")
+			tc = v8WorldLinkRead(seed, caseID)
 		case 7: // dependent execution outcome, order enforced by data not rubric
 			needle := toolexec.NeedleFor(seed, caseID)
 			tc = fuzzyWorldTool(caseID, "world_job_chain_result_usage", fmt.Sprintf("Have Ditto Code work out %s in the background, check the resulting job until it finishes, and give me the exact figure it produced.", needle.Subject), []protocol.ToolSpec{{Name: "execute_agent_job"}, {Name: "get_agent_job_status"}}, "run the job, resolve its returned id, and report the completed result")
@@ -1232,6 +1210,46 @@ func applyV8WorldActions(seed int64, cases []protocol.ToolCase) {
 		cases[i] = tc
 		converted++
 	}
+
+	// The remaining legacy-coverage tail must not reintroduce the exact IDs,
+	// example.com recipients, or complete URLs that v8 removed. These categories
+	// are always grounded in the same world even when the 65% replacement quota
+	// happened to leave their original draw outside the dominant slice.
+	for i := range cases {
+		caseID := cases[i].ID
+		switch cases[i].Category {
+		case "email_send":
+			cases[i] = v8WorldContactEmail(seed, caseID, world, i)
+		case "memory_delete":
+			cases[i] = v8WorldMemoryDelete(caseID, world, i)
+		case "memory_update":
+			cases[i] = v8WorldMemoryUpdate(caseID, world, i)
+		case "link_read":
+			cases[i] = v8WorldLinkRead(seed, caseID)
+		}
+	}
+}
+
+func v8WorldContactEmail(seed int64, caseID string, world universe.World, index int) protocol.ToolCase {
+	p := world.People[index%len(world.People)]
+	needle := toolexec.NeedleFor(seed, caseID)
+	return fuzzyWorldTool(caseID, "world_contact_research_email_result_usage", fmt.Sprintf("Look up %s, then email the exact current figure to %s — my %s in %s who handled the %s. Mention the figure in the email and in your confirmation; use their corrected address, not the old one.", needle.Subject, misspellAlias(p.Nickname, index), p.Relation, p.City, p.Context), []protocol.ToolSpec{{Name: "search_web"}, {Name: "gmail_send", RequiredArgs: map[string]string{"to": p.Email, "body": needle.Value}}}, "resolve the person and corrected address, research the live value, and send that value to the right person")
+}
+
+func v8WorldMemoryDelete(caseID string, world universe.World, index int) protocol.ToolCase {
+	p := world.People[index%len(world.People)]
+	return fuzzyWorldTool(caseID, "world_memory_delete", fmt.Sprintf("Delete the memory where I corrected %s's old email after the %s — they're my %s at %s. Don't delete the original relationship note.", p.Nickname, p.Context, p.Relation, p.Employer), []protocol.ToolSpec{{Name: "delete_memory", RequiredArgs: map[string]string{"pair_id": p.CorrectionPairID}}}, "resolve the uniquely described memory and delete that pair")
+}
+
+func v8WorldMemoryUpdate(caseID string, world universe.World, index int) protocol.ToolCase {
+	p := world.Projects[index%len(world.Projects)]
+	lead := world.People[p.Lead]
+	return fuzzyWorldTool(caseID, "world_memory_update", fmt.Sprintf("Update the memory that says who owns %q for %s — the %s project led by %s at %s. Add that the handoff is Friday; leave the invoice correction alone.", p.Alias, p.Client, p.Purpose, lead.Nickname, lead.Employer), []protocol.ToolSpec{{Name: "update_memory", RequiredArgs: map[string]string{"pair_id": p.ContextPairID, "content": "handoff is Friday"}}}, "resolve the project-context memory and update that pair with the Friday handoff")
+}
+
+func v8WorldLinkRead(seed int64, caseID string) protocol.ToolCase {
+	needle := toolexec.NeedleFor(seed, caseID)
+	return fuzzyWorldTool(caseID, "world_link_chain_result_usage", fmt.Sprintf("Search X or Twitter for %s, follow whichever result actually contains the current figure, and tell me the exact value. I did not save the complete URL, so use the live result rather than guessing a link.", needle.Subject), []protocol.ToolSpec{{Name: "search_web"}, {Name: "read_links"}}, "find and read the live source, then report the served value")
 }
 
 func fuzzyWorldTool(id, category, prompt string, expected []protocol.ToolSpec, behavior string) protocol.ToolCase {
