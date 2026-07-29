@@ -34,39 +34,59 @@ func TestV8ToolMixVariesAndCoversEveryFamily(t *testing.T) {
 	if !varied {
 		t.Fatal("v8 tool histogram was identical across 40 seeds")
 	}
-	if len(seen) != 54 {
-		t.Fatalf("v8 full covered %d tool families across 40 seeds, want 54", len(seen))
+	if len(seen) < 60 {
+		t.Fatalf("v8 full covered only %d tool families across 40 seeds", len(seen))
 	}
 }
 
-func TestV8StateRoutedCasesCarryPrivateSeedFacts(t *testing.T) {
+func TestV8WorldToolCasesAreFuzzyComposedAndStateBound(t *testing.T) {
 	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
 	artifact, err := GenerateDataset(77, prof, protocol.BenchVersionV8)
 	if err != nil {
 		t.Fatal(err)
 	}
-	routed := 0
+	fuzzy, multi, attachedWorld := 0, 0, 0
+	pairIDs := map[string]bool{}
 	for _, tc := range artifact.ToolCases {
-		if tc.Category != "context_routed_action" {
-			if len(tc.PrerequisitePairs) != 0 && tc.Category != "memory_fetch" {
-				t.Fatalf("ordinary case %s carried prerequisite pairs", tc.ID)
-			}
+		if !strings.HasPrefix(tc.Category, "world_") {
 			continue
 		}
-		routed++
-		if len(tc.ExpectedTools) != 1 || len(tc.PrerequisitePairs) != 1 {
-			t.Fatalf("routed case shape: %+v", tc)
+		fuzzy++
+		if !tc.FuzzyTrajectory || !tc.AllowExtraTools || tc.Unordered || tc.MaxToolCalls != 15 {
+			t.Fatalf("world case does not carry the fuzzy trajectory contract: %+v", tc)
 		}
-		if strings.Contains(tc.Prompt, tc.ExpectedTools[0].Name) {
-			t.Fatalf("visible prompt leaked route %q: %q", tc.ExpectedTools[0].Name, tc.Prompt)
+		if len(tc.ExpectedTools) >= 2 {
+			multi++
 		}
-		joined := tc.Prompt + " " + tc.PrerequisitePairs[0].Prompt + " " + tc.PrerequisitePairs[0].Response
-		if strings.Contains(joined, "exact words") || strings.Contains(joined, "formed from") || strings.Contains(joined, "operation ") {
-			t.Fatalf("routed case uses benchmark language instead of a user request: %q", joined)
+		for _, spec := range tc.ExpectedTools {
+			if strings.Contains(tc.Prompt, spec.Name) {
+				t.Fatalf("visible prompt leaked wire tool %q: %q", spec.Name, tc.Prompt)
+			}
+			for key, required := range spec.RequiredArgs {
+				if (key == "pair_id" || key == "to" || key == "body" || key == "color") && strings.Contains(tc.Prompt, required) {
+					t.Fatalf("world case %s leaked required outcome %q in its prompt", tc.ID, required)
+				}
+			}
+		}
+		if len(tc.PrerequisitePairs) > 0 {
+			attachedWorld++
+			for _, pair := range tc.PrerequisitePairs {
+				if pairIDs[pair.PairID] {
+					t.Fatalf("world prerequisite pair %s was duplicated", pair.PairID)
+				}
+				pairIDs[pair.PairID] = true
+			}
 		}
 	}
-	if routed != 63 {
-		t.Fatalf("full v8 routed cases = %d, want 63", routed)
+	want := (65*len(artifact.ToolCases) + 99) / 100
+	if fuzzy != want {
+		t.Fatalf("full v8 fuzzy world cases = %d, want %d", fuzzy, want)
+	}
+	if 3*multi < 2*fuzzy {
+		t.Fatalf("only %d/%d fuzzy cases require multiple observable operations", multi, fuzzy)
+	}
+	if attachedWorld != 1 || len(pairIDs) < 50 {
+		t.Fatalf("shared world must be seeded once with a substantial history: attachments=%d pairs=%d", attachedWorld, len(pairIDs))
 	}
 
 	v7, err := GenerateDataset(77, prof, protocol.BenchVersionV7)
@@ -74,7 +94,7 @@ func TestV8StateRoutedCasesCarryPrivateSeedFacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range v7.ToolCases {
-		if len(tc.PrerequisitePairs) != 0 {
+		if len(tc.PrerequisitePairs) != 0 || tc.FuzzyTrajectory || strings.HasPrefix(tc.Category, "world_") {
 			t.Fatalf("v7 case %s changed wire shape", tc.ID)
 		}
 	}
@@ -111,6 +131,47 @@ func TestV8FreeFormArgumentsDoNotRequireMagicStrings(t *testing.T) {
 	}
 }
 
+func TestV8ReviewScenariosUseNaturalResolutionInsteadOfWireIdentifiers(t *testing.T) {
+	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
+	wantCategories := map[string]bool{
+		"world_contact_research_email_result_usage": false,
+		"world_memory_delete":                       false,
+		"world_memory_update":                       false,
+		"world_link_chain_result_usage":             false,
+		"world_theme_discover_set":                  false,
+		"set_model":                                 false,
+	}
+	for seed := int64(1); seed <= 40; seed++ {
+		artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV8)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range artifact.ToolCases {
+			if _, tracked := wantCategories[tc.Category]; !tracked {
+				continue
+			}
+			wantCategories[tc.Category] = true
+			if !tc.FuzzyTrajectory || !tc.AllowExtraTools {
+				t.Fatalf("review scenario %s is still exact-trace graded", tc.Category)
+			}
+			lower := strings.ToLower(tc.Prompt)
+			if strings.Contains(lower, "pair id") || strings.Contains(lower, "model id gpt-") || strings.Contains(lower, "exact tool") {
+				t.Fatalf("review scenario %s exposes an implementation identifier: %q", tc.Category, tc.Prompt)
+			}
+			if tc.Category == "set_model" {
+				if len(tc.ExpectedTools) != 2 || tc.ExpectedTools[0].Name != "discover_capabilities" || tc.ExpectedTools[1].Name != "set_main_model" {
+					t.Fatalf("model-family request is not discover-then-set: %+v", tc.ExpectedTools)
+				}
+			}
+		}
+	}
+	for category, seen := range wantCategories {
+		if !seen {
+			t.Fatalf("review scenario %s was not exercised across 40 seeds", category)
+		}
+	}
+}
+
 func TestV8MemoryFetchUsesNaturalSearchThenFetch(t *testing.T) {
 	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
 	for seed := int64(1); seed <= 80; seed++ {
@@ -134,29 +195,44 @@ func TestV8MemoryFetchUsesNaturalSearchThenFetch(t *testing.T) {
 	t.Fatal("no memory_fetch case appeared across seeds")
 }
 
-func TestV8ReasoningMemoryFloor(t *testing.T) {
+func TestV8ComposedMemoryFloor(t *testing.T) {
 	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
 	for seed := int64(1); seed <= 40; seed++ {
 		artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV8)
 		if err != nil {
 			t.Fatal(err)
 		}
-		reasoning := 0
+		composed := 0
 		hist := map[string]int{}
 		for _, mc := range artifact.MemoryCases {
 			hist[mc.QuestionType]++
-			switch mc.QuestionType {
-			case persona.QTComputed, persona.QTMultiSession, persona.QTAggregation, persona.QTTemporal,
-				"temporal-arithmetic", "nonverbatim-computed":
-				reasoning++
+			if v8ComposedMemoryType(mc.QuestionType) {
+				composed++
 			}
 			if mc.BenchVersion != protocol.BenchVersionV8 {
 				t.Fatalf("v8 memory case omitted version: %+v", mc)
 			}
 		}
-		if 10*reasoning < 3*len(artifact.MemoryCases) {
-			t.Fatalf("seed %d reasoning share %d/%d is below 30%%: %v", seed, reasoning, len(artifact.MemoryCases), hist)
+		if 100*composed < 65*len(artifact.MemoryCases) {
+			t.Fatalf("seed %d composed/indirect share %d/%d is below 65%%: %v", seed, composed, len(artifact.MemoryCases), hist)
 		}
+	}
+}
+
+func v8ComposedMemoryType(questionType string) bool {
+	if strings.HasPrefix(questionType, "world-") || strings.HasPrefix(questionType, "multi-") ||
+		strings.HasPrefix(questionType, "temporal-") || strings.HasPrefix(questionType, "lifecycle-") ||
+		strings.HasPrefix(questionType, "subscription-") || strings.HasPrefix(questionType, "injection-") ||
+		strings.HasPrefix(questionType, "declarative-") {
+		return true
+	}
+	switch questionType {
+	case persona.QTComputed, persona.QTAggregation, "nonverbatim-computed", "composed-note-benign",
+		"memory-write-read", "passive-consolidation", "near-miss-abstention",
+		"stored-instruction-benign", "isolation":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -192,8 +268,24 @@ func TestV8RepeatedConversionsHaveUniqueContext(t *testing.T) {
 			}
 			seen[mc.Question] = true
 		}
-		if count != 30 {
-			t.Fatalf("seed %d non-verbatim cases = %d, want 30", seed, count)
+		if count != 15 {
+			t.Fatalf("seed %d non-verbatim cases = %d, want 15", seed, count)
+		}
+	}
+}
+
+func TestV8ReferenceRunPreservesTheV7RuntimeEnvelope(t *testing.T) {
+	const referenceSeed int64 = 3058240546919425205
+	for _, runSize := range []string{"small", "medium", "full"} {
+		prof, _ := ProfileForVersion(runSize, protocol.BenchVersionV8)
+		artifact, err := GenerateDataset(referenceSeed, prof, protocol.BenchVersionV8)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]int{"small": 17, "medium": 110, "full": 282}[runSize]
+		got := len(artifact.ToolCases) + len(artifact.MemoryCases)
+		if got != want {
+			t.Fatalf("v8 %s reference run has %d cases, want existing envelope %d", runSize, got, want)
 		}
 	}
 }

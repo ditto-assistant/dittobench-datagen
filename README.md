@@ -76,7 +76,7 @@ SHA-256 vectors are:
 | 5 | `2026-09-01T00:00:00Z` | `ee70387b2470bb72a7ce457cd76187b9d89819016f3d58276f895a55b30a9f1c` |
 | 6 | `2026-10-01T00:00:00Z` | `38a0df83a95bdad271f80a271d59d676509290e2fd762683abd960952ff84016` |
 | 7 | `2026-11-01T00:00:00Z` | `f5f42f7a550e0bfef8ef2b14f810cbbd4b140ca5985e9f0cceaa509689d9e218` |
-| 8 | `2026-12-01T00:00:00Z` | `52f8d61618728e7e8712a32d2e0b21878eaf9a9c6835932e3727d6f35ecc4579` |
+| 8 | `2026-12-01T00:00:00Z` | `ca8253296b7dbd99800fb84e89619a4bb880328090586bd3acdefddd09bcfe9b` |
 
 Each is regenerated and asserted by CI (`TestV2KnownVector` and friends), so a
 value here that disagrees with `cmd/generate` is a bug in this table, not in the

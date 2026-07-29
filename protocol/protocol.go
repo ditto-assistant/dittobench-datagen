@@ -19,9 +19,13 @@ type ToolSpec struct {
 // ToolCase is one tool-calling benchmark case.
 //
 // Unordered marks a case whose ExpectedTools are INDEPENDENT calls (a parallel
-// request), so the trajectory is scored on the set of names/args only and the
-// relative call order is not graded. Default false: a multi-hop sequence is
-// order-scored (the second call depends on the first).
+// request). FuzzyTrajectory marks an outcome-driven agent task where the named
+// capabilities are expected but the agent may inspect/retry/reorder as needed;
+// data dependencies and the final observed outcome enforce correctness instead
+// of one prescribed trace. Both score names/args without relative-order credit.
+// For a fuzzy case MaxToolCalls describes the expected task envelope, not a hard
+// cap; AllowExtraTools permits longer creative trajectories without a call-count
+// penalty. Run-level token efficiency remains a separate scoring signal.
 type ToolCase struct {
 	ID               string     `json:"id"`
 	Category         string     `json:"category"`
@@ -30,6 +34,7 @@ type ToolCase struct {
 	MaxToolCalls     int        `json:"max_tool_calls"`
 	AllowExtraTools  bool       `json:"allow_extra_tools"`
 	Unordered        bool       `json:"unordered,omitempty"`
+	FuzzyTrajectory  bool       `json:"fuzzy_trajectory,omitempty"`
 	ExpectedBehavior string     `json:"expected_behavior,omitempty"`
 	// PrerequisitePairs are validator-internal, seed-bound routing facts that
 	// must be loaded before this tool case runs. They are emitted only by v8+;

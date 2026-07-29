@@ -52,9 +52,13 @@ func nonVerbatimCasesForVersion(n, nWaves, benchVersion int) int {
 		case nWaves < 2:
 			return 0
 		case n >= 100:
-			return 30
+			// V8 spends the rest of this former scalar-conversion budget on
+			// shared-world joins and messy business reconciliation. Fifteen keeps
+			// every conversion domain represented without crowding the fixed v7
+			// runtime envelope.
+			return 15
 		case n >= 40:
-			return 8
+			return 2
 		default:
 			return 0
 		}

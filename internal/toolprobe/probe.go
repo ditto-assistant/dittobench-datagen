@@ -1,5 +1,8 @@
 // Package toolprobe measures how well a model-free nearest-neighbor table can
-// recover tool routing from prompt surface alone.
+// recover the complete scored tool outcome from prompt surface alone. Merely
+// inferring gmail_send from "email" is not a benchmark exploit; predicting the
+// seed-bound recipient, mutation target, or served result without resolving the
+// generated world is.
 package toolprobe
 
 import (
@@ -57,8 +60,9 @@ func Run(benchVersion int, runSize string, trainStart int64, trainSeeds, heldOut
 		if err != nil {
 			return Result{}, err
 		}
+		needles := fixtureNeedles(artifact)
 		for _, tc := range artifact.ToolCases {
-			train = append(train, example{grams: char4grams(tc.Prompt), signature: toolSignature(tc)})
+			train = append(train, example{grams: char4grams(tc.Prompt), signature: toolOutcomeSignature(tc, needles[tc.ID])})
 		}
 	}
 	result := Result{Families: map[string]FamilyResult{}}
@@ -68,8 +72,9 @@ func Run(benchVersion int, runSize string, trainStart int64, trainSeeds, heldOut
 		if err != nil {
 			return Result{}, err
 		}
+		needles := fixtureNeedles(artifact)
 		for _, tc := range artifact.ToolCases {
-			want := toolSignature(tc)
+			want := toolOutcomeSignature(tc, needles[tc.ID])
 			got := nearestSignature(char4grams(tc.Prompt), train)
 			family := result.Families[tc.Category]
 			family.Total++
@@ -93,15 +98,39 @@ func SortedFamilies(result Result) []string {
 	return names
 }
 
-func toolSignature(tc protocol.ToolCase) string {
+func toolOutcomeSignature(tc protocol.ToolCase, needle string) string {
 	if len(tc.ExpectedTools) == 0 {
 		return "<no-tool>"
 	}
-	names := make([]string, len(tc.ExpectedTools))
+	tools := make([]string, len(tc.ExpectedTools))
 	for i, spec := range tc.ExpectedTools {
-		names[i] = spec.Name
+		part := spec.Name
+		keys := make([]string, 0, len(spec.RequiredArgs))
+		for key := range spec.RequiredArgs {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			part += "|" + key + "=" + spec.RequiredArgs[key]
+		}
+		tools[i] = part
 	}
-	return strings.Join(names, " -> ")
+	if tc.FuzzyTrajectory {
+		sort.Strings(tools)
+	}
+	signature := strings.Join(tools, " -> ")
+	if needle != "" {
+		signature += "|result=" + needle
+	}
+	return signature
+}
+
+func fixtureNeedles(artifact gen.DatasetArtifact) map[string]string {
+	out := make(map[string]string, len(artifact.ToolFixtures))
+	for _, fixture := range artifact.ToolFixtures {
+		out[fixture.CaseID] = fixture.Needle
+	}
+	return out
 }
 
 func char4grams(text string) map[string]struct{} {

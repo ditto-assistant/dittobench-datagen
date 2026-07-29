@@ -14,6 +14,7 @@ import (
 	"github.com/ditto-assistant/dittobench-datagen/persona"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 	"github.com/ditto-assistant/dittobench-datagen/toolexec"
+	"github.com/ditto-assistant/dittobench-datagen/universe"
 )
 
 // category describes one kind of tool-calling case and how to render it.
@@ -1161,85 +1162,94 @@ var difficultyCategoriesV7 = []category{
 	},
 }
 
-const v8StateRoutedCategory = "context_routed_action"
-
-// v8RouteScenario is a normal product interaction whose correct route depends
-// on a preference or referent established earlier. The generator chooses the
-// answer with the seed, but the user-facing language stays realistic.
-type v8RouteScenario struct {
-	tool     string
-	memory   string // one %s receives an independently selected project label
-	required map[string]string
-}
-
-var v8RouteScenarios = []v8RouteScenario{
-	{tool: "search_web", memory: "When I ask you to handle the %s, check current sources before you answer."},
-	{tool: "read_links", memory: "The source for the %s is https://docs.example.io/launch-memo; read that page when I come back to it.", required: map[string]string{"urls": "https://docs.example.io/launch-memo"}},
-	{tool: "create_image", memory: "The %s is a new image I want you to generate, not a document."},
-	{tool: "edit_image", memory: "The %s means the existing launch image; update that image instead of making another one."},
-	{tool: "artifacts", memory: "Keep the %s as a document artifact in Ditto so I can review and edit it."},
-	{tool: "execute_agent_job", memory: "The %s is repository work; hand it to Ditto Code so it can edit files and run tests."},
-	{tool: "create_workflow", memory: "The %s should be a reusable workflow with separate gather and synthesis steps."},
-	{tool: "list_agent_jobs", memory: "When I ask about the %s, I mean the Ditto Code tasks that are already running."},
-	{tool: "list_schedules", memory: "The %s refers to my upcoming scheduled workflow runs."},
-	{tool: "discover_capabilities", memory: "For the %s, look up Ditto's current feature and instructions rather than guessing the menus."},
-	{tool: "run_code", memory: "The %s is a quick one-off calculation for the in-chat code sandbox, not a coding task."},
-	{tool: "search_tools", memory: "The %s means finding the right Code Mode tool binding before trying to call it."},
-}
-
-var v8RouteLabels = []string{
-	"quarterly review", "launch follow-up", "client brief", "vendor check",
-	"spring campaign", "board packet", "pricing update", "account cleanup",
-	"product review", "research note", "planning pass", "weekly follow-up",
-}
-
-var v8RouteRequests = []string{
-	"Can you take care of the %s for tomorrow?",
-	"Please handle the %s we discussed.",
-	"I'd like to move forward with the %s now.",
-	"Can you finish the %s for me?",
-	"Let's get the %s done today.",
-}
-
-func applyV8StateRouting(r *rand.Rand, seed int64, cases []protocol.ToolCase) {
-	// Keep a representative quarter of the historical catalog in every full
-	// run. The other cases exercise seed-bound routing; small profiles retain at
-	// least one ordinary catalog case. This changes the mix, not the envelope.
-	nState := len(cases) * 3 / 4
-	if nState >= len(cases) {
-		nState = len(cases) - 1
+// applyV8WorldActions replaces 65% of the historical one-card tool prompts with
+// tasks grounded in one shared personal/business world. The correct action or
+// argument is derivable only by reconciling aliases, relationships, corrections,
+// and business context seeded through the ordinary harness memory boundary.
+//
+// ExpectedTools is a capability SET, not a prescribed trace: FuzzyTrajectory
+// and AllowExtraTools make exploratory agent trajectories legitimate, while
+// the validator-observed final action and its seed-derived argument remain
+// deterministic. MaxToolCalls describes the expected envelope; it is not a hard
+// cap and creative agents may legitimately exceed it.
+func applyV8WorldActions(seed int64, cases []protocol.ToolCase) {
+	if len(cases) == 0 {
+		return
+	}
+	scale := 1
+	if len(cases) >= 80 {
+		scale = 3
+	} else if len(cases) >= 30 {
+		scale = 2
+	}
+	world := universe.Generate(seed, scale)
+	target := (65*len(cases) + 99) / 100
+	if target >= len(cases) {
+		target = len(cases) - 1 // retain at least one plain v7-style coverage case
 	}
 	converted := 0
-	for i := 0; i < len(cases) && converted < nState; i++ {
+	attachedWorld := false
+	for i := range cases {
+		if converted >= target {
+			break
+		}
+		// Preserve bespoke prerequisites only when they already prove a composed
+		// outcome; the shared world replaces ordinary/card-like cases first.
 		if len(cases[i].PrerequisitePairs) != 0 {
 			continue
 		}
-		scenario := v8RouteScenarios[r.Intn(len(v8RouteScenarios))]
-		label := v8RouteLabels[r.Intn(len(v8RouteLabels))]
 		caseID := cases[i].ID
-		pairID := protocol.OpaqueCaseID(seed, "route-policy", i)
-		spec := protocol.ToolSpec{Name: scenario.tool}
-		if scenario.required != nil {
-			spec.RequiredArgs = scenario.required
+		var tc protocol.ToolCase
+		switch converted % 8 {
+		case 0, 5: // resolve a vague referent, research a live fact, and email it
+			p := world.People[(converted+i)%len(world.People)]
+			needle := toolexec.NeedleFor(seed, caseID)
+			tc = fuzzyWorldTool(caseID, "world_contact_research_email_result_usage", fmt.Sprintf("Look up %s, then email the exact current figure to %s — my %s in %s who handled the %s. Mention the figure in the email and in your confirmation; use their corrected address, not the old one.", needle.Subject, misspellAlias(p.Nickname, converted), p.Relation, p.City, p.Context), []protocol.ToolSpec{{Name: "search_web"}, {Name: "gmail_send", RequiredArgs: map[string]string{"to": p.Email, "body": needle.Value}}}, "resolve the person and corrected address, research the live value, and send that value to the right person")
+		case 1: // description -> target pair -> destructive action
+			p := world.People[(converted+2*i+1)%len(world.People)]
+			tc = fuzzyWorldTool(caseID, "world_memory_delete", fmt.Sprintf("Delete the memory where I corrected %s's old email after the %s — they're my %s at %s. Don't delete the original relationship note.", p.Nickname, p.Context, p.Relation, p.Employer), []protocol.ToolSpec{{Name: "delete_memory", RequiredArgs: map[string]string{"pair_id": p.CorrectionPairID}}}, "resolve the uniquely described memory and delete that pair")
+		case 2: // description -> target pair -> update action
+			p := world.Projects[(converted+i)%len(world.Projects)]
+			lead := world.People[p.Lead]
+			tc = fuzzyWorldTool(caseID, "world_memory_update", fmt.Sprintf("Update the memory that says who owns %q for %s — the %s project led by %s at %s. Add that the handoff is Friday; leave the invoice correction alone.", p.Alias, p.Client, p.Purpose, lead.Nickname, lead.Employer), []protocol.ToolSpec{{Name: "update_memory", RequiredArgs: map[string]string{"pair_id": p.ContextPairID, "content": "handoff is Friday"}}}, "resolve the project-context memory and update that pair with the Friday handoff")
+		case 3: // capability discovery + fuzzy/case-insensitive setting
+			tc = fuzzyWorldTool(caseID, "world_theme_discover_set", fmt.Sprintf("Make Ditto use my usual %s-ish accent — the personal app preference, not one of the client brand colors. If I mangled the spelling, check the available appearance options first.", misspellAlias(world.Accent, converted)), []protocol.ToolSpec{{Name: "discover_capabilities"}, {Name: "set_accent_color", RequiredArgs: map[string]string{"color": world.Accent}}}, "discover the available appearance setting and apply the user's personal accent")
+		case 4: // messy business context -> reusable workflow outcome
+			p := world.Projects[(converted+i)%len(world.Projects)]
+			lead := world.People[p.Lead]
+			tc = fuzzyWorldTool(caseID, "world_business_workflow", fmt.Sprintf("Check whether I already have a workflow for %q. If not, create one for its recurring reconciliation: compare %s's corrected invoice with payments, have %s review the remainder, and prepare the client update for %s.", p.Alias, p.Vendor, lead.Nickname, p.Client), []protocol.ToolSpec{{Name: "list_workflows"}, {Name: "create_workflow", RequiredArgs: map[string]string{"name": p.Alias, "steps": p.Vendor}}}, "resolve the project, vendor, lead, and client, check existing workflows, and create the requested reusable workflow")
+		case 6: // outcome proves a search -> dynamic-link -> read chain
+			needle := toolexec.NeedleFor(seed, caseID)
+			tc = fuzzyWorldTool(caseID, "world_link_chain_result_usage", fmt.Sprintf("Search the web for %s, follow whichever result actually contains the current figure, and tell me the exact value. I may call the site X or Twitter; use the live result rather than an old saved link.", needle.Subject), []protocol.ToolSpec{{Name: "search_web"}, {Name: "read_links"}}, "find and read the live source, then report the served value")
+		case 7: // dependent execution outcome, order enforced by data not rubric
+			needle := toolexec.NeedleFor(seed, caseID)
+			tc = fuzzyWorldTool(caseID, "world_job_chain_result_usage", fmt.Sprintf("Have Ditto Code work out %s in the background, check the resulting job until it finishes, and give me the exact figure it produced.", needle.Subject), []protocol.ToolSpec{{Name: "execute_agent_job"}, {Name: "get_agent_job_status"}}, "run the job, resolve its returned id, and report the completed result")
 		}
-		cases[i] = protocol.ToolCase{
-			ID:               caseID,
-			Category:         v8StateRoutedCategory,
-			Prompt:           fmt.Sprintf(v8RouteRequests[r.Intn(len(v8RouteRequests))], label),
-			ExpectedTools:    []protocol.ToolSpec{spec},
-			MaxToolCalls:     1,
-			AllowExtraTools:  false,
-			ExpectedBehavior: "use the relevant prior context and call the appropriate capability exactly once",
-			PrerequisitePairs: []protocol.MemoryPair{{
-				PairID:    pairID,
-				SessionID: fmt.Sprintf("context-route-%d", i),
-				Timestamp: "2026-01-01T00:00:00Z",
-				Prompt:    fmt.Sprintf(scenario.memory, label),
-				Response:  "Got it — I will use that context when you refer to it later.",
-			}},
+		if !attachedWorld {
+			tc.PrerequisitePairs = append([]protocol.MemoryPair(nil), world.Pairs...)
+			attachedWorld = true
 		}
+		cases[i] = tc
 		converted++
 	}
+}
+
+func fuzzyWorldTool(id, category, prompt string, expected []protocol.ToolSpec, behavior string) protocol.ToolCase {
+	return protocol.ToolCase{
+		ID: id, Category: category, Prompt: prompt, ExpectedTools: expected,
+		MaxToolCalls: 15, AllowExtraTools: true, FuzzyTrajectory: true,
+		ExpectedBehavior: behavior + "; tool order and harmless exploratory reads are not prescribed",
+	}
+}
+
+func misspellAlias(s string, salt int) string {
+	r := []rune(s)
+	if len(r) < 4 {
+		return s
+	}
+	i := 1 + salt%(len(r)-2)
+	r[i], r[i+1] = r[i+1], r[i]
+	return string(r)
 }
 
 // categoriesForVersion returns the tool category set for a bench version. v5 adds
@@ -1497,12 +1507,56 @@ func GenerateCasesWithFillersForVersion(r *rand.Rand, seed int64, n, benchVersio
 			}}
 			usedFiller = ""
 		}
+		if benchVersion >= protocol.BenchVersionV8 {
+			applyV8CapabilityResolution(&tc, argValue, i)
+		}
 
 		cases = append(cases, tc)
 		fillers = append(fillers, usedFiller)
 	}
 	if benchVersion >= protocol.BenchVersionV8 {
-		applyV8StateRouting(r, seed, cases)
+		applyV8WorldActions(seed, cases)
 	}
 	return cases, fillers
+}
+
+// applyV8CapabilityResolution makes closed product choices behave like smart
+// tools: users name a model family or an approximate appearance choice, then the
+// agent may inspect the current catalog before applying the canonical value.
+// The wire tool names remain the production ChatV2 names so v7 harnesses stay
+// compatible; only v8's case semantics become outcome-driven.
+func applyV8CapabilityResolution(tc *protocol.ToolCase, value string, salt int) {
+	if len(tc.ExpectedTools) != 1 {
+		return
+	}
+	var prompt string
+	switch tc.Category {
+	case "set_model":
+		family := "GPT"
+		if strings.Contains(strings.ToLower(value), "gemini") {
+			family = "Gemini"
+		} else if strings.Contains(strings.ToLower(value), "claude") {
+			family = "Claude"
+		}
+		prompt = fmt.Sprintf("Use %s for my main chats. I don't know its exact model id, so resolve the current available option instead of making me type a slug.", family)
+	case "settings":
+		if value == "system" {
+			prompt = "Match Ditto's color mode to my device. Check the available appearance settings if you need the canonical option."
+		} else {
+			prompt = fmt.Sprintf("Switch Ditto to %s-ish mode; check the available appearance options rather than guessing the setting name.", misspellAlias(value, salt))
+		}
+	case "set_accent":
+		prompt = fmt.Sprintf("Make the app accent %s-ish. I may have mangled the spelling, so inspect the available appearance options first.", misspellAlias(value, salt))
+	case "set_font":
+		prompt = fmt.Sprintf("Use %s in chat. Treat that case-insensitively and check the available font options if the name is slightly off.", misspellAlias(value, salt))
+	default:
+		return
+	}
+	tc.Prompt = prompt
+	tc.ExpectedTools = append([]protocol.ToolSpec{{Name: "discover_capabilities"}}, tc.ExpectedTools...)
+	tc.MaxToolCalls = 15
+	tc.AllowExtraTools = true
+	tc.Unordered = false
+	tc.FuzzyTrajectory = true
+	tc.ExpectedBehavior = "resolve the user's approximate choice against current capabilities and apply the canonical setting; exploratory order is not prescribed"
 }

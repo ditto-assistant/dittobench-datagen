@@ -21,7 +21,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "toolprobe:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("bench v%d %s: %d/%d = %.4f expected-tool-sequence accuracy\n", *version, *runSize, result.Correct, result.Total, result.Accuracy())
+	fmt.Printf("bench v%d %s: %d/%d = %.4f complete tool-outcome accuracy\n", *version, *runSize, result.Correct, result.Total, result.Accuracy())
 	for _, family := range toolprobe.SortedFamilies(result) {
 		f := result.Families[family]
 		fmt.Printf("%-40s %4d/%-4d %.4f\n", family, f.Correct, f.Total, f.Accuracy())
