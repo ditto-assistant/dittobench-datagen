@@ -62,91 +62,47 @@ type argIntent struct {
 	value  string
 }
 
-// v8ArgIntents makes scored arguments derivations rather than copied spans.
-// Closed-enum values are described by intent; open strings are assembled from
-// explicitly ordered components. The expected value never appears as one
-// contiguous prompt span, while the derivation remains deterministic and
-// judge-free.
+// v8ArgIntents keeps exact argument grading for values that the product itself
+// resolves to a closed enum or identifier. Prompts are ordinary user requests;
+// difficulty must not come from asking a model to assemble artificial token
+// puzzles. Free-form fields are intentionally absent and are tool-scored only,
+// because many paraphrases are equally valid.
 var v8ArgIntents = map[string][]argIntent{
 	"link_read": {
-		{"Open the secure address formed from `https`, `docs.example.io`, and `/api/v3`, then summarize it.", "https://docs.example.io/api/v3"},
-		{"Read the page formed by the HTTPS scheme, host `research.example.edu`, and path `/paper-42`.", "https://research.example.edu/paper-42"},
-	},
-	"agent_job": {
-		{"Run a background task whose exact words, in order, are `refactor` / `the` / `auth` / `module`.", "refactor the auth module"},
-		{"Dispatch a job whose exact words are `generate` / `unit` / `tests`.", "generate unit tests"},
+		{"Can you summarize https://docs.example.io/api/v3 for me?", "https://docs.example.io/api/v3"},
+		{"Read https://research.example.edu/paper-42 and tell me the main takeaway.", "https://research.example.edu/paper-42"},
 	},
 	"settings": {
-		{"Use the theme that follows daylight automatically instead of forcing dark or light.", "system"},
-		{"Use the theme named for the middle of the night.", "midnight"},
-	},
-	"workflow_not_job": {
-		{"Run parallel workers for the exact goal assembled as `a comparison` / `of our top five competitors`.", "a comparison of our top five competitors"},
-		{"Split the exact goal `an audit` / `of our three services` / `for risks` across workers.", "an audit of our three services for risks"},
-	},
-	"memory_fetch": {
-		{"Fetch the memory whose identifier is the prefix `mem`, a hyphen, and the digits 1042.", "mem-1042"},
-		{"Fetch the memory whose identifier joins `mem`, `-`, and `7761`.", "mem-7761"},
-	},
-	"agent_workflow": {
-		{"Use parallel agents for the exact goal assembled as `a market scan` / `across several regions` / `with a combined summary`.", "a market scan across several regions with a combined summary"},
-		{"Use a workflow for the exact goal `a review of the codebase` / `for security, performance, and correctness`.", "a review of the codebase for security, performance, and correctness"},
-	},
-	"feedback": {
-		{"File feedback using these words in reverse order: `mobile / on / broken / is / button / export / the`.", "the export button is broken on mobile"},
-		{"File feedback using these words in reverse order: `artifacts / to / mode / dark / add / please`.", "please add dark mode to artifacts"},
+		{"Please match Ditto's light or dark mode to my device.", "system"},
+		{"Make the app dark mode.", "dark"},
 	},
 	"set_model": {
-		{"Use the OpenAI model whose name is the letters GPT followed by a hyphen and the number five.", "gpt-5"},
-		{"Use the Google model whose canonical name joins `gemini`, `3`, and `pro` with hyphens.", "gemini-3-pro"},
+		{"Switch my main chat model to gpt-5.", "gpt-5"},
+		{"Use gemini-3-pro for my chats from now on.", "gemini-3-pro"},
 	},
 	"set_effort": {
 		{"Reason as deeply and carefully as possible from now on.", "high"},
-		{"Keep reasoning balanced rather than minimal or exhaustive.", "medium"},
-	},
-	"set_tool_prefs": {
-		{"Set the exact preference formed from `disable` / `web` / `search`.", "disable web search"},
-		{"Set the exact preference formed from `enable` / `image` / `tools`.", "enable image tools"},
-	},
-	"automation_not_job": {
-		{"Schedule it at the exact cadence assembled from `every` / `Friday` / `at noon`.", "every Friday at noon"},
-		{"Schedule it at the exact cadence assembled from `each` / `weekday` / `evening`.", "each weekday evening"},
-	},
-	"recipe_create": {
-		{"Create the reusable recipe whose name joins `weekly` and `review` with a hyphen.", "weekly-review"},
-		{"Create the recipe whose name joins `invoice` and `run` with a hyphen.", "invoice-run"},
-	},
-	"recipe_apply": {
-		{"Run the recipe whose name joins `trip` and `planner` with a hyphen.", "trip-planner"},
-		{"Apply the recipe whose name joins `content` and `pipeline` with a hyphen.", "content-pipeline"},
+		{"Keep the reasoning balanced for everyday questions.", "medium"},
 	},
 	"memory_update": {
-		{"Update the memory whose identifier joins `mem`, a hyphen, and `2087`.", "mem-2087"},
-		{"Correct the memory whose identifier joins `mem`, `-`, and `9024`.", "mem-9024"},
+		{"Update memory mem-2087 with my new address.", "mem-2087"},
+		{"Correct the information in memory mem-9024.", "mem-9024"},
 	},
 	"memory_delete": {
-		{"Delete the memory whose identifier joins `mem`, a hyphen, and `3310`.", "mem-3310"},
-		{"Forget the memory whose identifier joins `mem`, `-`, and `7761`.", "mem-7761"},
-	},
-	"calendar_create": {
-		{"Add the event whose exact title is built from `team` followed by `offsite`.", "team offsite"},
-		{"Create the event whose exact title is built from `birthday` followed by `dinner`.", "birthday dinner"},
-	},
-	"calendar_search": {
-		{"Search the calendar with the exact query built from `quantum` followed by `computing`.", "quantum computing"},
-		{"Search with the exact query built from `electric` followed by `vehicles`.", "electric vehicles"},
+		{"Delete memory mem-3310.", "mem-3310"},
+		{"Forget what is stored in memory mem-7761.", "mem-7761"},
 	},
 	"email_send": {
-		{"Email the address formed from `sam`, an at-sign, `example`, a dot, and `com`.", "sam@example.com"},
-		{"Email the address formed from `jordan`, `@`, `example`, `.`, and `com`.", "jordan@example.com"},
+		{"Email sam@example.com to let them know I will be late.", "sam@example.com"},
+		{"Send jordan@example.com a quick update about the meeting.", "jordan@example.com"},
 	},
 	"set_accent": {
-		{"Use the blue-green accent whose name starts with t and ends with l.", "teal"},
-		{"Use the deep blue-purple accent commonly named after a dye.", "indigo"},
+		{"Make my accent color teal.", "teal"},
+		{"Switch the app accent to indigo.", "indigo"},
 	},
 	"set_font": {
-		{"Use the monospace typeface named for JetBrains.", "JetBrains Mono"},
-		{"Use the serif typeface named for a U.S. state.", "Georgia"},
+		{"Use JetBrains Mono in chat.", "JetBrains Mono"},
+		{"Change my chat font to Georgia.", "Georgia"},
 	},
 }
 
@@ -1205,32 +1161,44 @@ var difficultyCategoriesV7 = []category{
 	},
 }
 
-const v8StateRoutedCategory = "state_routed_action"
+const v8StateRoutedCategory = "context_routed_action"
 
-// v8StateRoutedTools deliberately mixes unrelated production capabilities.
-// The visible request never identifies which entry is correct: that mapping is
-// a fresh fact in the case's prerequisite memory pair. A model-free prompt
-// table therefore cannot recover the route across held-out seeds.
-var v8StateRoutedTools = []string{
-	"search_web",
-	"read_links",
-	"create_image",
-	"edit_image",
-	"artifacts",
-	"execute_agent_job",
-	"execute_agent_workflow",
-	"list_agent_jobs",
-	"list_automations",
-	"discover_capabilities",
-	"run_code",
-	"search_tools",
+// v8RouteScenario is a normal product interaction whose correct route depends
+// on a preference or referent established earlier. The generator chooses the
+// answer with the seed, but the user-facing language stays realistic.
+type v8RouteScenario struct {
+	tool     string
+	memory   string // one %s receives an independently selected project label
+	required map[string]string
 }
 
-var v8RouteCodeWords = []string{
-	"amber-kite", "cobalt-fern", "delta-orchid", "ember-lantern",
-	"frost-canvas", "granite-wren", "harbor-iris", "indigo-cedar",
-	"juniper-comet", "lilac-anchor", "marble-finch", "opal-river",
-	"quartz-pine", "saffron-brook", "topaz-meadow", "violet-sparrow",
+var v8RouteScenarios = []v8RouteScenario{
+	{tool: "search_web", memory: "When I ask you to handle the %s, check current sources before you answer."},
+	{tool: "read_links", memory: "The source for the %s is https://docs.example.io/launch-memo; read that page when I come back to it.", required: map[string]string{"urls": "https://docs.example.io/launch-memo"}},
+	{tool: "create_image", memory: "The %s is a new image I want you to generate, not a document."},
+	{tool: "edit_image", memory: "The %s means the existing launch image; update that image instead of making another one."},
+	{tool: "artifacts", memory: "Keep the %s as a document artifact in Ditto so I can review and edit it."},
+	{tool: "execute_agent_job", memory: "The %s is repository work; hand it to Ditto Code so it can edit files and run tests."},
+	{tool: "create_workflow", memory: "The %s should be a reusable workflow with separate gather and synthesis steps."},
+	{tool: "list_agent_jobs", memory: "When I ask about the %s, I mean the Ditto Code tasks that are already running."},
+	{tool: "list_schedules", memory: "The %s refers to my upcoming scheduled workflow runs."},
+	{tool: "discover_capabilities", memory: "For the %s, look up Ditto's current feature and instructions rather than guessing the menus."},
+	{tool: "run_code", memory: "The %s is a quick one-off calculation for the in-chat code sandbox, not a coding task."},
+	{tool: "search_tools", memory: "The %s means finding the right Code Mode tool binding before trying to call it."},
+}
+
+var v8RouteLabels = []string{
+	"quarterly review", "launch follow-up", "client brief", "vendor check",
+	"spring campaign", "board packet", "pricing update", "account cleanup",
+	"product review", "research note", "planning pass", "weekly follow-up",
+}
+
+var v8RouteRequests = []string{
+	"Can you take care of the %s for tomorrow?",
+	"Please handle the %s we discussed.",
+	"I'd like to move forward with the %s now.",
+	"Can you finish the %s for me?",
+	"Let's get the %s done today.",
 }
 
 func applyV8StateRouting(r *rand.Rand, seed int64, cases []protocol.ToolCase) {
@@ -1243,33 +1211,31 @@ func applyV8StateRouting(r *rand.Rand, seed int64, cases []protocol.ToolCase) {
 	}
 	converted := 0
 	for i := 0; i < len(cases) && converted < nState; i++ {
-		// set_effort is a per-run contract probe, not merely catalog coverage.
-		// Keep it visible even when its shuffled position falls in the routed
-		// share.
-		if cases[i].Category == "set_effort" {
+		if len(cases[i].PrerequisitePairs) != 0 {
 			continue
 		}
-		code := v8RouteCodeWords[r.Intn(len(v8RouteCodeWords))] + fmt.Sprintf("-%04x", r.Intn(1<<16))
-		tool := v8StateRoutedTools[r.Intn(len(v8StateRoutedTools))]
+		scenario := v8RouteScenarios[r.Intn(len(v8RouteScenarios))]
+		label := v8RouteLabels[r.Intn(len(v8RouteLabels))]
 		caseID := cases[i].ID
 		pairID := protocol.OpaqueCaseID(seed, "route-policy", i)
+		spec := protocol.ToolSpec{Name: scenario.tool}
+		if scenario.required != nil {
+			spec.RequiredArgs = scenario.required
+		}
 		cases[i] = protocol.ToolCase{
-			ID:       caseID,
-			Category: v8StateRoutedCategory,
-			Prompt: fmt.Sprintf(
-				"Carry out operation %s now. Use the private routing policy I gave you earlier; do not guess the capability from this request.",
-				code,
-			),
-			ExpectedTools:    []protocol.ToolSpec{{Name: tool}},
+			ID:               caseID,
+			Category:         v8StateRoutedCategory,
+			Prompt:           fmt.Sprintf(v8RouteRequests[r.Intn(len(v8RouteRequests))], label),
+			ExpectedTools:    []protocol.ToolSpec{spec},
 			MaxToolCalls:     1,
 			AllowExtraTools:  false,
-			ExpectedBehavior: "retrieve the seed-bound routing policy and call its capability exactly once",
+			ExpectedBehavior: "use the relevant prior context and call the appropriate capability exactly once",
 			PrerequisitePairs: []protocol.MemoryPair{{
 				PairID:    pairID,
-				SessionID: "routing-" + code,
+				SessionID: fmt.Sprintf("context-route-%d", i),
 				Timestamp: "2026-01-01T00:00:00Z",
-				Prompt:    "Remember the private capability routing policy for operation " + code + ".",
-				Response:  "The only authorized capability for operation " + code + " is " + tool + ".",
+				Prompt:    fmt.Sprintf(scenario.memory, label),
+				Response:  "Got it — I will use that context when you refer to it later.",
 			}},
 		}
 		converted++
@@ -1289,6 +1255,68 @@ func categoriesForVersion(benchVersion int) []category {
 	out = append(out, codeModeCategories...)
 	if benchVersion >= protocol.BenchVersionV7 {
 		out = append(out, difficultyCategoriesV7...)
+	}
+	if benchVersion >= protocol.BenchVersionV8 {
+		// ChatV2 consolidated recipes, automations, and multi-agent creation into
+		// workflows. Keep historical categories intact for v7, but advertise and
+		// grade the current product tools in v8.
+		for i := range out {
+			switch out[i].name {
+			case "workflow_not_job":
+				out[i].tool = "create_workflow"
+				out[i].argKey = ""
+				out[i].templates = []string{
+					"Build a reusable workflow for %s, with the independent parts running in parallel.",
+					"Set up %s as a workflow I can inspect and run again.",
+				}
+			case "agent_workflow":
+				out[i].tool = "create_workflow"
+				out[i].argKey = ""
+				out[i].templates = []string{
+					"Create a workflow for %s.",
+					"Turn %s into a reusable multi-step workflow.",
+				}
+			case "automation_not_job":
+				out[i].tool = "create_workflow"
+				out[i].argKey = ""
+				out[i].templates = []string{
+					"Create a workflow that sends my news digest %s.",
+					"Set up my standup summary to run %s.",
+				}
+			case "recipe_create":
+				out[i].tool = "create_workflow"
+				out[i].argKey = ""
+				out[i].templates = []string{
+					"Make a reusable workflow called %s.",
+					"Create a workflow named %s that I can run again.",
+				}
+			case "automation_list":
+				out[i].tool = "list_schedules"
+				out[i].grammar = nil
+				out[i].templates = []string{
+					"What workflows are scheduled to run?",
+					"Show me my upcoming automatic runs.",
+				}
+			case "recipe_apply":
+				out[i].tool = ""
+				out[i].tools = []string{"list_workflows", "run_workflow"}
+				out[i].argKey = ""
+				out[i].templates = []string{
+					"Run my %s workflow.",
+					"Start the saved workflow called %s.",
+				}
+			case "set_tool_prefs":
+				// Production takes individual boolean toggles, not one magic
+				// preference string. The tool choice is deterministic; multiple
+				// equivalent boolean payloads remain legitimate.
+				out[i].argKey = ""
+			case "agent_job", "feedback", "calendar_create", "calendar_search":
+				// These schemas contain free-form language. Tool choice and the
+				// surrounding deterministic state are scoreable; insisting on one
+				// generated sentence would penalize valid LLM paraphrases.
+				out[i].argKey = ""
+			}
+		}
 	}
 	return out
 }
@@ -1323,24 +1351,10 @@ func GenerateCasesWithFillersForVersion(r *rand.Rand, seed int64, n, benchVersio
 	var order []int
 	if benchVersion >= protocol.BenchVersionV8 {
 		weights := make([]int, len(cats))
-		setEffortIndex := -1
 		for i, c := range cats {
 			weights[i] = toolCategoryWeightV7(c.name)
-			if c.name == "set_effort" {
-				setEffortIndex = i
-			}
 		}
 		order = sampledCategoryOrderV8(r, n, weights)
-		// set_effort is a per-run contract probe, including small and medium
-		// practice profiles. If sampling omitted it, replace one sampled family;
-		// cross-seed catalog coverage is still measured over the full profile.
-		found := false
-		for _, ci := range order {
-			found = found || ci == setEffortIndex
-		}
-		if !found && setEffortIndex >= 0 {
-			order[len(order)-1] = setEffortIndex
-		}
 	} else if benchVersion >= protocol.BenchVersionV7 {
 		weights := make([]int, len(cats))
 		for i, c := range cats {
@@ -1457,6 +1471,31 @@ func GenerateCasesWithFillersForVersion(r *rand.Rand, seed int64, n, benchVersio
 			} else {
 				tc.ExpectedBehavior = "call " + strings.Join(seq, " then ") + " in that order"
 			}
+		}
+
+		if benchVersion >= protocol.BenchVersionV8 && cat.name == "memory_fetch" {
+			pairID := protocol.OpaqueCaseID(seed, "tool-memory-fetch", i)
+			phone := fmt.Sprintf("+1-212-555-%04d", r.Intn(10000))
+			questions := []string{
+				"What is the phone number of my accountant for 2024?",
+				"Can you find the number for the accountant who handled my 2024 taxes?",
+				"I need to call my 2024 accountant — what number do I have saved?",
+			}
+			tc.Prompt = questions[r.Intn(len(questions))]
+			tc.ExpectedTools = []protocol.ToolSpec{
+				{Name: "search_memories"},
+				{Name: "fetch_memories", RequiredArgs: map[string]string{"pairIds": pairID}},
+			}
+			tc.MaxToolCalls = 2
+			tc.ExpectedBehavior = "search for the relevant memory, then fetch the selected memory in full"
+			tc.PrerequisitePairs = []protocol.MemoryPair{{
+				PairID:    pairID,
+				SessionID: fmt.Sprintf("accountant-%d", i),
+				Timestamp: "2025-04-15T14:00:00Z",
+				Prompt:    "Please remember that Morgan Lee handled my 2024 taxes.",
+				Response:  "Morgan Lee's office number is " + phone + ".",
+			}}
+			usedFiller = ""
 		}
 
 		cases = append(cases, tc)

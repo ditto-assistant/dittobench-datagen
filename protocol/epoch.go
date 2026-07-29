@@ -65,9 +65,11 @@ import (
 //
 // v8 is the ANSWERING-MACHINE-PROOF difficulty release. It keeps v7's run sizes,
 // inference model, and runtime envelope, but makes the seeded tool mix vary,
-// requires semantic argument resolution instead of prompt-token copying, raises
-// the computed-memory floor, and tightens the deterministic grader. Every lever
-// is gated on bench_version >= 8 so v7 remains independently reproducible.
+// makes natural follow-up requests depend on seed-bound prior context, keeps
+// exact argument checks for product enums/identifiers while accepting arbitrary
+// valid free-form wording, raises the computed-memory floor, and tightens the
+// deterministic grader. Every lever is gated on bench_version >= 8 so v7 remains
+// independently reproducible.
 const (
 	BenchVersionV2      = 2
 	BenchVersionV3      = 3
