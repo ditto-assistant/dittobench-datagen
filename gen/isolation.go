@@ -97,49 +97,94 @@ func GenerateIsolationForVersion(seed int64, primaryN, nWaves, isoCases, benchVe
 	sort.Strings(attrs)
 
 	cases := make([]StagedCase, 0, isoCases)
-	i := 0
-	for _, a := range attrs {
-		if len(cases) >= isoCases {
-			break
-		}
-		// Alternate the query direction so a harness cannot pass by always trusting
-		// one graph: even index → A-scoped, odd → B-scoped.
-		if len(cases)%2 == 0 {
+	if benchVersion >= protocol.BenchVersionV8 {
+		// V7's alternating selector could emit fewer than IsoCases because one
+		// direction lacked a recall question for a particular attribute. That made
+		// total case count seed-dependent. V8 considers both directions, then takes
+		// the exact public-profile quota while preserving the five lifecycle cases
+		// appended below.
+		candidates := make([]StagedCase, 0, len(attrs)*2)
+		for i, a := range attrs {
 			q, ok := pRecall[a]
-			if !ok {
-				continue
+			if ok {
+				candidates = append(candidates, StagedCase{
+					Case: protocol.MemoryCase{
+						ID:              protocol.OpaqueCaseID(seed, "iso-a", i),
+						QuestionID:      "iso-a-" + a,
+						QuestionType:    "isolation",
+						Question:        q.Text,
+						ExpectedAnswer:  q.Answer,
+						ForbiddenAnswer: sCur[a],
+					},
+					RunAfterWave: caseUnlockWave(q, pFW),
+					UserID:       PrimaryUser,
+				})
 			}
-			cases = append(cases, StagedCase{
-				Case: protocol.MemoryCase{
-					ID:              protocol.OpaqueCaseID(seed, "iso-a", i),
-					QuestionID:      "iso-a-" + a,
-					QuestionType:    "isolation",
-					Question:        q.Text,
-					ExpectedAnswer:  q.Answer,
-					ForbiddenAnswer: sCur[a], // the value B's graph holds; leaking it is wrong
-				},
-				RunAfterWave: caseUnlockWave(q, pFW),
-				UserID:       PrimaryUser,
-			})
-		} else {
-			q, ok := sRecall[a]
-			if !ok {
-				continue
+			q, ok = sRecall[a]
+			if ok {
+				candidates = append(candidates, StagedCase{
+					Case: protocol.MemoryCase{
+						ID:              protocol.OpaqueCaseID(seed, "iso-b", i),
+						QuestionID:      "iso-b-" + a,
+						QuestionType:    "isolation",
+						Question:        q.Text,
+						ExpectedAnswer:  q.Answer,
+						ForbiddenAnswer: pCur[a],
+					},
+					RunAfterWave: 0,
+					UserID:       SecondaryUser,
+				})
 			}
-			cases = append(cases, StagedCase{
-				Case: protocol.MemoryCase{
-					ID:              protocol.OpaqueCaseID(seed, "iso-b", i),
-					QuestionID:      "iso-b-" + a,
-					QuestionType:    "isolation",
-					Question:        q.Text,
-					ExpectedAnswer:  q.Answer,
-					ForbiddenAnswer: pCur[a], // the value A's graph holds; leaking it is wrong
-				},
-				RunAfterWave: 0, // B is seeded once, up front
-				UserID:       SecondaryUser,
-			})
 		}
-		i++
+		target := v8ScalarIsolationBudget(primaryN, isoCases)
+		if len(candidates) < target {
+			return IsolationSuite{}, fmt.Errorf("v8 isolation quota needs %d cases, generated %d", target, len(candidates))
+		}
+		cases = append(cases, candidates[:target]...)
+	} else {
+		i := 0
+		for _, a := range attrs {
+			if len(cases) >= isoCases {
+				break
+			}
+			// Frozen v3-v7 selector: alternate query direction.
+			if len(cases)%2 == 0 {
+				q, ok := pRecall[a]
+				if !ok {
+					continue
+				}
+				cases = append(cases, StagedCase{
+					Case: protocol.MemoryCase{
+						ID:              protocol.OpaqueCaseID(seed, "iso-a", i),
+						QuestionID:      "iso-a-" + a,
+						QuestionType:    "isolation",
+						Question:        q.Text,
+						ExpectedAnswer:  q.Answer,
+						ForbiddenAnswer: sCur[a],
+					},
+					RunAfterWave: caseUnlockWave(q, pFW),
+					UserID:       PrimaryUser,
+				})
+			} else {
+				q, ok := sRecall[a]
+				if !ok {
+					continue
+				}
+				cases = append(cases, StagedCase{
+					Case: protocol.MemoryCase{
+						ID:              protocol.OpaqueCaseID(seed, "iso-b", i),
+						QuestionID:      "iso-b-" + a,
+						QuestionType:    "isolation",
+						Question:        q.Text,
+						ExpectedAnswer:  q.Answer,
+						ForbiddenAnswer: pCur[a],
+					},
+					RunAfterWave: 0,
+					UserID:       SecondaryUser,
+				})
+			}
+			i++
+		}
 	}
 
 	// B3 cross-user lifecycle, v3 ONLY. The read-path leak above is probed by the
@@ -164,6 +209,21 @@ func GenerateIsolationForVersion(seed int64, primaryN, nWaves, isoCases, benchVe
 	}
 
 	return IsolationSuite{SecondaryWave: secondary, Cases: cases}, nil
+}
+
+func v8ScalarIsolationBudget(primaryN, requested int) int {
+	// The fixed full-profile total is more valuable than preserving v7's
+	// seed-variable scalar slice. Medium spends its isolation budget on the five
+	// stronger write/delete/read cross-user cases; full retains four scalar
+	// conflicts in addition to those five.
+	switch primaryN {
+	case 185:
+		return 4
+	case 52:
+		return 0
+	default:
+		return requested
+	}
 }
 
 // Cross-user lifecycle nouns. Distinct from the single-user lifecycle nouns

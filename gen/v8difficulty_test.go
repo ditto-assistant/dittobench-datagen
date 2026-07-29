@@ -275,17 +275,19 @@ func TestV8RepeatedConversionsHaveUniqueContext(t *testing.T) {
 }
 
 func TestV8ReferenceRunPreservesTheV7RuntimeEnvelope(t *testing.T) {
-	const referenceSeed int64 = 3058240546919425205
-	for _, runSize := range []string{"small", "medium", "full"} {
-		prof, _ := ProfileForVersion(runSize, protocol.BenchVersionV8)
-		artifact, err := GenerateDataset(referenceSeed, prof, protocol.BenchVersionV8)
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := map[string]int{"small": 17, "medium": 110, "full": 282}[runSize]
-		got := len(artifact.ToolCases) + len(artifact.MemoryCases)
-		if got != want {
-			t.Fatalf("v8 %s reference run has %d cases, want existing envelope %d", runSize, got, want)
+	seeds := []int64{1, 2, 3, 7, 11, 42, 123456789, 3058240546919425205}
+	for _, seed := range seeds {
+		for _, runSize := range []string{"small", "medium", "full"} {
+			prof, _ := ProfileForVersion(runSize, protocol.BenchVersionV8)
+			artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV8)
+			if err != nil {
+				t.Fatalf("v8 seed %d %s generation failed: %v", seed, runSize, err)
+			}
+			want := map[string]int{"small": 17, "medium": 110, "full": 282}[runSize]
+			got := len(artifact.ToolCases) + len(artifact.MemoryCases)
+			if got != want {
+				t.Fatalf("v8 seed %d %s run has %d cases, want fixed envelope %d", seed, runSize, got, want)
+			}
 		}
 	}
 }

@@ -278,11 +278,14 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	// aliases, variable-length messages, and computed outcomes. Generate it from
 	// an independent seed stream so adding it cannot perturb the frozen v7 RNG.
 	var worldCases []protocol.MemoryCase
+	var worldReserve []protocol.MemoryCase
 	var worldPairs []protocol.MemoryPair
 	if benchVersion >= protocol.BenchVersionV8 {
 		scale, count := v8WorldProfile(n)
 		world := universe.Generate(seed, scale)
 		worldCases = world.MemoryCases(count)
+		allWorldCases := world.MemoryCases(count + 64)
+		worldReserve = allWorldCases[len(worldCases):]
 		worldPairs = world.Pairs
 	}
 	suite.WorldCases = len(worldCases)
@@ -490,7 +493,17 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		for i := range staged {
 			staged[i].Case.BenchVersion = benchVersion
 		}
-		staged, err = trimV8ToExistingBudget(staged, v8PrimaryCaseBudget(n))
+		budget := v8PrimaryCaseBudget(n)
+		if len(staged) < budget {
+			need := budget - len(staged)
+			if need > len(worldReserve) {
+				return MemorySuite{}, fmt.Errorf("v8 memory budget is short by %d case(s)", need-len(worldReserve))
+			}
+			for _, c := range worldReserve[:need] {
+				staged = append(staged, StagedCase{Case: c, RunAfterWave: 0})
+			}
+		}
+		staged, err = trimV8ToExistingBudget(staged, budget)
 		if err != nil {
 			return MemorySuite{}, err
 		}
@@ -565,9 +578,14 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 func v8PrimaryCaseBudget(n int) int {
 	switch {
 	case n == 185:
-		return 190
+		// Full retains 198 memory cases total: 189 primary-world cases plus
+		// four scalar-isolation and five cross-user lifecycle cases. The fixed
+		// isolation quota never evicts a composed or integrity case.
+		return 189
 	case n == 52:
-		return 66
+		// Medium retains 70 memory cases total: 65 primary-world cases plus
+		// the five cross-user lifecycle cases.
+		return 65
 	case n == 6:
 		return 11
 	default:
