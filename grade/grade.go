@@ -188,9 +188,12 @@ func Memory(mc protocol.MemoryCase, resp protocol.RunResponse) Verdict {
 			// conjunction with the declarative and behavior-change slices (v5 4.1).
 			if strictV8 && strings.TrimSpace(text) != "" {
 				// A deterministic grader cannot prove conversational quality from
-				// unconstrained small-talk. Retain a small liveness credit instead of
-				// granting a full memory point to any canned non-empty response.
-				return 0.25
+				// unconstrained small-talk. Retain the minimum correctness credit
+				// instead of granting a full memory point to any canned non-empty
+				// response. The API classifies case scores >= 0.5 as correct when it
+				// builds the conversational-sanity slice; returning less here would
+				// make every clean v8 greeting a deterministic sanity failure.
+				return 0.5
 			}
 			return b2f(strings.TrimSpace(text) != "")
 		default: // AnswerValue

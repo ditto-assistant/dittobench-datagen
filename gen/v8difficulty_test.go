@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -155,6 +156,75 @@ func TestV8ReasoningMemoryFloor(t *testing.T) {
 		}
 		if 10*reasoning < 3*len(artifact.MemoryCases) {
 			t.Fatalf("seed %d reasoning share %d/%d is below 30%%: %v", seed, reasoning, len(artifact.MemoryCases), hist)
+		}
+	}
+}
+
+func TestV8RepeatedConversionsHaveUniqueContext(t *testing.T) {
+	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
+	legacyQuestions := map[string]bool{}
+	for _, spec := range convSpecsForVersion(protocol.BenchVersionV7) {
+		for _, question := range spec.ask {
+			legacyQuestions[question] = true
+		}
+		if len(spec.v8Contexts) < 6 {
+			t.Fatalf("conversion domain has %d v8 contexts, want at least 6: %+v", len(spec.v8Contexts), spec)
+		}
+	}
+
+	for seed := int64(1); seed <= 40; seed++ {
+		artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV8)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen := map[string]bool{}
+		count := 0
+		for _, mc := range artifact.MemoryCases {
+			if mc.QuestionType != QTNonVerbatim {
+				continue
+			}
+			count++
+			if legacyQuestions[mc.Question] {
+				t.Fatalf("seed %d retained under-specified conversion question %q", seed, mc.Question)
+			}
+			if seen[mc.Question] {
+				t.Fatalf("seed %d repeated conversion question %q", seed, mc.Question)
+			}
+			seen[mc.Question] = true
+		}
+		if count != 30 {
+			t.Fatalf("seed %d non-verbatim cases = %d, want 30", seed, count)
+		}
+	}
+}
+
+func TestV8TripAnswersSumEveryCountryLeg(t *testing.T) {
+	trip := convSpecs[2]
+	if len(trip.v8Contexts) != 6 {
+		t.Fatalf("trip contexts = %d, want 6", len(trip.v8Contexts))
+	}
+	for _, ctx := range trip.v8Contexts {
+		if len(ctx.entries) == 0 {
+			t.Fatalf("trip context has no composed entries: %+v", ctx)
+		}
+		for _, entry := range ctx.entries {
+			if len(entry.componentDays) < 2 {
+				t.Fatalf("trip fact is not multi-leg: %+v", entry)
+			}
+			total := 0
+			for _, days := range entry.componentDays {
+				total += days
+			}
+			var accepted int
+			if _, err := fmt.Sscanf(entry.accept[0], "%d days", &accepted); err != nil {
+				t.Fatalf("parse accepted trip total %q: %v", entry.accept[0], err)
+			}
+			if total != accepted {
+				t.Fatalf("trip components %v sum to %d, accepted answer is %d", entry.componentDays, total, accepted)
+			}
+			if strings.Contains(entry.storedQty, entry.accept[0]) {
+				t.Fatalf("trip memory leaked computed total %q: %q", entry.accept[0], entry.storedQty)
+			}
 		}
 	}
 }

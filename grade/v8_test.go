@@ -12,8 +12,8 @@ func v8Case(kind string) protocol.MemoryCase {
 
 func TestV8StrictKindsDoNotChangeV7(t *testing.T) {
 	chitchat := v8Case(protocol.AnswerChitchat)
-	if got := Memory(chitchat, protocol.RunResponse{FinalText: "hello"}).Score; got != 0.25 {
-		t.Fatalf("v8 chitchat liveness credit = %v, want .25", got)
+	if got := Memory(chitchat, protocol.RunResponse{FinalText: "hello"}).Score; got != 0.5 {
+		t.Fatalf("v8 chitchat correctness credit = %v, want .5", got)
 	}
 	chitchat.BenchVersion = protocol.BenchVersionV7
 	if got := Memory(chitchat, protocol.RunResponse{FinalText: "hello"}).Score; got != 1 {
