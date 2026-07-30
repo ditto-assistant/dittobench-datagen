@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
@@ -81,6 +82,32 @@ func TestViewerIndexAndAssetsAreEmbedded(t *testing.T) {
 		newHandler(testConfig()).ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Errorf("%s status=%d", target, rec.Code)
+		}
+	}
+}
+
+func TestViewerExposesMemoryReviewOrdering(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	newHandler(testConfig()).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("index status=%d", rec.Code)
+	}
+	for _, want := range []string{`id="memory-sort"`, `value="time"`, `value="category"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("viewer index does not expose %q", want)
+		}
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
+	rec = httptest.NewRecorder()
+	newHandler(testConfig()).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("app status=%d", rec.Code)
+	}
+	for _, want := range []string{"compareMemoryItems", "memoryCategory", "formatTimestamp"} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("viewer app does not implement %q", want)
 		}
 	}
 }

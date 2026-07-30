@@ -10,6 +10,8 @@ const els = {
   memoriesTab: document.querySelector('#memories-tab'),
   search: document.querySelector('#search'),
   caseFilters: document.querySelector('#case-filters'),
+  memoryFilters: document.querySelector('#memory-filters'),
+  memorySort: document.querySelector('#memory-sort'),
   axisFilter: document.querySelector('#axis-filter'),
   typeFilter: document.querySelector('#type-filter'),
   flaggedOnly: document.querySelector('#flagged-only'),
@@ -45,6 +47,7 @@ const state = {
   filteredItems: [],
   selectedKey: '',
   mode: 'cases',
+  memorySort: 'time',
   flags: loadFlags(),
   repeatedOpeners: new Map(),
   repeatedResponses: new Map(),
@@ -66,6 +69,8 @@ async function init() {
   els.runSize.value = query.get('run_size') || state.config.default_run_size;
   els.seed.value = query.get('seed') || String(state.config.default_seed);
   state.mode = query.get('view') === 'memories' ? 'memories' : 'cases';
+  state.memorySort = query.get('sort') === 'category' ? 'category' : 'time';
+  els.memorySort.value = state.memorySort;
   state.selectedKey = query.get('item') || '';
   bindEvents();
   await loadDataset();
@@ -88,6 +93,11 @@ function bindEvents() {
   els.search.addEventListener('input', resetAndRenderList);
   els.axisFilter.addEventListener('change', resetAndRenderList);
   els.typeFilter.addEventListener('change', resetAndRenderList);
+  els.memorySort.addEventListener('change', () => {
+    state.memorySort = els.memorySort.value;
+    resetAndRenderList();
+    updateURL();
+  });
   els.flaggedOnly.addEventListener('change', resetAndRenderList);
   els.flagForm.addEventListener('submit', saveCurrentFlag);
   els.removeFlag.addEventListener('click', removeCurrentFlag);
@@ -96,6 +106,8 @@ function bindEvents() {
   els.exportFlags.addEventListener('click', exportCurrentFlags);
   els.timelineButton.addEventListener('click', () => {
     setMode('memories');
+    state.memorySort = 'time';
+    els.memorySort.value = 'time';
     els.search.value = '';
     renderList();
   });
@@ -144,6 +156,7 @@ function indexDataset() {
     for (const [pairIndex, pair] of (wave.pairs || []).entries()) {
       const indexed = {
         ...pair,
+        dataset_index: state.pairs.length,
         wave: wave.wave ?? waveIndex,
         user_id: wave.user_id || 'miner',
         subjects: subjectsByPair.get(pair.pair_id) || [],
@@ -161,6 +174,7 @@ function indexDataset() {
 			if (recordSignatures.has(signature)) continue;
 			const indexed = {
 				...pair,
+				dataset_index: state.pairs.length,
 				wave: 'prerequisite',
 				user_id: 'miner',
 				subjects: [],
@@ -192,6 +206,7 @@ function memoryItems() {
 	key: `pair:${data.review_key}`,
     kind: 'pair',
     type: data.session_id || 'unsessioned',
+    category: memoryCategory(data),
     data,
     label: data.session_id || 'memory record',
     prompt: `${data.prompt || ''} ${data.response || ''}`,
@@ -229,6 +244,7 @@ function renderTabs() {
   els.casesTab.setAttribute('aria-selected', String(cases));
   els.memoriesTab.setAttribute('aria-selected', String(!cases));
   els.caseFilters.hidden = !cases;
+  els.memoryFilters.hidden = cases;
 }
 
 function populateTypeFilter() {
@@ -274,6 +290,7 @@ function renderList() {
       data.user_id, data.session_id, ...(data.expected_tools || []).map((tool) => tool.name)].join(' ').toLowerCase();
     return searchable.includes(query);
   });
+  if (state.mode === 'memories') state.filteredItems.sort(compareMemoryItems);
 
   els.resultCount.textContent = `${state.filteredItems.length} of ${state.items.length} ${state.mode === 'cases' ? 'cases' : 'memories'}`;
   if (!state.filteredItems.some((item) => item.key === state.selectedKey)) {
@@ -285,7 +302,7 @@ function renderList() {
 	els.resultCount.textContent = state.filteredItems.length > visibleItems.length
 		? `${state.filteredItems.length} matches · showing ${visibleItems.length}`
 		: `${state.filteredItems.length} of ${state.items.length} ${state.mode === 'cases' ? 'cases' : 'memories'}`;
-  els.itemList.innerHTML = visibleItems.map((item) => itemRowHTML(item, datasetKey)).join('') ||
+  els.itemList.innerHTML = itemListHTML(visibleItems, datasetKey) ||
     '<div class="empty-state"><strong>No matches.</strong><span>Clear a filter or search term.</span></div>';
 	if (visibleItems.length < state.filteredItems.length) {
 		els.itemList.insertAdjacentHTML('beforeend', `<button id="show-more" class="show-more" type="button">Show ${Math.min(120, state.filteredItems.length - visibleItems.length)} more</button>`);
@@ -300,6 +317,26 @@ function renderList() {
   renderSelection();
 }
 
+function itemListHTML(items, datasetKey) {
+  if (state.mode !== 'memories' || state.memorySort !== 'category') {
+    return items.map((item) => itemRowHTML(item, datasetKey)).join('');
+  }
+  const categoryCounts = frequencyMap(state.filteredItems.map((item) => item.category));
+  let currentCategory = '';
+  let html = '';
+  for (const item of items) {
+    if (item.category !== currentCategory) {
+      if (currentCategory) html += '</div>';
+      currentCategory = item.category;
+      html += `<div class="item-group" role="group" aria-label="${escapeHTML(currentCategory)}">
+        <div class="item-group-heading" aria-hidden="true"><span>${escapeHTML(currentCategory)}</span><small>${categoryCounts.get(currentCategory) || 0}</small></div>`;
+    }
+    html += itemRowHTML(item, datasetKey);
+  }
+  if (currentCategory) html += '</div>';
+  return html;
+}
+
 function resetAndRenderList() {
 	state.renderLimit = 120;
 	renderList();
@@ -309,7 +346,7 @@ function itemRowHTML(item, datasetKey) {
   const data = item.data;
   const flagged = Boolean(flagFor(datasetKey, item.key));
   const meta = item.kind === 'pair'
-    ? [`wave ${data.wave}`, data.user_id, `${(data.prompt || '').length} chars`]
+    ? [formatTimestamp(data.timestamp), item.category, data.user_id, `${(data.prompt || '').length} chars`]
     : [item.kind, shortID(data.id), item.kind === 'memory' ? `wave ${data.run_after_wave || 0}` : `${(data.expected_tools || []).length} expected`];
   return `<button class="item-row ${item.key === state.selectedKey ? 'selected' : ''}" type="button" role="option" aria-selected="${item.key === state.selectedKey}" data-key="${escapeHTML(item.key)}">
     <span class="item-row-top">
@@ -733,6 +770,7 @@ function updateURL() {
     seed: String(state.artifact.seed),
     view: state.mode,
   });
+  if (state.mode === 'memories') query.set('sort', state.memorySort);
   if (state.selectedKey) query.set('item', state.selectedKey);
   history.replaceState(null, '', `?${query}`);
 }
@@ -793,6 +831,40 @@ async function fetchJSON(url) {
 
 function paragraphOpeners(text) {
   return String(text || '').split(/\n\s*\n/).map((paragraph) => normalizeSpace(paragraph).toLowerCase().split(' ').slice(0, 7).join(' ')).filter((value) => value.split(' ').length >= 5);
+}
+
+function compareMemoryItems(a, b) {
+  if (state.memorySort === 'category') {
+    const categoryOrder = a.category.localeCompare(b.category);
+    if (categoryOrder) return categoryOrder;
+  }
+  const timeOrder = timestampValue(a.data.timestamp) - timestampValue(b.data.timestamp);
+  if (timeOrder) return timeOrder;
+  return (a.data.dataset_index ?? 0) - (b.data.dataset_index ?? 0);
+}
+
+function memoryCategory(pair) {
+  const session = String(pair.session_id || '').toLowerCase();
+  if (session.startsWith('people-')) return 'People & relationships';
+  if (session.startsWith('project-') || session === 'business-import') return 'Business & projects';
+  if (session.startsWith('trip-')) return 'Travel';
+  if (session.startsWith('story-')) return 'Long stories';
+  if (session.startsWith('isolation-')) return 'Graph isolation';
+  if (session.startsWith('preference')) return 'Preferences';
+  if (session.startsWith('sess-')) return `Legacy · ${session.split('-').slice(0, 2).join('-')}`;
+  const family = session.split('-')[0];
+  return family ? family[0].toUpperCase() + family.slice(1) : 'Other';
+}
+
+function timestampValue(value) {
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? Number.MAX_SAFE_INTEGER : parsed;
+}
+
+function formatTimestamp(value) {
+  const parsed = timestampValue(value);
+  if (parsed === Number.MAX_SAFE_INTEGER) return 'time unknown';
+  return new Date(parsed).toISOString().replace('T', ' · ').slice(0, 18) + ' UTC';
 }
 
 function frequencyMap(values) {
