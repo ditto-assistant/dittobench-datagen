@@ -40,6 +40,39 @@ func varySurface(r *rand.Rand, s, value string) string {
 	return Wrap(r, s, value, stmtLeadIns, stmtTrailers)
 }
 
+// humanizeV8Fact removes benchmark-like connective tissue after all legacy
+// facts have been deterministically selected. It is deliberately V8-only at
+// the call site: V2-V7 retain their frozen bytes and draw sequence.
+func humanizeV8Fact(user, assistant string) (string, string) {
+	for _, prefix := range []string{"For reference, ", "Oh, "} {
+		if strings.HasPrefix(user, prefix) {
+			user = strings.TrimPrefix(user, prefix)
+			user = capitalizeFirst(user)
+			break
+		}
+	}
+	for _, suffix := range []string{
+		" Nothing urgent.", " Just keeping you posted.", " Thought I'd mention it.",
+		" Just flagging it.", " No big deal.", " Figured you should know.",
+	} {
+		user = strings.TrimSuffix(user, suffix)
+	}
+	if strings.Contains(assistant, ", not something about you.") {
+		assistant = strings.Replace(assistant, "Got it, ", "Thanks for telling me about ", 1)
+		assistant = strings.Replace(assistant, ", not something about you.", " — I’ll keep that straight.", 1)
+	}
+	return user, assistant
+}
+
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	runes := []rune(s)
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
+}
+
 // Wrap is the shared Tier-1a surface-variation engine: it wraps a rendered
 // statement with a lead-in and trailer drawn from the given pools. It always
 // consumes exactly two draws from r (so the RNG stream is independent of which

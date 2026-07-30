@@ -13,6 +13,7 @@ import (
 
 	"github.com/ditto-assistant/dittobench-datagen/internal/assistantvoice"
 	"github.com/ditto-assistant/dittobench-datagen/internal/textnoise"
+	"github.com/ditto-assistant/dittobench-datagen/internal/uservoice"
 	"github.com/ditto-assistant/dittobench-datagen/persona"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 	"github.com/ditto-assistant/dittobench-datagen/toolexec"
@@ -1644,6 +1645,7 @@ func applyV8AssistantVoice(seed int64, cases []protocol.ToolCase) {
 	for i := range cases {
 		for j := range cases[i].PrerequisitePairs {
 			pair := &cases[i].PrerequisitePairs[j]
+			pair.Prompt = uservoice.Render(pair.Prompt)
 			pair.Response = assistantvoice.Render(seed, pair.PairID, pair.SessionID, "", pair.Prompt, pair.Response)
 		}
 	}

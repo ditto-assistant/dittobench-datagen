@@ -27,6 +27,12 @@ func TestV8TranscriptUsesWarmVariedAssistantVoice(t *testing.T) {
 		if strings.Contains(strings.ToLower(response), "subscribed graph") {
 			t.Fatalf("%s pair %s leaks implementation language in response %q", source, pair.PairID, response)
 		}
+		lowerPrompt := strings.ToLower(pair.Prompt)
+		for _, banned := range []string{"for reference", "nothing urgent", "not something about you", "worth a mention"} {
+			if strings.Contains(lowerPrompt, banned) || strings.Contains(strings.ToLower(response), banned) {
+				t.Fatalf("%s pair %s contains benchmark-like phrase %q: %q / %q", source, pair.PairID, banned, pair.Prompt, response)
+			}
+		}
 		counts[response]++
 		total++
 	}
@@ -38,6 +44,11 @@ func TestV8TranscriptUsesWarmVariedAssistantVoice(t *testing.T) {
 	for _, wave := range artifact.MemoryWaves {
 		for _, pair := range wave.Pairs {
 			check("memory wave", pair)
+		}
+	}
+	for _, memoryCase := range artifact.MemoryCases {
+		if memoryCase.QuestionType == QTDeclarativeAck && strings.Contains(strings.ToLower(memoryCase.Question), "nickname") {
+			t.Fatalf("token-shaped integrity value is mislabeled as a nickname: %q", memoryCase.Question)
 		}
 	}
 	if total == 0 {

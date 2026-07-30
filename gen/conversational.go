@@ -143,6 +143,17 @@ var declarativeAckSpecs = []string{
 	"Let's use %s as my nickname going forward.",
 }
 
+var v8DeclarativeAckSpecs = []string{
+	"By the way, the codeword for our chats is %s — use it when you check in with me.",
+	"Quick note: you can file this project under the handle %s from now on.",
+	"The call sign for these sessions is %s, in case it comes up.",
+	"The tag I use for this work is %s.",
+	"My membership number here is %s.",
+	"Just so you have it, my locker tag is %s.",
+	"The reference code for this thread is %s.",
+	"Use %s as the project reference going forward.",
+}
+
 // declarativeAckForms are acknowledgment surfaces that also count as a correct
 // response to a plain declarative statement (bench_version 6). The old grading
 // required the harness to ECHO the coined token verbatim, so a perfectly grounded
@@ -329,6 +340,10 @@ func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves
 	}
 	var out conversationalSuite
 	pick := func(opts []string) string { return opts[r.Intn(len(opts))] }
+	ackSpecs := declarativeAckSpecs
+	if benchVersion >= protocol.BenchVersionV8 {
+		ackSpecs = v8DeclarativeAckSpecs
+	}
 	offTopic := offTopicSelfValues(plan, 8)
 
 	ordinal := 0
@@ -368,7 +383,7 @@ func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves
 		))
 		addCase(protocol.MemoryCase{
 			QuestionType:    QTDeclarativeAck,
-			Question:        fmt.Sprintf(pick(declarativeAckSpecs), val),
+			Question:        fmt.Sprintf(pick(ackSpecs), val),
 			ExpectedAnswer:  val,
 			AnswerKind:      protocol.AnswerValue,
 			AcceptAny:       ackAccept, // v6: a clear acknowledgment also passes

@@ -1181,7 +1181,12 @@ func BuildPlanForVersion(seed int64, opts Opts, benchVersion int) (*Plan, error)
 	}
 
 	// --- assign facts to session scripts (ordered), interleaved with noise ---
-	p.Sessions = buildSessions(r, p.Facts, opts.Sessions)
+	if benchVersion >= protocol.BenchVersionV8 {
+		for i := range p.Facts {
+			p.Facts[i].UserText, p.Facts[i].AsstText = humanizeV8Fact(p.Facts[i].UserText, p.Facts[i].AsstText)
+		}
+	}
+	p.Sessions = buildSessions(r, p.Facts, opts.Sessions, benchVersion)
 	return p, nil
 }
 
@@ -1404,7 +1409,7 @@ var asstRecSpecs = []asstRecSpec{
 // buildSessions groups facts into their assigned sessions (fact order within a
 // session follows Seq), interleaves a seed-chosen noise beat or two, and assigns
 // each session a strictly increasing day offset.
-func buildSessions(r *rand.Rand, facts []Fact, nSessions int) []Session {
+func buildSessions(r *rand.Rand, facts []Fact, nSessions, benchVersion int) []Session {
 	bySession := make([][]Fact, nSessions)
 	for _, f := range facts {
 		s := f.Session
@@ -1425,16 +1430,16 @@ func buildSessions(r *rand.Rand, facts []Fact, nSessions int) []Session {
 		beats := make([]Beat, 0, len(facts)+2)
 		// A leading noise beat on most sessions so not every turn is a fact.
 		if r.Intn(3) != 0 {
-			beats = append(beats, noiseBeat(r))
+			beats = append(beats, noiseBeat(r, benchVersion))
 		}
 		for _, f := range facts {
 			beats = append(beats, Beat{Kind: BeatFact, FactID: f.ID, UserText: f.UserText, AsstText: f.AsstText})
 			if r.Intn(4) == 0 { // occasional interstitial chit-chat
-				beats = append(beats, noiseBeat(r))
+				beats = append(beats, noiseBeat(r, benchVersion))
 			}
 		}
 		if len(beats) == 0 { // never emit an empty session
-			beats = append(beats, noiseBeat(r))
+			beats = append(beats, noiseBeat(r, benchVersion))
 		}
 		sessions = append(sessions, Session{Index: i, DayOffset: day, Beats: beats})
 		// Strictly increasing gaps, mixing week-scale (1..10 days) with an
@@ -1449,8 +1454,13 @@ func buildSessions(r *rand.Rand, facts []Fact, nSessions int) []Session {
 	return sessions
 }
 
-func noiseBeat(r *rand.Rand) Beat {
-	t := pick(r, noiseTopics)
+func noiseBeat(r *rand.Rand, benchVersion int) Beat {
+	index := r.Intn(len(noiseTopics))
+	t := noiseTopics[index]
+	if benchVersion >= protocol.BenchVersionV8 {
+		surface := v8NoiseSurfaces[index][r.Intn(len(v8NoiseSurfaces[index]))]
+		return Beat{Kind: BeatNoise, Topic: t, UserText: surface.user, AsstText: surface.asst}
+	}
 	tmpl := noiseTemplates[r.Intn(len(noiseTemplates))]
 	return Beat{
 		Kind:     BeatNoise,
