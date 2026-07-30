@@ -1,13 +1,14 @@
 package assistantvoice
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
 
 func TestRenderReplacesColdAcknowledgementsDeterministically(t *testing.T) {
-	got := Render(42, "pair-a", "trip-1", "The trip changed yesterday.", "Noted.")
-	again := Render(42, "pair-a", "trip-1", "The trip changed yesterday.", "Noted.")
+	got := Render(42, "pair-a", "trip-1", "", "The trip changed yesterday.", "Noted.")
+	again := Render(42, "pair-a", "trip-1", "", "The trip changed yesterday.", "Noted.")
 	if got != again {
 		t.Fatalf("same identity rendered different responses: %q != %q", got, again)
 	}
@@ -20,7 +21,7 @@ func TestRenderReplacesColdAcknowledgementsDeterministically(t *testing.T) {
 }
 
 func TestRenderPreservesSubstantiveFactsWhileWarmingPrefix(t *testing.T) {
-	got := Render(42, "pair-b", "person", "My partner is Anika.", "Noted your partner, Anika.")
+	got := Render(42, "pair-b", "person", "", "My partner is Anika.", "Noted your partner, Anika.")
 	if IsCold(got) {
 		t.Fatalf("rendered response remains cold: %q", got)
 	}
@@ -29,11 +30,11 @@ func TestRenderPreservesSubstantiveFactsWhileWarmingPrefix(t *testing.T) {
 	}
 
 	direct := "Morgan Lee's office number is +1-212-555-0192."
-	if got := Render(42, "pair-c", "accountant", "I need the number.", direct); got != direct {
+	if got := Render(42, "pair-c", "accountant", "", "I need the number.", direct); got != direct {
 		t.Fatalf("substantive direct answer changed: %q", got)
 	}
 
-	got = Render(42, "pair-d", "security", "My spare key code is 2194.", "Got it. Your spare key code is 2194.")
+	got = Render(42, "pair-d", "security", "", "My spare key code is 2194.", "Got it. Your spare key code is 2194.")
 	if IsCold(got) || !strings.Contains(got, "Your spare key code is 2194.") {
 		t.Fatalf("period-prefixed fact was not preserved and warmed: %q", got)
 	}
@@ -43,11 +44,47 @@ func TestRenderVariesGenericAcknowledgementsByPair(t *testing.T) {
 	seen := map[string]bool{}
 	for i := 0; i < 80; i++ {
 		pairID := "pair-" + strings.Repeat("x", i) + string(rune('a'+i%26))
-		seen[Render(7, pairID, "general", "Here is another detail.", "Got it.")] = true
+		seen[Render(7, pairID, "general", "", "Here is another detail.", "Got it.")] = true
 	}
 	if len(seen) < 24 {
 		t.Fatalf("generic acknowledgement diversity=%d, want at least 24", len(seen))
 	}
+}
+
+func TestRenderUsesFirstNameOftenButNotAlways(t *testing.T) {
+	const total = 500
+	addressed := 0
+	for i := 0; i < total; i++ {
+		pairID := fmt.Sprintf("pair-%03d", i)
+		response := Render(19, pairID, "general", "Peyton Spencer", "Here is another detail.", "Got it.")
+		if strings.Contains(response, "Peyton") {
+			addressed++
+		}
+		if strings.Contains(response, "Spencer") {
+			t.Fatalf("reply used the full name instead of the conversational first name: %q", response)
+		}
+		if strings.HasPrefix(response, "Peyton, ") && !startsFirstPerson(strings.TrimPrefix(response, "Peyton, ")) {
+			t.Fatalf("leading name produced an unnatural capitalized clause: %q", response)
+		}
+	}
+	if addressed < total*20/100 || addressed > total*30/100 {
+		t.Fatalf("name-address cadence=%d/%d, want 20-30%%", addressed, total)
+	}
+}
+
+func TestNamePlacementDoesNotSplitASeededFactFromItsReply(t *testing.T) {
+	const response = "Tidewater Instruments — good to know where you work."
+	for i := 0; i < 100; i++ {
+		got := addressUserByName(19, fmt.Sprintf("fact-%03d", i), "Peyton Spencer", response)
+		if !strings.Contains(got, "Peyton") {
+			continue
+		}
+		if strings.Contains(got, "Instruments, Peyton —") {
+			t.Fatalf("name split factual subject from its acknowledgement: %q", got)
+		}
+		return
+	}
+	t.Fatal("test identities never selected name addressing")
 }
 
 func TestIsColdRejectsTransactionalSurfaces(t *testing.T) {

@@ -139,16 +139,18 @@ var updateWarmReplies = []string{
 
 // Render returns a deterministic V8 assistant response. It replaces generic or
 // transactional acknowledgements and rewrites cold prefixes while retaining any
-// substantive fact already present in the response.
-func Render(seed int64, pairID, sessionID, prompt, response string) string {
+// substantive fact already present in the response. When userName is available,
+// a bounded share of replies address the user by first name; most deliberately
+// do not, matching a warm companion rather than a scripted support bot.
+func Render(seed int64, pairID, sessionID, userName, prompt, response string) string {
 	response = strings.TrimSpace(response)
+	rendered := response
 	if response == "" || genericAcknowledgements[strings.ToLower(response)] {
-		return warmAcknowledgement(seed, pairID, sessionID, prompt)
+		rendered = warmAcknowledgement(seed, pairID, sessionID, prompt)
+	} else if rewritten, ok := rewriteTransactional(seed, pairID, response); ok {
+		rendered = rewritten
 	}
-	if rewritten, ok := rewriteTransactional(seed, pairID, response); ok {
-		return rewritten
-	}
-	return response
+	return addressUserByName(seed, pairID, userName, rendered)
 }
 
 // IsCold identifies response surfaces that violate the V8 transcript standard.
@@ -220,6 +222,61 @@ func rewriteTransactional(seed int64, pairID, response string) (string, bool) {
 func warmAcknowledgement(seed int64, pairID, sessionID, prompt string) string {
 	replies := repliesFor(sessionID, prompt)
 	return replies[hashIndex(seed, pairID, "reply", len(replies))]
+}
+
+func addressUserByName(seed int64, pairID, userName, response string) string {
+	fields := strings.Fields(userName)
+	if len(fields) == 0 {
+		return response
+	}
+	firstName := fields[0]
+	if hashIndex(seed, pairID, "use-name:"+firstName, 4) != 0 {
+		return response
+	}
+	if strings.Contains(strings.ToLower(response), strings.ToLower(firstName)) {
+		return response
+	}
+
+	// Alternate the placement so name use itself does not become a repeated
+	// template. An em-dash acknowledgement reads best with an inline vocative;
+	// other replies rotate between a leading and trailing address.
+	if divider := strings.Index(response, " — "); divider > 0 && supportsInlineVocative(response[:divider]) && hashIndex(seed, pairID, "name-place:"+firstName, 2) == 0 {
+		return response[:divider] + ", " + firstName + response[divider:]
+	}
+	if hashIndex(seed, pairID, "name-place:"+firstName, 2) == 0 && startsFirstPerson(response) {
+		return firstName + ", " + response
+	}
+
+	ending := ""
+	if strings.HasSuffix(response, ".") || strings.HasSuffix(response, "!") || strings.HasSuffix(response, "?") {
+		ending = response[len(response)-1:]
+		response = strings.TrimSpace(response[:len(response)-1])
+	}
+	if ending == "" {
+		ending = "."
+	}
+	return response + ", " + firstName + ending
+}
+
+func startsFirstPerson(response string) bool {
+	return strings.HasPrefix(response, "I ") ||
+		strings.HasPrefix(response, "I’") ||
+		strings.HasPrefix(response, "I'm")
+}
+
+func supportsInlineVocative(lead string) bool {
+	if startsFirstPerson(lead) {
+		return true
+	}
+	for _, conversationalLead := range []string{
+		"Aw", "Good catch", "Got you", "Lovely", "Okay", "Ooh", "Perfect",
+		"Right here", "Sounds good", "Thanks", "That makes sense", "With you",
+	} {
+		if lead == conversationalLead || strings.HasPrefix(lead, conversationalLead+",") {
+			return true
+		}
+	}
+	return false
 }
 
 func repliesFor(sessionID, prompt string) []string {

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ditto-assistant/dittobench-datagen/internal/assistantvoice"
+	"github.com/ditto-assistant/dittobench-datagen/persona"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
@@ -50,4 +51,58 @@ func TestV8TranscriptUsesWarmVariedAssistantVoice(t *testing.T) {
 			t.Fatalf("assistant response repeated %d times, want at most 16: %q", count, response)
 		}
 	}
+}
+
+func TestV8TranscriptAddressesEachSeededUserByFirstNameAtHumanCadence(t *testing.T) {
+	const seed = int64(3473949159349387300)
+	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
+	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	primary, err := persona.BuildPlanForVersion(seed, personaOptsFor(prof.Mem), protocol.BenchVersionV8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondary, err := persona.BuildPlanForVersion(seed^isolationSalt, isolationOpts(), protocol.BenchVersionV8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstName := func(full string) string { return strings.Fields(full)[0] }
+	names := map[string]string{
+		PrimaryUser:   firstName(primary.Name),
+		SecondaryUser: firstName(secondary.Name),
+	}
+
+	eligible, addressed := 0, 0
+	for _, wave := range artifact.MemoryWaves {
+		name := names[wave.UserID]
+		if name == "" {
+			continue
+		}
+		for _, pair := range wave.Pairs {
+			eligible++
+			if responseAddressesName(pair.Response, name) {
+				addressed++
+			}
+		}
+	}
+	if addressed < eligible*18/100 || addressed > eligible*30/100 {
+		t.Fatalf("seeded-name cadence=%d/%d, want 18-30%%", addressed, eligible)
+	}
+	if addressed == eligible {
+		t.Fatal("every V8 reply addresses the user by name")
+	}
+}
+
+func responseAddressesName(response, name string) bool {
+	if strings.HasPrefix(response, name+", ") || strings.Contains(response, ", "+name+" —") {
+		return true
+	}
+	for _, ending := range []string{".", "!", "?"} {
+		if strings.HasSuffix(response, ", "+name+ending) {
+			return true
+		}
+	}
+	return false
 }

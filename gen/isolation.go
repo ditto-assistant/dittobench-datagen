@@ -207,7 +207,7 @@ func GenerateIsolationForVersion(seed int64, primaryN, nWaves, isoCases, benchVe
 			cases[i].Case.BenchVersion = benchVersion
 		}
 		secondaryWave := []protocol.SeedRequest{secondary}
-		applyV8AssistantVoice(seed, secondaryWave)
+		applyV8AssistantVoice(seed, sPlan.Name, secondaryWave)
 		secondary = secondaryWave[0]
 	}
 
