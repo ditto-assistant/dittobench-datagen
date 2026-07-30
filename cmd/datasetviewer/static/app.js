@@ -407,6 +407,7 @@ function renderMemoryCase(item) {
       <div class="trajectory">${operations.map((operation, index) => `<div class="trajectory-step"><span>${index + 1}</span><div><strong>${escapeHTML(operation)}</strong><small>${escapeHTML(facts[index] || '')}</small></div></div>`).join('')}</div>
       ${constraints.length ? `<div class="section-heading compact"><h3>Disambiguation constraints</h3></div><div class="token-list">${constraints.map((value) => `<span class="token">${escapeHTML(value)}</span>`).join('')}</div>` : ''}
     </section>` : ''}
+    ${structuredCitationSection(annotation)}
     <section class="section">
       <div class="section-heading"><h3>Negative grading guards</h3></div>
       <dl class="definition-list">
@@ -427,6 +428,33 @@ function renderMemoryCase(item) {
       : 'No literal answer hit. Inspect the timeline for computed, behavioral, or negative evidence.';
   els.timelineButton.hidden = false;
   renderEvidenceRecords(evidence, terms, evidenceIDs);
+}
+
+function structuredCitationSection(annotation) {
+  const storyCitations = (annotation?.citations || []).filter((citation) => citation.story);
+  if (!storyCitations.length) return '';
+  return `<section class="section">
+    <div class="section-heading"><h3>Structured story citations</h3><span>reviewer only · generated before prose</span></div>
+    <div class="story-citations">${storyCitations.map((citation) => {
+      const story = citation.story;
+      const characters = (story.characters || []).map((character) => `${character.name} — ${character.role}${character.relationship ? ` (${character.relationship})` : ''}`);
+      const resolutions = new Map((story.resolutions || []).map((resolution) => [resolution.problem_key, resolution]));
+      return `<article class="story-citation">
+        <div class="evidence-meta"><span>${escapeHTML(story.kind)} · ${escapeHTML(story.domain)}</span><span>${escapeHTML(shortID(citation.pair_id, 12))}</span></div>
+        <h4>${escapeHTML(story.title)}</h4>
+        <dl class="definition-list">
+          <dt>Characters</dt><dd>${characters.map(escapeHTML).join('<br>')}</dd>
+          <dt>Problems</dt><dd>${(story.problems || []).map((problem) => {
+            const resolution = resolutions.get(problem.key);
+            const resolved = resolution ? ` → ${resolution.action} → ${resolution.outcome}` : '';
+            return `${escapeHTML(problem.description)} <small>(${escapeHTML(problem.raised_in)})</small>${escapeHTML(resolved)}`;
+          }).join('<br>')}</dd>
+          <dt>Themes</dt><dd>${(story.themes || []).map(escapeHTML).join(' · ')}</dd>
+          <dt>Fact placement</dt><dd>${(story.fact_placements || []).map((fact) => `${escapeHTML(fact.key)} @ ${escapeHTML(fact.phase)}:${fact.after_event}`).join(' · ')}</dd>
+        </dl>
+      </article>`;
+    }).join('')}</div>
+  </section>`;
 }
 
 function renderMemoryRecord(item) {

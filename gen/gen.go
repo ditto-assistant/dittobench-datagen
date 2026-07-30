@@ -101,9 +101,12 @@ var profilesV7 = map[string]Profile{
 // coverage and additional composed queries over the same seeded universe. Small
 // remains the compatibility smoke path; v7 and its historical costs are frozen.
 var profilesV8 = map[string]Profile{
-	"small":  {Tools: 6, Mem: 6, Waves: 1, RawPairsFrac: 0, IsoCases: 0},
-	"medium": {Tools: 48, Mem: 64, Waves: 4, RawPairsFrac: 0.45, IsoCases: 4},
-	"full":   {Tools: 100, Mem: 225, Waves: 5, RawPairsFrac: 0.5, IsoCases: 10},
+	"small": {Tools: 6, Mem: 6, Waves: 1, RawPairsFrac: 0, IsoCases: 0},
+	// V8 uses only read-only seeded contamination for graph isolation. These
+	// quotas replace the five synthetic cross-user write/delete turns while
+	// preserving the exact public case envelope.
+	"medium": {Tools: 48, Mem: 64, Waves: 4, RawPairsFrac: 0.45, IsoCases: 5},
+	"full":   {Tools: 100, Mem: 225, Waves: 5, RawPairsFrac: 0.5, IsoCases: 9},
 }
 
 // ProfileFor returns the Profile for a run_size, defaulting to small. Uses the

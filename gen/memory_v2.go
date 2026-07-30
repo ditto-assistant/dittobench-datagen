@@ -189,7 +189,10 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	}
 	// Write-then-read lifecycle chains (gen/lifecycle.go): like the canary,
 	// they are never sampled out; their count is seed-independent per run size.
-	lc := buildLifecycle(r, seed, plan, lifecycleChainsFor(n, nWaves), nWaves)
+	var lc lifecycleSuite
+	if benchVersion < protocol.BenchVersionV8 {
+		lc = buildLifecycle(r, seed, plan, lifecycleChainsFor(n, nWaves), nWaves)
+	}
 	suite.LifecycleCases = len(lc.Cases)
 	// v5 conversational-sanity and declarative-write cases (gen/conversational.go).
 	// Like the canary and lifecycle chains they are never sampled out; their count
@@ -250,7 +253,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	// per run size, built at a fixed draw position, and v7-gated so v6's bytes
 	// and already-recorded scores are untouched.
 	var dc deepChainSuite
-	if deepChainEnabled(benchVersion) {
+	if deepChainEnabled(benchVersion) && benchVersion < protocol.BenchVersionV8 {
 		dc = buildDeepChain(r, seed, plan, n, nWaves)
 	}
 	suite.DeepChainCases = len(dc.Cases)
@@ -502,6 +505,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		staged = append(staged, StagedCase{Case: plan.Case, RunAfterWave: 0})
 	}
 	if benchVersion >= protocol.BenchVersionV8 {
+		staged = removeV8LegacyWriteCases(staged)
 		for i := range staged {
 			staged[i].Case.BenchVersion = benchVersion
 		}
@@ -512,8 +516,21 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 			if reserveErr != nil {
 				return MemorySuite{}, fmt.Errorf("v8 memory budget is short by %d case(s): %w", need, reserveErr)
 			}
-			for _, plan := range reserve[len(worldPlans):] {
+			existing := make(map[string]bool, len(staged))
+			for _, stagedCase := range staged {
+				existing[stagedCase.Case.ID] = true
+			}
+			added := 0
+			for _, plan := range reserve {
+				if existing[plan.Case.ID] {
+					continue
+				}
 				staged = append(staged, StagedCase{Case: plan.Case, RunAfterWave: 0})
+				existing[plan.Case.ID] = true
+				added++
+			}
+			if added != need {
+				return MemorySuite{}, fmt.Errorf("v8 world reserve added %d unique case(s), need %d", added, need)
 			}
 			suite.WorldCases += need
 		}
@@ -601,6 +618,26 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		applyV8AssistantVoice(seed, plan.Name, suite.Waves)
 	}
 	return suite, nil
+}
+
+// removeV8LegacyWriteCases retires the synthetic "please remember this code"
+// interaction families. V8 measures memory through facts already living in the
+// seeded world, so neither an instruction nor a later read that depends on that
+// artificial instruction belongs in the scored surface. The caller fills every
+// vacated slot with another validated world question before trimming.
+func removeV8LegacyWriteCases(cases []StagedCase) []StagedCase {
+	out := cases[:0]
+	for _, staged := range cases {
+		switch staged.Case.QuestionType {
+		case QTLifecycleWrite, QTLifecycleRead,
+			QTDeclarativeWrite, QTDeclarativeRead, QTDeclarativeBehavior,
+			QTDeepChainWrite, QTDeepChainRead, QTDeepChainCrossref:
+			continue
+		default:
+			out = append(out, staged)
+		}
+	}
+	return out
 }
 
 // dedupeV8WavePairs guarantees one ingestion per pair identity. Historical
@@ -695,13 +732,13 @@ func pruneV8Subjects(subjects []protocol.Subject, links []protocol.SubjectLink, 
 func v8PrimaryCaseBudget(n int) int {
 	switch {
 	case n == 225:
-		// Full carries 238 memory cases total: 229 primary-world cases plus
-		// four scalar-isolation and five cross-user lifecycle cases. The fixed
-		// isolation quota never evicts a composed or integrity case.
+		// Full carries 238 memory cases total: 229 primary-world cases plus nine
+		// read-only cross-user isolation cases. The fixed isolation quota never
+		// evicts a composed or integrity case.
 		return 229
 	case n == 64:
-		// Medium carries 82 memory cases total: 77 primary-world cases plus
-		// the five cross-user lifecycle cases.
+		// Medium carries 82 memory cases total: 77 primary-world cases plus five
+		// read-only cross-user isolation cases.
 		return 77
 	case n == 6:
 		return 11
@@ -806,11 +843,13 @@ func v8RetainPriority(questionType string) int {
 func v8WorldProfile(n int) (scale, cases int) {
 	switch {
 	case n >= 100:
-		// 190/238 scored memory cases come from one answerability-validated
-		// universe. The remaining 48 preserve bounded integrity coverage.
-		return 3, 190
+		// 199/238 scored memory cases come from one answerability-validated
+		// universe. Nine additional world programs replace the retired deep
+		// synthetic write/read chain without changing the total case envelope.
+		return 3, 199
 	case n >= 40:
-		return 2, 57
+		// Five additional world programs replace the medium write/read chain.
+		return 2, 62
 	default:
 		// Small is the compatibility smoke path. Its six memory slots are
 		// already oversubscribed by integrity cases; the tool slice still uses
