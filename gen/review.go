@@ -80,10 +80,19 @@ func GenerateDatasetReview(seed int64, prof Profile, benchVersion int) (DatasetR
 		return review, nil
 	}
 	world := universe.Generate(seed, scale)
-	plans, err := world.QuestionPlans(worldCaseCount)
+	primaryCount := v8PrimaryCaseBudget(prof.Mem)
+	if primaryCount == 0 {
+		primaryCount = prof.Mem
+	}
+	plans, err := world.QuestionPlans(primaryCount)
 	if err != nil {
 		return DatasetReview{}, fmt.Errorf("generate review annotations: %w", err)
 	}
+	iso, err := GenerateIsolationForVersion(seed, prof.Mem, prof.Waves, prof.IsoCases, benchVersion)
+	if err != nil {
+		return DatasetReview{}, fmt.Errorf("generate isolation review annotations: %w", err)
+	}
+	plans = append(plans, iso.ReviewPlans...)
 	artifactCases := make(map[string]bool, len(artifact.MemoryCases))
 	for _, c := range artifact.MemoryCases {
 		artifactCases[c.ID] = true

@@ -81,6 +81,7 @@ type Trip struct {
 // World is the shared state used throughout one v8 dataset.
 type World struct {
 	Seed           int64
+	UserName       string
 	UserCompany    string
 	People         []Person
 	Projects       []Project
@@ -113,7 +114,7 @@ func Generate(seed int64, scale int) World {
 		scale = 3
 	}
 	r := rand.New(rand.NewSource(worldSeed(seed)))
-	w := World{Seed: seed, UserCompany: coinedCompany(r), Accent: colors[r.Intn(len(colors))]}
+	w := World{Seed: seed, UserName: UserName(seed), UserCompany: coinedCompany(r), Accent: colors[r.Intn(len(colors))]}
 	// V8's scored memory surface is a world, not a pile of independent cards.
 	// The full profile deliberately exceeds the context a harness can solve by
 	// dumping every memory into one prompt; successful agents must retrieve and
@@ -124,12 +125,14 @@ func Generate(seed int64, scale int) World {
 	w.BusinessPairID = protocol.OpaqueCaseID(seed, "world-business-wall", 0)
 
 	seenNames := map[string]bool{}
+	seenNicknames := map[string]bool{}
 	seenCompanies := map[string]bool{w.UserCompany: true}
 	seenEmails := map[string]bool{}
 	for i := 0; i < peopleN; i++ {
 		name := uniquePersonName(r, seenNames, w.People, i)
 		given := strings.Fields(name)[0]
-		nick := humandata.DistinctPreferredName(given, r, i)
+		nick := humandata.DistinctPreferredNameExcluding(given, r, i, seenNicknames)
+		seenNicknames[strings.ToLower(nick)] = true
 		previousEmployer := uniqueString(r, seenCompanies, coinedCompany)
 		employer := uniqueString(r, seenCompanies, coinedCompany)
 		previous := uniqueEmail(name, previousEmployer, 2*i, true, seenEmails)
@@ -410,13 +413,34 @@ func worldSeed(seed int64) int64 {
 	return int64(h.Sum64() & ((1 << 63) - 1))
 }
 
+// UserName is the stable profile identity for one V8 universe. It owns an
+// independent seed stream so adding human address to assistant replies cannot
+// perturb the people, projects, trips, or scored answers in that universe.
+func UserName(seed int64) string {
+	h := fnv.New64a()
+	_, _ = fmt.Fprintf(h, "dittobench-v8-user-profile:%d", seed)
+	r := rand.New(rand.NewSource(int64(h.Sum64() & ((1 << 63) - 1))))
+	return humandata.GivenName(r, 0) + " " + humandata.Surname(r, 0)
+}
+
 func warmResponse(seed int64, pairID string, variants ...string) string {
 	if len(variants) == 0 {
 		return ""
 	}
 	h := fnv.New64a()
 	_, _ = fmt.Fprintf(h, "dittobench-v8-warm-response:%d:%s", seed, pairID)
-	return variants[h.Sum64()%uint64(len(variants))]
+	base := variants[h.Sum64()%uint64(len(variants))]
+	tails := []string{
+		"I’ll keep how it connects in mind.",
+		"I’m following the whole thread.",
+		"I’ll remember the surrounding context too.",
+		"That helps me see the fuller picture.",
+		"I’ve got how the pieces fit.",
+		"I’ll hold onto why it matters.",
+		"I’m keeping the before and after clear.",
+		"Thanks for letting me into the story.",
+	}
+	return base + " " + tails[(h.Sum64()/uint64(len(variants)))%uint64(len(tails))]
 }
 
 func uniquePersonName(r *rand.Rand, seen map[string]bool, prior []Person, index int) string {

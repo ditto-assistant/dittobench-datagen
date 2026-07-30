@@ -3,10 +3,12 @@ package gen
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ditto-assistant/dittobench-datagen/persona"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/universe"
 )
 
 // User graph identifiers for multi-graph isolation. The
@@ -32,6 +34,9 @@ const isolationSalt = 0x5ec0_11ab_0000_0001
 type IsolationSuite struct {
 	SecondaryWave protocol.SeedRequest // B's haystack, seeded under SecondaryUser
 	Cases         []StagedCase         // isolation cases, each with StagedCase.UserID set
+	// ReviewPlans preserves the planted world evidence for local-only dataset
+	// inspection. It never enters DatasetArtifact or the harness wire.
+	ReviewPlans []universe.QuestionPlan
 }
 
 // isolationOpts keeps the secondary (contamination) persona small: it exists to
@@ -61,6 +66,9 @@ func GenerateIsolationForVersion(seed int64, primaryN, nWaves, isoCases, benchVe
 	}
 	if nWaves < 1 {
 		nWaves = 1
+	}
+	if benchVersion >= protocol.BenchVersionV8 {
+		return generateV8WorldIsolation(seed, primaryN, isoCases)
 	}
 	pPlan, err := persona.BuildPlanForVersion(seed, personaOptsFor(primaryN), benchVersion)
 	if err != nil {
@@ -212,6 +220,108 @@ func GenerateIsolationForVersion(seed int64, primaryN, nWaves, isoCases, benchVe
 	}
 
 	return IsolationSuite{SecondaryWave: secondary, Cases: cases}, nil
+}
+
+// generateV8WorldIsolation keeps the cross-user boundary without retaining a
+// second legacy persona haystack. Both graphs describe the same believable
+// people and work context, but a bounded set of current addresses differs. The
+// same natural question is therefore answerable in either graph and a leaked
+// sibling value is an explicit forbidden answer.
+func generateV8WorldIsolation(seed int64, primaryN, isoCases int) (IsolationSuite, error) {
+	scale, _ := v8WorldProfile(primaryN)
+	primary := universe.Generate(seed, scale)
+	if isoCases > len(primary.People) {
+		return IsolationSuite{}, fmt.Errorf("v8 world isolation needs %d people, generated %d", isoCases, len(primary.People))
+	}
+	secondary := primary
+	secondary.People = append([]universe.Person(nil), primary.People...)
+	secondary.Pairs = nil
+
+	suite := IsolationSuite{
+		SecondaryWave: protocol.SeedRequest{UserID: SecondaryUser},
+		Cases:         make([]StagedCase, 0, isoCases),
+		ReviewPlans:   make([]universe.QuestionPlan, 0, isoCases),
+	}
+	pairByID := make(map[string]protocol.MemoryPair, len(primary.Pairs))
+	for _, pair := range primary.Pairs {
+		pairByID[pair.PairID] = pair
+	}
+
+	pairGroups := make([][]protocol.MemoryPair, 3)
+	for i := 0; i < isoCases; i++ {
+		person := primary.People[i]
+		alternate := isolationEmail(person.Email)
+		projected := secondary.People[i]
+		projected.Email = alternate
+
+		ids := []struct {
+			old     string
+			purpose string
+			session string
+			set     func(string)
+		}{
+			{person.IdentityPairID, "identity", "a", func(id string) { projected.IdentityPairID = id }},
+			{person.WorkPairID, "work", "b", func(id string) { projected.WorkPairID = id }},
+			{person.CorrectionPairID, "correction", "d", func(id string) { projected.CorrectionPairID = id }},
+		}
+		for group, item := range ids {
+			pair, ok := pairByID[item.old]
+			if !ok {
+				return IsolationSuite{}, fmt.Errorf("v8 world isolation missing %s pair for person %d", item.purpose, i)
+			}
+			pair.PairID = protocol.OpaqueCaseID(seed, "world-isolation-person-"+item.purpose, i)
+			pair.SessionID = fmt.Sprintf("isolation-person-%02d-%s", i, item.session)
+			pair.Prompt = strings.ReplaceAll(pair.Prompt, person.Email, alternate)
+			item.set(pair.PairID)
+			pairGroups[group] = append(pairGroups[group], pair)
+		}
+		secondary.People[i] = projected
+	}
+	// Identity, work, and correction rows are deliberately separated in the
+	// stream so every isolation answer still requires long-distance retrieval.
+	for _, group := range pairGroups {
+		secondary.Pairs = append(secondary.Pairs, group...)
+		suite.SecondaryWave.Pairs = append(suite.SecondaryWave.Pairs, group...)
+	}
+
+	for i := 0; i < isoCases; i++ {
+		person := primary.People[i]
+		alternate := secondary.People[i].Email
+		var plan universe.QuestionPlan
+		var userID, forbidden string
+		var err error
+		if i%2 == 0 {
+			plan, err = secondary.ContactCurrentPlan(i)
+			userID, forbidden = SecondaryUser, person.Email
+		} else {
+			plan, err = primary.ContactCurrentPlan(i)
+			userID, forbidden = PrimaryUser, alternate
+		}
+		if err != nil {
+			return IsolationSuite{}, fmt.Errorf("v8 world isolation person %d: %w", i, err)
+		}
+		plan.Case.ID = protocol.OpaqueCaseID(seed, "world-isolation-contact", i)
+		plan.Case.QuestionID = plan.Case.ID
+		plan.Case.QuestionType = "world-isolation-contact-current"
+		plan.Case.ForbiddenAnswer = forbidden
+		plan.Case.BenchVersion = protocol.BenchVersionV8
+		suite.Cases = append(suite.Cases, StagedCase{Case: plan.Case, RunAfterWave: 0, UserID: userID})
+		suite.ReviewPlans = append(suite.ReviewPlans, plan)
+	}
+
+	waves := []protocol.SeedRequest{suite.SecondaryWave}
+	applyV8MemoryWritingNoise(seed^isolationSalt, suite.Cases, waves)
+	applyV8AssistantVoice(seed^isolationSalt, universe.UserName(seed^isolationSalt), waves)
+	suite.SecondaryWave = waves[0]
+	return suite, nil
+}
+
+func isolationEmail(email string) string {
+	local, domain, ok := strings.Cut(email, "@")
+	if !ok {
+		return "contact-ops@invalid.local"
+	}
+	return local + ".ops@" + domain
 }
 
 func v8ScalarIsolationBudget(primaryN, requested int) int {

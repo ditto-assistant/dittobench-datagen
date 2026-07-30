@@ -39,7 +39,7 @@ func TestV8ToolMixVariesAndCoversEveryFamily(t *testing.T) {
 	}
 }
 
-func TestV8MemoryIsDominatedByValidatedWorldQuestions(t *testing.T) {
+func TestV8MemoryUsesOnlyValidatedWorldQuestions(t *testing.T) {
 	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
 	artifact, err := GenerateDataset(123456789, prof, protocol.BenchVersionV8)
 	if err != nil {
@@ -57,8 +57,8 @@ func TestV8MemoryIsDominatedByValidatedWorldQuestions(t *testing.T) {
 		}
 		questions[c.Question] = true
 	}
-	if world != 199 || total != 238 {
-		t.Fatalf("full v8 memory mix world/total=%d/%d, want 199/238", world, total)
+	if world != 238 || total != 238 {
+		t.Fatalf("full v8 memory mix world/total=%d/%d, want 238/238", world, total)
 	}
 
 	v7, err := GenerateDataset(123456789, prof, protocol.BenchVersionV7)
@@ -253,7 +253,7 @@ func TestV8ComposedMemoryFloor(t *testing.T) {
 	}
 }
 
-func TestV8HasNoSyntheticMemoryWriteQuestions(t *testing.T) {
+func TestV8HasNoLegacySessionQuestionsOrTranscripts(t *testing.T) {
 	legacy := map[string]bool{
 		QTLifecycleWrite: true, QTLifecycleRead: true,
 		QTDeclarativeWrite: true, QTDeclarativeRead: true, QTDeclarativeBehavior: true,
@@ -273,6 +273,23 @@ func TestV8HasNoSyntheticMemoryWriteQuestions(t *testing.T) {
 				lower := strings.ToLower(memoryCase.Question)
 				if strings.Contains(lower, "please remember that my safe combination") || strings.Contains(lower, "please remember that my") {
 					t.Fatalf("%s seed %d retained synthetic memory instruction %q", runSize, seed, memoryCase.Question)
+				}
+				if !strings.HasPrefix(memoryCase.QuestionType, "world-") {
+					t.Fatalf("%s seed %d retained non-world memory case %s (%s)", runSize, seed, memoryCase.ID, memoryCase.QuestionType)
+				}
+			}
+			for _, toolCase := range artifact.ToolCases {
+				for _, pair := range toolCase.PrerequisitePairs {
+					if strings.HasPrefix(pair.SessionID, "sess-") {
+						t.Fatalf("%s seed %d retained tool prerequisite session %q", runSize, seed, pair.SessionID)
+					}
+				}
+			}
+			for _, wave := range artifact.MemoryWaves {
+				for _, pair := range wave.Pairs {
+					if strings.HasPrefix(pair.SessionID, "sess-") {
+						t.Fatalf("%s seed %d retained memory session %q", runSize, seed, pair.SessionID)
+					}
 				}
 			}
 		}
@@ -311,44 +328,6 @@ func v8ComposedMemoryType(questionType string) bool {
 	}
 }
 
-func TestV8RepeatedConversionsHaveUniqueContext(t *testing.T) {
-	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
-	legacyQuestions := map[string]bool{}
-	for _, spec := range convSpecsForVersion(protocol.BenchVersionV7) {
-		for _, question := range spec.ask {
-			legacyQuestions[question] = true
-		}
-		if len(spec.v8Contexts) < 6 {
-			t.Fatalf("conversion domain has %d v8 contexts, want at least 6: %+v", len(spec.v8Contexts), spec)
-		}
-	}
-
-	for seed := int64(1); seed <= 40; seed++ {
-		artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV8)
-		if err != nil {
-			t.Fatal(err)
-		}
-		seen := map[string]bool{}
-		count := 0
-		for _, mc := range artifact.MemoryCases {
-			if mc.QuestionType != QTNonVerbatim {
-				continue
-			}
-			count++
-			if legacyQuestions[mc.Question] {
-				t.Fatalf("seed %d retained under-specified conversion question %q", seed, mc.Question)
-			}
-			if seen[mc.Question] {
-				t.Fatalf("seed %d repeated conversion question %q", seed, mc.Question)
-			}
-			seen[mc.Question] = true
-		}
-		if count != 15 {
-			t.Fatalf("seed %d non-verbatim cases = %d, want 15", seed, count)
-		}
-	}
-}
-
 func TestV8ReferenceRunHasFixedCaseAndBoundedIngestionEnvelope(t *testing.T) {
 	seeds := []int64{1, 2, 3, 7, 11, 42, 123456789, 3058240546919425205}
 	for _, seed := range seeds {
@@ -383,13 +362,14 @@ func TestV8ReferenceRunHasFixedCaseAndBoundedIngestionEnvelope(t *testing.T) {
 	if v8Pairs*2 > v7Pairs*3 {
 		t.Fatalf("v8 pair ingestions grew beyond 1.5x: v7=%d v8=%d", v7Pairs, v8Pairs)
 	}
-	// V8 intentionally adds a fixed set of long personal/business stories whose
-	// critical evidence must be retrieved from inside 1.8-4.6KB records. Keep a
-	// hard aggregate ceiling while allowing that difficulty-bearing payload; the
-	// universe tests independently pin story count, per-record length, and causal
-	// use so this allowance cannot become unbounded filler.
-	if v8Bytes > 4*v7Bytes {
-		t.Fatalf("v8 pair payload grew beyond 4x: v7=%d bytes v8=%d", v7Bytes, v8Bytes)
+	// V8 intentionally fills its retired synthetic-session budget with a fixed
+	// set of long personal/business stories whose critical evidence must be
+	// retrieved from inside 1.8-4.6KB records. Keep a 4.6x aggregate ceiling while
+	// allowing that difficulty-bearing payload; the universe tests independently
+	// pin story count, per-record length, and causal use so this allowance cannot
+	// become unbounded filler.
+	if 5*v8Bytes > 23*v7Bytes {
+		t.Fatalf("v8 pair payload grew beyond 4.6x: v7=%d bytes v8=%d", v7Bytes, v8Bytes)
 	}
 	// V7 is frozen and may retain historical same-user duplicate rows; report it
 	// only to make the comparison explicit rather than changing its bytes.

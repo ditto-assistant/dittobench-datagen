@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/ditto-assistant/dittobench-datagen/internal/assistantvoice"
-	"github.com/ditto-assistant/dittobench-datagen/persona"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/universe"
 )
 
 func TestV8TranscriptUsesWarmVariedAssistantVoice(t *testing.T) {
@@ -71,21 +71,21 @@ func TestV8TranscriptAddressesEachSeededUserByFirstNameAtHumanCadence(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	primary, err := persona.BuildPlanForVersion(seed, personaOptsFor(prof.Mem), protocol.BenchVersionV8)
-	if err != nil {
-		t.Fatal(err)
-	}
-	secondary, err := persona.BuildPlanForVersion(seed^isolationSalt, isolationOpts(), protocol.BenchVersionV8)
-	if err != nil {
-		t.Fatal(err)
-	}
 	firstName := func(full string) string { return strings.Fields(full)[0] }
 	names := map[string]string{
-		PrimaryUser:   firstName(primary.Name),
-		SecondaryUser: firstName(secondary.Name),
+		PrimaryUser:   firstName(universe.UserName(seed)),
+		SecondaryUser: firstName(universe.UserName(seed ^ isolationSalt)),
 	}
 
 	eligible, addressed := 0, 0
+	for _, toolCase := range artifact.ToolCases {
+		for _, pair := range toolCase.PrerequisitePairs {
+			eligible++
+			if responseAddressesName(pair.Response, names[PrimaryUser]) {
+				addressed++
+			}
+		}
+	}
 	for _, wave := range artifact.MemoryWaves {
 		name := names[wave.UserID]
 		if name == "" {

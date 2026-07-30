@@ -28,10 +28,11 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 		w := Generate(seed, 3)
 		assertUnique(t, seed, "pair id", w.SortedPairIDs())
 
-		var names, emails, projectNames, projectAliases, projectRecords, tripAliases []string
+		var names, nicknames, emails, projectNames, projectAliases, projectRecords, tripAliases []string
 		givenCounts := map[string]int{}
 		for _, p := range w.People {
 			names = append(names, p.Name)
+			nicknames = append(nicknames, p.Nickname)
 			givenCounts[strings.Fields(p.Name)[0]]++
 			emails = append(emails, p.Email, p.PreviousEmail)
 			if p.Email == p.PreviousEmail {
@@ -74,6 +75,7 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 			}
 		}
 		assertUnique(t, seed, "person name", names)
+		assertUnique(t, seed, "person nickname", nicknames)
 		assertUnique(t, seed, "email", emails)
 		assertUnique(t, seed, "project name", projectNames)
 		assertUnique(t, seed, "project alias", projectAliases)

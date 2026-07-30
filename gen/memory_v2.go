@@ -115,6 +115,9 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		suite.Waves = []protocol.SeedRequest{{UserID: "miner"}}
 		return suite, nil
 	}
+	if benchVersion >= protocol.BenchVersionV8 {
+		return generateV8WorldMemorySuite(seed, n, nWaves)
+	}
 
 	plan, err := persona.BuildPlanForVersion(seed, personaOptsFor(n), benchVersion)
 	if err != nil {
@@ -620,6 +623,46 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	return suite, nil
 }
 
+// generateV8WorldMemorySuite is the V8 memory contract. The legacy persona and
+// sess-* coverage families remain available only to the frozen V7 path above;
+// V8 spends the entire primary score budget on answerability-validated programs
+// derived from the same coherent world used by its tool cases. That world is
+// seeded once through the tool prerequisite boundary, so the memory waves stay
+// as empty staging markers and never duplicate ingestion.
+func generateV8WorldMemorySuite(seed int64, n, nWaves int) (MemorySuite, error) {
+	if nWaves < 1 {
+		nWaves = 1
+	}
+	budget := v8PrimaryCaseBudget(n)
+	if budget == 0 {
+		// Analysis tools sometimes request non-public sizes. Keep those useful
+		// without changing the three fixed public envelopes.
+		budget = n
+	}
+	scale, _ := v8WorldProfile(n)
+	world := universe.Generate(seed, scale)
+	plans, err := world.QuestionPlans(budget)
+	if err != nil {
+		return MemorySuite{}, fmt.Errorf("v8 world questions: %w", err)
+	}
+
+	suite := MemorySuite{
+		SeedingWaves: nWaves,
+		WorldCases:   len(plans),
+		Waves:        make([]protocol.SeedRequest, nWaves),
+		Cases:        make([]StagedCase, 0, len(plans)),
+	}
+	for i := range suite.Waves {
+		suite.Waves[i] = protocol.SeedRequest{UserID: PrimaryUser, Wave: i}
+	}
+	for _, plan := range plans {
+		plan.Case.BenchVersion = protocol.BenchVersionV8
+		suite.Cases = append(suite.Cases, StagedCase{Case: plan.Case, RunAfterWave: 0})
+	}
+	suite.WritingNoiseQuestions, suite.WritingNoisePairs = applyV8MemoryWritingNoise(seed, suite.Cases, suite.Waves)
+	return suite, nil
+}
+
 // removeV8LegacyWriteCases retires the synthetic "please remember this code"
 // interaction families. V8 measures memory through facts already living in the
 // seeded world, so neither an instruction nor a later read that depends on that
@@ -843,18 +886,16 @@ func v8RetainPriority(questionType string) int {
 func v8WorldProfile(n int) (scale, cases int) {
 	switch {
 	case n >= 100:
-		// 199/238 scored memory cases come from one answerability-validated
-		// universe. Nine additional world programs replace the retired deep
-		// synthetic write/read chain without changing the total case envelope.
-		return 3, 199
+		// All 229 primary cases come from one answerability-validated universe;
+		// nine world-shaped graph-isolation cases complete the 238-case envelope.
+		return 3, 229
 	case n >= 40:
-		// Five additional world programs replace the medium write/read chain.
-		return 2, 62
+		// Five world-shaped graph-isolation cases complete the 82-case envelope.
+		return 2, 77
 	default:
-		// Small is the compatibility smoke path. Its six memory slots are
-		// already oversubscribed by integrity cases; the tool slice still uses
-		// the same generated world without increasing this path's runtime.
-		return 1, 0
+		// Small is still a cheap compatibility path, now using the same world
+		// contract rather than synthetic session fixtures.
+		return 1, 11
 	}
 }
 

@@ -1642,11 +1642,12 @@ func GenerateCasesWithFillersForVersion(r *rand.Rand, seed int64, n, benchVersio
 }
 
 func applyV8AssistantVoice(seed int64, cases []protocol.ToolCase) {
+	userName := universe.UserName(seed)
 	for i := range cases {
 		for j := range cases[i].PrerequisitePairs {
 			pair := &cases[i].PrerequisitePairs[j]
 			pair.Prompt = uservoice.Render(pair.Prompt)
-			pair.Response = assistantvoice.Render(seed, pair.PairID, pair.SessionID, "", pair.Prompt, pair.Response)
+			pair.Response = assistantvoice.Render(seed, pair.PairID, pair.SessionID, userName, pair.Prompt, pair.Response)
 		}
 	}
 }

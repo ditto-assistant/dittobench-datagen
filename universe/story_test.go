@@ -14,7 +14,7 @@ func TestStoryProfilesHaveFixedLargeMemoryEnvelope(t *testing.T) {
 	for _, tc := range []struct {
 		scale   int
 		stories int
-	}{{1, 3}, {2, 9}, {3, 24}} {
+	}{{1, 3}, {2, 18}, {3, 39}} {
 		for seed := int64(1); seed <= 12; seed++ {
 			w := Generate(seed, tc.scale)
 			if len(w.Stories) != tc.stories {
@@ -169,8 +169,8 @@ func TestStoryQuestionsRequireThreeLongMemoriesAcrossDomains(t *testing.T) {
 			available[omitted] = true
 		}
 	}
-	if storyCount != 56 {
-		t.Fatalf("full story cases=%d, want fixed 56", storyCount)
+	if storyCount != 91 {
+		t.Fatalf("full story cases=%d, want fixed 91", storyCount)
 	}
 }
 
@@ -179,7 +179,7 @@ func TestStoryQuestionQuotaIsStableAcrossSeeds(t *testing.T) {
 		scale int
 		count int
 		want  int
-	}{{2, 57, 21}, {3, 190, 56}} {
+	}{{2, 77, 42}, {3, 229, 91}} {
 		for seed := int64(101); seed <= 120; seed++ {
 			plans, err := Generate(seed, tc.scale).QuestionPlans(tc.count)
 			if err != nil {

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ditto-assistant/dittobench-datagen/persona"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 func TestGenerateIsolationStructure(t *testing.T) {
@@ -104,6 +105,54 @@ func TestGenerateIsolationDisabled(t *testing.T) {
 	iso := GenerateIsolation(5, 20, 2, 0)
 	if len(iso.Cases) != 0 || len(iso.SecondaryWave.Pairs) != 0 {
 		t.Fatal("isoCases=0 should produce no isolation content")
+	}
+}
+
+func TestV8IsolationUsesWorldMemoriesAndExactGraphConflicts(t *testing.T) {
+	const seed int64 = 123456789
+	iso, err := GenerateIsolationForVersion(seed, 225, 5, 9, protocol.BenchVersionV8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(iso.Cases) != 9 || len(iso.ReviewPlans) != 9 || len(iso.SecondaryWave.Pairs) != 27 {
+		t.Fatalf("v8 isolation cases/plans/pairs=%d/%d/%d, want 9/9/27", len(iso.Cases), len(iso.ReviewPlans), len(iso.SecondaryWave.Pairs))
+	}
+	sawPrimary, sawSecondary := false, false
+	pairs := map[string]bool{}
+	for _, pair := range iso.SecondaryWave.Pairs {
+		if strings.HasPrefix(pair.SessionID, "sess-") {
+			t.Fatalf("v8 retained legacy isolation session %q", pair.SessionID)
+		}
+		pairs[pair.PairID] = true
+	}
+	for i, staged := range iso.Cases {
+		if staged.Case.QuestionType != "world-isolation-contact-current" {
+			t.Fatalf("case %d type=%q", i, staged.Case.QuestionType)
+		}
+		if staged.Case.ExpectedAnswer == "" || staged.Case.ForbiddenAnswer == "" || staged.Case.ExpectedAnswer == staged.Case.ForbiddenAnswer {
+			t.Fatalf("case %d lacks an exact cross-graph conflict: %+v", i, staged.Case)
+		}
+		switch staged.UserID {
+		case PrimaryUser:
+			sawPrimary = true
+		case SecondaryUser:
+			sawSecondary = true
+		default:
+			t.Fatalf("case %d has unexpected user %q", i, staged.UserID)
+		}
+		if len(iso.ReviewPlans[i].RequiredPairIDs) != 3 {
+			t.Fatalf("case %d evidence=%v", i, iso.ReviewPlans[i].RequiredPairIDs)
+		}
+		if staged.UserID == SecondaryUser {
+			for _, pairID := range iso.ReviewPlans[i].RequiredPairIDs {
+				if !pairs[pairID] {
+					t.Fatalf("secondary case %d evidence %s is not seeded", i, pairID)
+				}
+			}
+		}
+	}
+	if !sawPrimary || !sawSecondary {
+		t.Fatalf("v8 isolation directions primary=%v secondary=%v", sawPrimary, sawSecondary)
 	}
 }
 
