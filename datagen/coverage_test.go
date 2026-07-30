@@ -6,6 +6,7 @@ import (
 
 	"github.com/ditto-assistant/dittobench-datagen/catalog"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/universe"
 )
 
 // TestFullCatalogCoverage checks the property: every tool in the catalog is
@@ -36,6 +37,59 @@ func TestFullCatalogCoverage(t *testing.T) {
 	}
 	if len(missing) > 0 {
 		t.Fatalf("catalog tools never a correct answer: %v", missing)
+	}
+}
+
+func TestV8DestructiveToolsCannotMutateScoredWorldEvidence(t *testing.T) {
+	seen := map[string]bool{}
+	profiles := []struct {
+		n, scale, worldCases int
+	}{{6, 1, 0}, {40, 2, 45}, {84, 3, 150}}
+	for _, profile := range profiles {
+		for seed := int64(1); seed <= 100; seed++ {
+			world := universe.Generate(seed, profile.scale)
+			plans, err := world.QuestionPlans(profile.worldCases)
+			if err != nil {
+				t.Fatal(err)
+			}
+			protected := map[string]bool{}
+			for _, plan := range plans {
+				for _, pairID := range plan.SortedEvidenceIDs() {
+					protected[pairID] = true
+				}
+			}
+
+			rotated, err := protocol.RotateSeedForVersion(seed, protocol.BenchVersionV8)
+			if err != nil {
+				t.Fatal(err)
+			}
+			toolCases, _ := GenerateCasesWithFillersForVersion(rand.New(rand.NewSource(rotated)), seed, profile.n, protocol.BenchVersionV8)
+			mutated := map[string]string{}
+			for _, tc := range toolCases {
+				if tc.Category != "world_memory_delete" && tc.Category != "world_memory_update" {
+					continue
+				}
+				seen[tc.Category] = true
+				for _, spec := range tc.ExpectedTools {
+					pairID := spec.RequiredArgs["pair_id"]
+					if pairID == "" {
+						continue
+					}
+					if protected[pairID] {
+						t.Fatalf("n=%d seed %d case %s mutates scored evidence pair %s", profile.n, seed, tc.ID, pairID)
+					}
+					if prior := mutated[pairID]; prior != "" {
+						t.Fatalf("n=%d seed %d cases %s and %s mutate the same pair %s", profile.n, seed, prior, tc.ID, pairID)
+					}
+					mutated[pairID] = tc.ID
+				}
+			}
+		}
+	}
+	for _, category := range []string{"world_memory_delete", "world_memory_update"} {
+		if !seen[category] {
+			t.Fatalf("did not exercise %s", category)
+		}
 	}
 }
 

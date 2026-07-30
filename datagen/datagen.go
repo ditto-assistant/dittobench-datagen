@@ -1173,6 +1173,8 @@ func applyV8WorldActions(seed int64, cases []protocol.ToolCase) {
 	}
 	converted := 0
 	attachedWorld := false
+	deleteTarget := 0
+	updateTarget := 0
 	for i := range cases {
 		if converted >= target {
 			break
@@ -1188,15 +1190,17 @@ func applyV8WorldActions(seed int64, cases []protocol.ToolCase) {
 		case 0, 5: // resolve a vague referent, research a live fact, and email it
 			tc = v8WorldContactEmail(seed, caseID, world, converted+i)
 		case 1: // description -> target pair -> destructive action
-			tc = v8WorldMemoryDelete(caseID, world, converted+2*i+1)
+			tc = v8WorldMemoryDelete(caseID, world, deleteTarget)
+			deleteTarget++
 		case 2: // description -> target pair -> update action
-			tc = v8WorldMemoryUpdate(caseID, world, converted+i)
+			tc = v8WorldMemoryUpdate(caseID, world, updateTarget)
+			updateTarget++
 		case 3: // capability discovery + fuzzy/case-insensitive setting
 			tc = fuzzyWorldTool(caseID, "world_theme_discover_set", fmt.Sprintf("Make Ditto use my usual %s-ish accent — the personal app preference, not one of the client brand colors. If I mangled the spelling, check the available appearance options first.", misspellAlias(world.Accent, converted)), []protocol.ToolSpec{{Name: "discover_capabilities"}, {Name: "set_accent_color", RequiredArgs: map[string]string{"color": world.Accent}}}, "discover the available appearance setting and apply the user's personal accent")
 		case 4: // messy business context -> reusable workflow outcome
 			p := world.Projects[(converted+i)%len(world.Projects)]
 			lead := world.People[p.Lead]
-			tc = fuzzyWorldTool(caseID, "world_business_workflow", fmt.Sprintf("Check whether I already have a workflow for %q. If not, create one for its recurring reconciliation: compare %s's corrected invoice with payments, have %s review the remainder, and prepare the client update for %s.", p.Alias, p.Vendor, lead.Nickname, p.Client), []protocol.ToolSpec{{Name: "list_workflows"}, {Name: "create_workflow", RequiredArgs: map[string]string{"name": p.Alias, "steps": p.Vendor}}}, "resolve the project, vendor, lead, and client, check existing workflows, and create the requested reusable workflow")
+			tc = fuzzyWorldTool(caseID, "world_business_workflow", fmt.Sprintf("Check whether I already have a workflow for %q, the project for %s. If not, create one under the project's formal name and put the current contact address for internal reviewer %s in its review step.", p.Alias, p.Client, lead.Nickname), []protocol.ToolSpec{{Name: "list_workflows"}, {Name: "create_workflow", RequiredArgs: map[string]string{"name": p.Name, "steps": lead.Email}}}, "resolve the project, its formal name, and current reviewer contact; then check existing workflows and create the requested reusable workflow")
 		case 6: // outcome proves a search -> dynamic-link -> read chain
 			tc = v8WorldLinkRead(seed, caseID)
 		case 7: // dependent execution outcome, order enforced by data not rubric
@@ -1221,9 +1225,11 @@ func applyV8WorldActions(seed int64, cases []protocol.ToolCase) {
 		case "email_send":
 			cases[i] = v8WorldContactEmail(seed, caseID, world, i)
 		case "memory_delete":
-			cases[i] = v8WorldMemoryDelete(caseID, world, i)
+			cases[i] = v8WorldMemoryDelete(caseID, world, deleteTarget)
+			deleteTarget++
 		case "memory_update":
-			cases[i] = v8WorldMemoryUpdate(caseID, world, i)
+			cases[i] = v8WorldMemoryUpdate(caseID, world, updateTarget)
+			updateTarget++
 		case "link_read":
 			cases[i] = v8WorldLinkRead(seed, caseID)
 		}
@@ -1238,13 +1244,12 @@ func v8WorldContactEmail(seed int64, caseID string, world universe.World, index 
 
 func v8WorldMemoryDelete(caseID string, world universe.World, index int) protocol.ToolCase {
 	p := world.People[index%len(world.People)]
-	return fuzzyWorldTool(caseID, "world_memory_delete", fmt.Sprintf("Delete the memory where I corrected %s's old email after the %s — they're my %s at %s. Don't delete the original relationship note.", p.Nickname, p.Context, p.Relation, p.Employer), []protocol.ToolSpec{{Name: "delete_memory", RequiredArgs: map[string]string{"pair_id": p.CorrectionPairID}}}, "resolve the uniquely described memory and delete that pair")
+	return fuzzyWorldTool(caseID, "world_memory_delete", fmt.Sprintf("Delete the disposable contact-maintenance receipt for %s after the %s — they're my %s at %s. Keep the relationship, address, and correction records.", p.Nickname, p.Context, p.Relation, p.Employer), []protocol.ToolSpec{{Name: "delete_memory", RequiredArgs: map[string]string{"pair_id": p.ToolNotePairID}}}, "resolve the uniquely described disposable note and delete that pair without removing canonical contact facts")
 }
 
 func v8WorldMemoryUpdate(caseID string, world universe.World, index int) protocol.ToolCase {
 	p := world.Projects[index%len(world.Projects)]
-	lead := world.People[p.Lead]
-	return fuzzyWorldTool(caseID, "world_memory_update", fmt.Sprintf("Update the memory that says who owns %q for %s — the %s project led by %s at %s. Add that the handoff is Friday; leave the invoice correction alone.", p.Alias, p.Client, p.Purpose, lead.Nickname, lead.Employer), []protocol.ToolSpec{{Name: "update_memory", RequiredArgs: map[string]string{"pair_id": p.ContextPairID, "content": "handoff is Friday"}}}, "resolve the project-context memory and update that pair with the Friday handoff")
+	return fuzzyWorldTool(caseID, "world_memory_update", fmt.Sprintf("Update the separate handoff scratchpad for %q at %s — the %s project. Add that the handoff is Friday; leave the project identity, ownership, and invoice records alone.", p.Alias, p.Client, p.Purpose), []protocol.ToolSpec{{Name: "update_memory", RequiredArgs: map[string]string{"pair_id": p.ToolNotePairID, "content": "handoff is Friday"}}}, "resolve the project's mutable handoff note and update it without overwriting canonical project evidence")
 }
 
 func v8WorldLinkRead(seed int64, caseID string) protocol.ToolCase {
