@@ -43,6 +43,51 @@ func TestStoryProfilesHaveFixedLargeMemoryEnvelope(t *testing.T) {
 	}
 }
 
+func TestStoryCompilerIsLinearHumanAndNonRepeating(t *testing.T) {
+	banned := []string{
+		"later retelling", "a terse note", "worth a mention", "nothing urgent",
+		"not something about you", "complete version", "chronology matters",
+		"the phrase i carried", "what i remember most clearly", "i nearly left this out",
+	}
+	for seed := int64(1); seed <= 20; seed++ {
+		w := Generate(seed, 3)
+		for _, story := range w.Stories {
+			draft, _ := story.renderDraft(seed)
+			lower := strings.ToLower(draft)
+			for _, phrase := range banned {
+				if strings.Contains(lower, phrase) {
+					t.Fatalf("seed %d story %s contains benchmark-like phrase %q", seed, story.ID, phrase)
+				}
+			}
+			seenParagraph := map[string]bool{}
+			for _, paragraph := range strings.Split(draft, "\n\n") {
+				normalized := strings.Join(strings.Fields(strings.ToLower(paragraph)), " ")
+				if seenParagraph[normalized] {
+					t.Fatalf("seed %d story %s repeats paragraph %q", seed, story.ID, paragraph)
+				}
+				seenParagraph[normalized] = true
+			}
+			sections := map[string]StorySection{"beginning": story.Beginning, "middle": story.Middle, "end": story.End}
+			for _, section := range sections {
+				for _, event := range section.Events {
+					if strings.Count(draft, event) != 1 {
+						t.Fatalf("seed %d story %s event rendered %d times: %q", seed, story.ID, strings.Count(draft, event), event)
+					}
+				}
+			}
+			for _, fact := range story.Facts {
+				section, ok := sections[fact.Phase]
+				if !ok || fact.AfterEvent < 0 || fact.AfterEvent >= len(section.Events) {
+					t.Fatalf("seed %d story %s fact %s has invalid placement %s/%d", seed, story.ID, fact.Key, fact.Phase, fact.AfterEvent)
+				}
+				if strings.Count(draft, fact.Value) != 1 {
+					t.Fatalf("seed %d story %s fact %s rendered %d times", seed, story.ID, fact.Key, strings.Count(draft, fact.Value))
+				}
+			}
+		}
+	}
+}
+
 func TestStoryFactsAreInteriorAndExclusiveToLongMemories(t *testing.T) {
 	for seed := int64(31); seed <= 40; seed++ {
 		w := Generate(seed, 3)
@@ -158,17 +203,15 @@ func TestStoryProgramsAreInterpersonalComposedAndAnswerSafe(t *testing.T) {
 				t.Fatalf("story plan %s omits interpersonal anchor %q", plan.Case.ID, anchor)
 			}
 		}
-		for _, interpersonal := range []string{person.Nickname, person.Relation} {
-			if !contains(plan.Constraints, interpersonal) {
-				t.Fatalf("story plan %s lacks interpersonal constraint %q", plan.Case.ID, interpersonal)
-			}
+		if !contains(plan.Constraints, person.Nickname) {
+			t.Fatalf("story plan %s lacks the natural person anchor %q", plan.Case.ID, person.Nickname)
 		}
 		for _, hidden := range []string{arc.BridgeCode, arc.DecisionCode, arc.CurrentContact} {
 			if strings.Contains(plan.Case.Question, hidden) {
 				t.Fatalf("story plan %s leaks hidden value %q", plan.Case.ID, hidden)
 			}
 		}
-		if len(plan.Facts) < 5 || len(plan.Constraints) < 4 || len(plan.Operations) < 4 {
+		if len(plan.Facts) < 5 || len(plan.Constraints) != 2 || len(plan.Operations) < 4 {
 			t.Fatalf("under-composed story plan %s: facts=%d constraints=%d operations=%d", plan.Case.ID, len(plan.Facts), len(plan.Constraints), len(plan.Operations))
 		}
 	}

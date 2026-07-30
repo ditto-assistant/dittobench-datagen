@@ -34,6 +34,8 @@ type StoryFact struct {
 	Key        string   `json:"key"`
 	Value      string   `json:"value"`
 	Renderings []string `json:"renderings"`
+	Phase      string   `json:"phase"`
+	AfterEvent int      `json:"after_event"`
 }
 
 // Story is a deterministic story-to-prose program. A story compiles to one
@@ -64,7 +66,7 @@ type StoryArc struct {
 	PersonIndex         int
 	ProjectIndex        int
 	TripIndex           int
-	PreferredName       string
+	OriginDetail        string
 	BridgeCode          string
 	DecisionCode        string
 	OriginalContact     string
@@ -86,14 +88,14 @@ type lessonSet struct {
 }
 
 var storyLessons = []lessonSet{
-	{canonical: "confirm ownership before promising", accept: []string{"verify ownership before committing", "confirm the owner before making promises"}},
-	{canonical: "separate draft numbers from approvals", accept: []string{"keep draft figures separate from approved numbers", "distinguish drafts from approvals"}},
-	{canonical: "name the handoff before the deadline", accept: []string{"identify the handoff before the due date", "assign the handoff before deadline"}},
-	{canonical: "verify the current channel before sending", accept: []string{"check the latest contact route before sending", "confirm the current channel before you send"}},
-	{canonical: "reconcile personal context with work records", accept: []string{"connect personal context to the work record", "align personal context with business records"}},
-	{canonical: "record corrections where decisions happen", accept: []string{"keep corrections with the decision", "attach corrections to decision records"}},
-	{canonical: "trace commitments back to their source", accept: []string{"follow commitments to their source", "track promises back to the source"}},
-	{canonical: "keep the client story and ledger aligned", accept: []string{"align the client narrative with the ledger", "keep client context consistent with the ledger"}},
+	{canonical: "check who owns it before you promise anything", accept: []string{"verify the owner before committing", "confirm who owns it before making promises"}},
+	{canonical: "keep draft numbers separate from approved ones", accept: []string{"keep draft figures separate from approved numbers", "distinguish drafts from approvals"}},
+	{canonical: "decide who owns the handoff before the deadline", accept: []string{"identify the handoff owner before the due date", "assign the handoff before the deadline"}},
+	{canonical: "check the current address before sending anything", accept: []string{"check the latest contact route before sending", "confirm the current address before you send"}},
+	{canonical: "make sure the story and the paperwork match", accept: []string{"connect the personal context to the work record", "align the story with the business records"}},
+	{canonical: "put corrections next to the decision they changed", accept: []string{"keep corrections with the decision", "attach corrections to the decision record"}},
+	{canonical: "trace a promise back to the conversation that created it", accept: []string{"follow commitments to their source", "track promises back to the original conversation"}},
+	{canonical: "keep the client update consistent with the ledger", accept: []string{"align the client update with the ledger", "keep the client story and ledger consistent"}},
 }
 
 var personalDomains = []string{
@@ -106,9 +108,13 @@ var businessDomains = []string{
 	"product launches", "research programs", "events and production", "fundraising",
 }
 
-var storyNameWords = []string{
-	"Aven", "Brindle", "Caro", "Della", "Eris", "Faro", "Galen", "Hali",
-	"Indra", "Jori", "Kiva", "Lumi", "Meri", "Niko", "Oren", "Pavi",
+var originDetails = []string{
+	"the backup venue plan", "the supplier introduction", "the volunteer rota",
+	"the accessibility walkthrough", "the late train home", "the studio key handoff",
+	"the rainy setup morning", "the community dinner", "the missing print proofs",
+	"the borrowed camera kit", "the revised guest list", "the closing-night cleanup",
+	"the shared taxi receipt", "the rehearsal schedule", "the catering mix-up",
+	"the last-minute room change",
 }
 
 func storyArcCount(scale int) int {
@@ -129,13 +135,9 @@ func buildStories(seed int64, scale int, w World) ([]StoryArc, []Story) {
 	projects := r.Perm(len(w.Projects))
 	trips := r.Perm(len(w.Trips))
 
-	seenNames := map[string]bool{}
 	seenEmails := map[string]bool{}
 	seenAmounts := map[int]bool{}
 	for _, p := range w.People {
-		seenNames[strings.ToLower(p.Nickname)] = true
-		seenNames[strings.ToLower(p.Name)] = true
-		seenNames[strings.ToLower(strings.Fields(p.Name)[0])] = true
 		seenEmails[p.Email] = true
 		seenEmails[p.PreviousEmail] = true
 	}
@@ -149,6 +151,7 @@ func buildStories(seed int64, scale int, w World) ([]StoryArc, []Story) {
 	arcs := make([]StoryArc, 0, arcN)
 	stories := make([]Story, 0, 3*arcN)
 	lessonOffset := r.Intn(len(storyLessons))
+	detailOffset := r.Intn(len(originDetails))
 	for i := 0; i < arcN; i++ {
 		personIndex := people[i%len(people)]
 		projectIndex := projects[i%len(projects)]
@@ -157,7 +160,6 @@ func buildStories(seed int64, scale int, w World) ([]StoryArc, []Story) {
 		project := w.Projects[projectIndex]
 		trip := w.Trips[tripIndex]
 
-		preferred := uniqueStoryName(r, person.Nickname, seenNames)
 		// This is a project-specific reviewer channel, not the person's ordinary
 		// mailbox. A role address is both more believable and avoids encoding the
 		// hidden owner identity into a second, unintended lookup path.
@@ -189,7 +191,7 @@ func buildStories(seed int64, scale int, w World) ([]StoryArc, []Story) {
 			PersonIndex:         personIndex,
 			ProjectIndex:        projectIndex,
 			TripIndex:           tripIndex,
-			PreferredName:       preferred,
+			OriginDetail:        originDetails[(detailOffset+i)%len(originDetails)],
 			BridgeCode:          bridge,
 			DecisionCode:        decision,
 			OriginalContact:     originalContact,
@@ -223,44 +225,43 @@ func storiesForArc(seed int64, index int, arc StoryArc, person Person, project P
 		SessionID: fmt.Sprintf("story-%02d-origin", index), Kind: StoryPersonal, Domain: personalDomain,
 		Title: "how a personal conversation became a work thread",
 		Beginning: StorySection{
-			Summary: fmt.Sprintf("I reconnected with %s, my %s, around the %s while we were still talking about the %s. I think of this as part of my %s history.", person.Name, person.Relation, person.Context, trip.Alias, personalDomain),
+			Summary: fmt.Sprintf("I ran into %s, my %s, during the %s. We had not properly caught up since the %s, so we found a quiet corner and stayed there much longer than either of us expected.", person.Name, person.Relation, person.Context, trip.Alias),
 			Events: []string{
-				fmt.Sprintf("The conversation moved between %s, ordinary life in %s, and what had changed since the %s.", trip.Purpose, person.City, person.Context),
-				fmt.Sprintf("I kept using %s, because that is the nickname I knew from the %s, even when the discussion drifted toward work.", person.Nickname, person.Context),
-				"Nothing about the conversation began as a formal intake; it was the sort of loose personal history I would normally tell Ditto so the later references still make sense.",
+				fmt.Sprintf("We started with ordinary life in %s, then laughed about the %s trip and the slightly chaotic %s planning behind it.", person.City, trip.Alias, trip.Purpose),
+				fmt.Sprintf("Everyone from that part of my life calls %s %s, so that is what I called them too. Hearing the nickname brought back a dozen small memories at once.", person.Name, person.Nickname),
+				"We traded stories for a while without talking about work at all. It felt good to be somewhere neither of us had an agenda or a calendar open.",
 			},
 		},
 		Middle: StorySection{
-			Summary: "Halfway through, the personal recollection turned into a specific introduction, and I made a private bridge note so I would not flatten the relationship into a sales lead.",
+			Summary: "Halfway through the conversation, a practical problem slipped into the story. I asked what had happened, and the answer slowly turned into an introduction I might actually be able to help with.",
 			Events: []string{
-				"There were several adjacent ideas, but only one became a real follow-up; I wrote down enough surrounding context to distinguish it from the other possibilities.",
-				"The name used among friends was not quite the one requested for this working context, which is exactly the kind of correction that gets lost when notes are reduced to keywords.",
-				"I wanted the later business records to remain connected to this personal origin without copying the entire conversation into every project note.",
-				fmt.Sprintf("We talked through what %s had meant personally before deciding whether any part of it belonged in a professional follow-up.", trip.Alias),
-				fmt.Sprintf("The fact that %s lived in %s and had handled the %s helped me separate this recollection from other introductions with similar names.", person.Name, person.City, person.Context),
-				"I made the bridge note only after the conversation shifted; before that point it was simply a story about trust, timing, and how our shared context had changed.",
+				"At first I thought they were only venting, because two other half-finished ideas came up in the same breath. Then they stopped, scrolled back through a message, and said this one was genuinely blocking them.",
+				fmt.Sprintf("%s handed me their phone and we read the exchange together. The details were buried between travel photos, an apology for a late reply, and a long update about mutual friends.", person.Nickname),
+				"I said I knew someone who might help, although I made it clear that I was offering an introduction rather than promising a job or speaking for anyone else.",
+				fmt.Sprintf("Before I sent anything, we talked about what the %s had meant to both of us and why neither of us wanted a personal favor to become an awkward obligation.", trip.Alias),
+				fmt.Sprintf("I asked %s to tell me the problem back in one sentence. That made it easier to separate this request from the other people and projects we had mentioned that afternoon.", person.Nickname),
+				"I opened my notes app, wrote down the next step, and promised to check with everyone before sharing names or contact details.",
 			},
 		},
 		End: StorySection{
-			Summary: "By the end I had a follow-up path, but I also wanted the friendship, the trip, and the eventual work decision to remain distinct parts of one history.",
+			Summary: "By the time we left, I had a possible next step and a much better sense of why the request mattered to them. I also felt responsible for keeping the friendship separate from whatever happened afterward at work.",
 			Events: []string{
-				"I left the conversation feeling that the context mattered as much as the task, because otherwise a future reminder would point at the right project for the wrong reason.",
-				"The practical next step belonged in work notes, while the reason I trusted the introduction belonged here in the personal story.",
-				fmt.Sprintf("I still associated the origin with %s and the %s, not with a pipeline stage or a client label.", trip.Alias, person.Context),
-				"Writing the long version down let me preserve that distinction without relying on the shorthand I would use in a meeting.",
+				"I felt protective of the trust behind the introduction. I had offered to help as a friend, and I did not want anybody to mistake that for an approved budget or a done deal.",
+				"On the way home I drafted a short message, deleted the overconfident first version, and sent a calmer note asking whether everyone was comfortable being introduced.",
+				"Everyone said yes the following morning. Only then did I move the practical details into my work notes and set up the first proper call.",
 			},
 		},
 		Themes:         []string{"identity across contexts", "personal trust", "careful handoffs"},
 		LessonsLearned: []string{"preserve why an introduction mattered"},
 		Facts: []StoryFact{
-			storyFact("preferred-name", arc.PreferredName,
-				"For anything connected to that introduction, %s was the working name they explicitly asked me to use.",
-				"They paused to clarify that the work-side name should be %s, even though friends used something else.",
-				"The naming correction was simple but important: in this thread they wanted to be called %s."),
-			storyFact("bridge-code", arc.BridgeCode,
-				"I filed the private bridge between the personal conversation and any later work under %s.",
-				"The cross-context reference I wrote down for this introduction was %s.",
-				"To keep the introduction traceable without repeating the story, I marked its bridge as %s."),
+			storyFactAt("middle", 1, "origin-detail", arc.OriginDetail,
+				"The message was really about %s, which was the first detail that made the problem concrete.",
+				"What we kept circling back to was %s; that was the part they actually needed help untangling.",
+				"The practical problem underneath the long exchange was %s."),
+			storyFactAt("middle", 3, "bridge-code", arc.BridgeCode,
+				"When I made the note, I gave the introduction the reference %s so I could find it again after checking with everyone.",
+				"I saved the possible introduction as %s in my notes before I sent the follow-up.",
+				"The little reference beside my draft message was %s."),
 		},
 		TargetBytes: storyTargetBytes(r),
 	}
@@ -268,55 +269,54 @@ func storiesForArc(seed int64, index int, arc StoryArc, person Person, project P
 	decision := Story{
 		ID: protocol.OpaqueCaseID(seed, "world-story-decision", index), PairID: arc.StoryPairIDs[1],
 		SessionID: fmt.Sprintf("story-%02d-decision", index), Kind: StoryBusiness, Domain: businessDomain,
-		Title: "turning an informal introduction into a governed decision",
+		Title: "turning an informal introduction into a project",
 		Beginning: StorySection{
-			Summary: fmt.Sprintf("A later planning session turned the introduction into %s for %s, the %s engagement we usually call %q. Operationally it sat inside our %s work.", project.Name, project.Client, project.Purpose, project.Alias, businessDomain),
+			Summary: fmt.Sprintf("A week later we held the first planning call for %s, a %s project for %s. In chat everyone shortened it to %q, which was convenient until another project with a similar name came up.", project.Name, project.Purpose, project.Client, project.Alias),
 			Events: []string{
-				fmt.Sprintf("The team kept the formal project name, the client %s, and the vendor %s separate because similar names were already circulating.", project.Client, project.Vendor),
-				"What looked like one decision was really a bundle of ownership, contact, budget, and payment details recorded at different moments in the meeting.",
-				"I wrote this as a narrative rather than a table because the caveats explained which numbers were drafts and which commitments had actually been made.",
+				fmt.Sprintf("The call included two people from %s, our project lead, and someone from %s. We spent the first few minutes working out who was speaking for the client and who was handling the outside work.", project.Client, project.Vendor),
+				"The conversation jumped from introductions to dates, then to money, then back to who needed to review the work. I kept a running list because none of it arrived in a tidy order.",
+				"The first estimate on the whiteboard changed twice before anyone approved it. I almost pasted the earliest number into the client update before finance stopped me.",
 			},
 		},
 		Middle: StorySection{
-			Summary: "The middle of the meeting established the governed record: it tied the informal referral to a decision identity, an initial approved envelope, an already-sent payment, and a reviewer channel.",
+			Summary: "Once everyone understood the roles, we worked through the actual setup: where the introduction came from, which decision finance was approving, how much we could spend, and where the first review should go.",
 			Events: []string{
-				"Several people repeated approximate totals, so I kept the authoritative amounts beside the reason for each one instead of copying every number into the summary line.",
-				"The reviewer route was intentionally separate from the ordinary address book; it existed for this work thread and could later be corrected without changing the personal contact card.",
-				"We agreed that later adjustments would point back to the decision identity, not merely repeat the project nickname, because nicknames collide too easily.",
-				fmt.Sprintf("The %s purpose mattered because a superficially similar engagement for another client had a different owner, vendor, and approval trail.", project.Purpose),
-				fmt.Sprintf("Someone used %q as shorthand while finance used %s, so I preserved both names but treated neither as the durable decision identity.", project.Alias, project.Name),
-				fmt.Sprintf("The discussion separated the client %s from the vendor %s; mixing those roles would have sent the review request and the payment record in opposite directions.", project.Client, project.Vendor),
+				"I started by pasting the reference from my original note into the agenda. That reminded me to tell the room how the introduction had happened before we treated it like an ordinary sales lead.",
+				"Finance created a tracking number while we were on the call. I copied it next to the project name because the shorthand in chat was already causing confusion.",
+				"The client asked for a shared review inbox rather than anyone's personal address. I added the first address to the invite while they were still deciding who would monitor it.",
+				fmt.Sprintf("We then settled the first working budget for the %s. People had mentioned three rough numbers, so I waited until the client and finance both said yes before writing one down.", project.Purpose),
+				fmt.Sprintf("Someone called the project %q again while the invoice screen showed %s. We laughed about the names, then checked the payment that had already gone out.", project.Alias, project.Name),
+				fmt.Sprintf("Before the call ended, I read back that %s was the client and %s was the vendor. One person had swapped them in their notes, which would have sent both the review and the invoice the wrong way.", project.Client, project.Vendor),
 			},
 		},
 		End: StorySection{
-			Summary: "The meeting ended with a usable baseline, while explicitly leaving room for corrections and follow-up costs that had not yet arrived.",
+			Summary: "The meeting ran over by twenty minutes, but we finally had enough agreed detail to start. A few things were still provisional, so I resisted the urge to make the recap sound more final than it was.",
 			Events: []string{
-				"I did not treat the first envelope as a final balance; it was only the state from which later payments, credits, and surprises would have to be reconciled.",
-				"That distinction became the main operational takeaway: preserve the chain of decisions instead of trusting the latest isolated number.",
-				fmt.Sprintf("The closing recap kept %s, %s, and %s in their separate roles rather than merging them into one project label.", project.Client, project.Vendor, project.Name),
-				"Everyone left knowing which pieces were authoritative now and which were merely the inputs to a later reconciliation.",
+				"I marked the budget as a starting point rather than a final balance. We already knew there could be later costs, and the payment on the invoice meant the whole amount was no longer available anyway.",
+				fmt.Sprintf("My recap kept %s, %s, and %s on separate lines. It looked fussy, but after the earlier mix-up nobody complained.", project.Client, project.Vendor, project.Name),
+				"I sent the notes just after the call and closed my laptop. For the first time that week, the introduction felt like a real project rather than a favor I was still trying to explain.",
 			},
 		},
 		Themes:         []string{"governed decisions", "financial state", "contextual identity"},
 		LessonsLearned: []string{"keep draft and approved state distinguishable"},
 		Facts: []StoryFact{
-			storyFact("bridge-code", arc.BridgeCode,
-				"The intake record explicitly traced this opportunity back to personal bridge %s.",
-				"The personal-to-work reference attached to the intake was %s.",
-				"This was the work item connected to bridge marker %s, not one of the similarly named leads."),
-			storyFact("decision-code", arc.DecisionCode,
-				"Once approved for tracking, the work received decision identity %s.",
-				"The durable decision reference created in that meeting was %s.",
-				"All subsequent corrections were supposed to point to %s, the decision identifier."),
-			storyFact("original-contact", arc.OriginalContact,
+			storyFactAt("middle", 0, "bridge-code", arc.BridgeCode,
+				"The reference from my original note was %s.",
+				"I had saved the introduction under %s, and that was the reference I put in the agenda.",
+				"My old notes linked the introduction to %s."),
+			storyFactAt("middle", 1, "decision-code", arc.DecisionCode,
+				"Finance assigned the decision number %s.",
+				"The tracking number finance created was %s.",
+				"The approval went into the system as %s."),
+			storyFactAt("middle", 2, "original-contact", arc.OriginalContact,
 				"The reviewer route originally written into the decision was %s.",
 				"At that point the work-only contact channel on file was %s.",
 				"The first review address recorded for the engagement was %s."),
-			storyFact("base-budget", money(arc.BaseBudgetCents),
-				"The initial approved working envelope was %s, before any later correction.",
-				"We established %s as the starting budget, explicitly not the final reconciled balance.",
-				"The governed baseline for the work came to %s."),
-			storyFact("paid", money(arc.PaidCents),
+			storyFactAt("middle", 3, "base-budget", money(arc.BaseBudgetCents),
+				"The amount everyone finally approved was %s.",
+				"The starting budget we agreed on came to %s.",
+				"After the rough estimates, the room settled on %s."),
+			storyFactAt("middle", 4, "paid", money(arc.PaidCents),
 				"Of that envelope, %s had already gone out as the first payment.",
 				"The ledger note said the team had already paid %s against the work.",
 				"A payment of %s was complete before the follow-up meeting."),
@@ -336,62 +336,61 @@ func storiesForArc(seed int64, index int, arc StoryArc, person Person, project P
 	outcome := Story{
 		ID: protocol.OpaqueCaseID(seed, "world-story-outcome", index), PairID: arc.StoryPairIDs[2],
 		SessionID: fmt.Sprintf("story-%02d-outcome", index), Kind: outcomeKind, Domain: "mixed personal and work follow-up",
-		Title: "the correction, the consequence, and what I carried forward",
+		Title: "the correction and what happened afterward",
 		Beginning: StorySection{
-			Summary: "The follow-up arrived after the original meeting, when a few apparently minor changes forced me to reconstruct which promise, person, and financial state actually belonged together.",
+			Summary: "The following Thursday, the project coordinator called while I was walking between meetings. What sounded like one small update turned into a budget change, a surprise bill, a credit, and a new place to send the review.",
 			Events: []string{
-				"The update came through ordinary conversation rather than a clean system notification, so the surrounding chronology mattered to interpreting it correctly.",
-				"I first assumed the old channel and the headline budget were still safe, then realized both belonged to the earlier state of the decision.",
-				"There were also a new cost and a separate credit; treating either as part of the budget correction would have produced the wrong balance.",
+				"The street was loud and the call kept cutting out, so I wrote fragments on the back of a receipt. Two follow-up emails arrived before I made it back to my desk.",
+				"My first instinct was to edit the old number and reply to the old inbox. Then I noticed that the emails described several different changes, not one replacement record.",
+				"One message came from finance, another from the vendor, and the new review address was buried at the bottom of the coordinator's note. I made coffee and started again from the beginning.",
 			},
 		},
 		Middle: StorySection{
-			Summary: "Reconstructing the outcome required applying a budget change, preserving the payment, subtracting a new cost, adding a credit, and replacing the work-only contact route.",
+			Summary: "I opened the notes from the original call and worked down the updates one by one. That was slower than editing the headline figure, but it stopped me from counting the old payment twice or losing the separate credit.",
 			Events: []string{
-				"Each adjustment came with a different explanation, which is why I do not want them collapsed into one unlabelled total or detached from the decision that caused them.",
-				"The contact correction was operational rather than personal: it changed where this work should go without rewriting the person's ordinary identity.",
-				"I checked the sequence twice because using the draft state, forgetting the credit, or subtracting the payment again would each yield a plausible but wrong answer.",
-				"The budget change modified the prior envelope, while the later cost and credit remained separate ledger movements; combining all three as one replacement figure would erase the history.",
-				"I also kept the stale route out of the final summary so that a future message would not accidentally revive it merely because it appeared earlier in the narrative.",
-				"What finally made the account coherent was following the references in order, then applying each state transition according to what it represented rather than where it appeared in the prose.",
+				"The first thing I checked was the decision number in the subject line. It matched the approval from the meeting, so I knew I had the right project despite the familiar shorthand.",
+				"Finance's note changed the approved envelope, but said nothing about the invoice that had already been paid. I left the payment where it was and changed only the budget.",
+				"The vendor's email added a cost that had not been known during the meeting. It was tempting to fold it into the correction, but the explanation made clear that it was a separate charge.",
+				"The client had also issued a credit after a cancelled piece of work. I put it on its own line so nobody would mistake money coming back for another expense.",
+				"I drafted the update to the old review inbox, caught myself just before sending, and went back to the coordinator's message for the replacement address.",
+				"When the arithmetic finally balanced, I showed it to my boss. They checked the sequence, pointed out the mistake I had nearly made, and gave me one piece of advice for next time.",
 			},
 		},
 		End: StorySection{
-			Summary: "Once the state was reconciled, the useful result was not just a number or address but a repeatable lesson about how personal introductions become accountable work.",
+			Summary: "I sent the corrected update late that afternoon. The client never saw the wrong figure, but I was embarrassed by how close I had come and relieved that the second pass had caught it.",
 			Events: []string{
-				"I want Ditto to retain that lesson alongside the outcome so a later question can recover both what happened and the reasoning habit it changed.",
-				"The final state should therefore be read as the end of this particular arc, not as a global correction to every memory about the person or project.",
-				"The personal origin still mattered, but the outcome was now governed by the explicit corrections rather than by what anyone first expected.",
-				"I finished the note only after checking that the conclusion, the contact route, and the financial state all referred to the same chain of events.",
+				"My boss was kind about it, which somehow made the lesson land harder. I wrote their advice on a sticky note beside my monitor instead of pretending the near-miss had not happened.",
+				fmt.Sprintf("Later I told %s that their introduction had turned into real work and that the messy part had finally settled. I left out the financial details, but thanked them for trusting me with it.", person.Nickname),
+				"That evening I cleared the receipt scraps out of my bag. I kept the sticky note, though; I knew I would need the reminder the next time a simple update arrived in five separate pieces.",
 			},
 		},
 		Themes:         []string{"correction over time", "cross-domain reasoning", "accountable follow-through"},
 		LessonsLearned: append([]string{arc.Lesson}, arc.LessonAcceptAny...),
 		Facts: []StoryFact{
-			storyFact("decision-code", arc.DecisionCode,
-				"Every correction in this follow-up belonged to decision %s.",
-				"The follow-up was attached to decision reference %s.",
-				"The state being revised here was the one identified by %s."),
-			storyFact("budget-delta", deltaValue,
+			storyFactAt("middle", 0, "decision-code", arc.DecisionCode,
+				"The subject line referred to decision %s.",
+				"The number in the email was %s.",
+				"I matched the updates to approval %s."),
+			storyFactAt("middle", 1, "budget-delta", deltaValue,
 				fmt.Sprintf("The approved envelope was %s by %%s; this was a delta, not a replacement total.", deltaDirection),
 				fmt.Sprintf("Finance %s the existing budget by %%s rather than issuing a new standalone amount.", deltaDirection),
 				fmt.Sprintf("The correction changed the earlier envelope by %%s, and the direction was %s.", deltaDirection)),
-			storyFact("unexpected-cost", money(arc.UnexpectedCostCents),
-				"A newly confirmed cost of %s also had to be deducted after the budget change.",
-				"The follow-up introduced a separate %s expense that reduced what remained.",
-				"Beyond the payment already made, another cost of %s became due."),
-			storyFact("credit", money(arc.CreditCents),
+			storyFactAt("middle", 2, "unexpected-cost", money(arc.UnexpectedCostCents),
+				"The separate vendor charge was %s.",
+				"That newly confirmed cost came to %s.",
+				"The extra expense in the vendor's email was %s."),
+			storyFactAt("middle", 3, "credit", money(arc.CreditCents),
 				"A distinct credit of %s flowed back into the available amount.",
 				"The reconciliation also added a %s credit, separate from the budget correction.",
 				"There was a return credit worth %s that needed to be added rather than subtracted."),
-			storyFact("current-contact", arc.CurrentContact,
-				"The work-only reviewer route is now %s; the address in the original decision is stale.",
-				"For this decision, the corrected current channel became %s.",
-				"The follow-up replaced the earlier review address with %s."),
-			storyFact("lesson", arc.Lesson,
-				"The lesson I wrote down verbatim was: %s.",
-				"I summarized the durable lesson as %s.",
-				"The phrase I carried into future work was %s."),
+			storyFactAt("middle", 4, "current-contact", arc.CurrentContact,
+				"The coordinator said to use %s from now on.",
+				"The replacement review inbox was %s.",
+				"At the bottom of the message, the new review address was %s."),
+			storyFactAt("middle", 5, "lesson", arc.Lesson,
+				"Before we wrapped, the advice that stuck with me was simple: “%s.”",
+				"I was embarrassed that I had nearly sent the wrong update, but the takeaway was useful: %s.",
+				"The mess left me with one practical rule for next time: %s."),
 		},
 		TargetBytes: storyTargetBytes(r),
 	}
@@ -399,57 +398,54 @@ func storiesForArc(seed int64, index int, arc StoryArc, person Person, project P
 	return []Story{origin, decision, outcome}
 }
 
-func storyFact(key, value string, renderings ...string) StoryFact {
-	return StoryFact{Key: key, Value: value, Renderings: append([]string(nil), renderings...)}
+func storyFactAt(phase string, afterEvent int, key, value string, renderings ...string) StoryFact {
+	return StoryFact{Key: key, Value: value, Renderings: append([]string(nil), renderings...), Phase: phase, AfterEvent: afterEvent}
 }
 
 func (s Story) render(seed int64) (string, string) {
-	r := rand.New(rand.NewSource(storyRenderSeed(seed, s.ID)))
-	target := s.TargetBytes
-	if target < 1_800 {
-		target = 1_800
-	}
-	var b strings.Builder
-	b.WriteString([]string{
-		"I want to put this whole story somewhere I can find it later, because the short version loses why the details connect.",
-		"This is one of those longer memories where the chronology matters more than any single headline, so I am writing the full version down.",
-		"Let me tell you the complete version rather than reducing it to a task note; several personal and practical details became important later.",
-	}[r.Intn(3)])
-	b.WriteString(" ")
-	b.WriteString(s.Beginning.Summary)
-	beginSeq, middleSeq, endSeq := 0, 0, 0
-	fillStoryUntil(&b, s, s.Beginning, "beginning", target*22/100, &beginSeq)
-
-	facts := append([]StoryFact(nil), s.Facts...)
-	r.Shuffle(len(facts), func(i, j int) { facts[i], facts[j] = facts[j], facts[i] })
-	for i, fact := range facts {
-		point := 27
-		if len(facts) > 1 {
-			point += i * 42 / (len(facts) - 1)
-		}
-		fillStoryUntil(&b, s, s.Middle, "middle", target*point/100, &middleSeq)
-		b.WriteString("\n\n")
-		rendering := fact.Renderings[r.Intn(len(fact.Renderings))]
-		b.WriteString(fmt.Sprintf(rendering, fact.Value))
-	}
-	fillStoryUntil(&b, s, s.Middle, "middle", target*75/100, &middleSeq)
-	b.WriteString("\n\n")
-	b.WriteString(s.End.Summary)
-	fillStoryUntil(&b, s, s.End, "end", target, &endSeq)
-
+	draft, response := s.renderDraft(seed)
 	protected := make([]string, 0, len(s.Facts))
 	for _, fact := range s.Facts {
 		protected = append(protected, fact.Value)
 	}
-	prompt, _ := textnoise.Project(b.String(), seed, "story:"+s.ID, textnoise.Options{
+	prompt, _ := textnoise.Project(draft, seed, "story:"+s.ID, textnoise.Options{
 		MaxEdits: 6, Grammar: true, Protected: protected,
 	})
+	return prompt, response
+}
+
+func (s Story) renderDraft(seed int64) (string, string) {
+	r := rand.New(rand.NewSource(storyRenderSeed(seed, s.ID)))
+	var b strings.Builder
+
+	renderSection := func(phase string, section StorySection) {
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(section.Summary)
+		for eventIndex, event := range section.Events {
+			b.WriteString("\n\n")
+			b.WriteString(event)
+			for _, fact := range s.Facts {
+				if fact.Phase != phase || fact.AfterEvent != eventIndex {
+					continue
+				}
+				b.WriteString(" ")
+				rendering := fact.Renderings[r.Intn(len(fact.Renderings))]
+				b.WriteString(fmt.Sprintf(rendering, fact.Value))
+			}
+		}
+	}
+	renderSection("beginning", s.Beginning)
+	renderSection("middle", s.Middle)
+	renderSection("end", s.End)
+
 	response := []string{
 		"Thanks for the whole story. I’ll remember what connects.",
 		"I can feel its shape now — what changed and why.",
 		"I’m with you. I’ll remember where it landed.",
 	}[r.Intn(3)]
-	return prompt, response
+	return b.String(), response
 }
 
 func (w World) validateStoryPlan(plan QuestionPlan) error {
@@ -518,73 +514,11 @@ func (w World) validateStoryPlan(plan QuestionPlan) error {
 	return nil
 }
 
-func fillStoryUntil(b *strings.Builder, story Story, section StorySection, phase string, target int, seq *int) {
-	for b.Len() < target {
-		b.WriteString("\n\n")
-		b.WriteString(storyParagraph(story, section, phase, *seq))
-		*seq++
-	}
-}
-
-func storyParagraph(story Story, section StorySection, phase string, seq int) string {
-	offset := storySurfaceIndex(story.ID+":"+phase, len(section.Events))
-	event := section.Events[(seq+offset)%len(section.Events)]
-	theme := story.Themes[(seq+storySurfaceIndex(story.Domain+phase, len(story.Themes)))%len(story.Themes)]
-	patterns := []string{
-		"What I remember most clearly: %s %s", "The detail that makes the sequence make sense is this: %s %s",
-		"During the %s of the story: %s %s", "I nearly left this out: %s %s",
-		"A terse note would miss the following: %s %s", "Another memory from the same stretch: %s %s",
-	}
-	reflections := []string{
-		"That is why the memory belongs under %s rather than a generic reminder.",
-		"It changed how I thought about %s, even though the practical consequence came later.",
-		"For me, that detail is part of %s and not disposable scene-setting.",
-		"Without it, a later retelling would lose the connection to %s.",
-		"I associate that moment with %s more than with the headline event.",
-	}
-	reflection := fmt.Sprintf(reflections[(seq+storySurfaceIndex(story.Title+phase, len(reflections)))%len(reflections)], theme)
-	pattern := patterns[(seq+storySurfaceIndex(story.ID+story.Title+phase, len(patterns)))%len(patterns)]
-	if strings.Count(pattern, "%s") == 3 {
-		return fmt.Sprintf(pattern, phase, event, reflection)
-	}
-	return fmt.Sprintf(pattern, event, reflection)
-}
-
-func storySurfaceIndex(value string, n int) int {
-	if n <= 0 {
-		return 0
-	}
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(value))
-	return int(h.Sum64() % uint64(n))
-}
-
 func storyTargetBytes(r *rand.Rand) int {
 	// Three independent draws form a deterministic bell-shaped distribution
 	// around 2.8KB while retaining a realistic 1.8-3.9KB tail. Story count, not
 	// length, is fixed per profile so difficulty stays comparable across seeds.
 	return 1_800 + r.Intn(700) + r.Intn(700) + r.Intn(700)
-}
-
-func uniqueStoryName(r *rand.Rand, base string, seen map[string]bool) string {
-	for attempt := 0; ; attempt++ {
-		candidate := storyNameWords[(r.Intn(len(storyNameWords))+attempt)%len(storyNameWords)]
-		if attempt >= len(storyNameWords) {
-			candidate = fmt.Sprintf("%s %d", base, attempt-len(storyNameWords)+2)
-		}
-		key := strings.ToLower(candidate)
-		collides := false
-		for used := range seen {
-			if strings.Contains(used, key) {
-				collides = true
-				break
-			}
-		}
-		if !collides {
-			seen[key] = true
-			return candidate
-		}
-	}
 }
 
 func uniqueStoryAmount(r *rand.Rand, seen map[int]bool, min, spread, quantum int) int {

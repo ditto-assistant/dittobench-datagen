@@ -327,11 +327,12 @@ func TestV7KnownVector(t *testing.T) {
 // v7 execution envelope while making the tool route depend on fresh seeded
 // state and increasing the share of context-bound computed/non-verbatim memory
 // cases, including multi-leg trip totals. The public bytes also pin natural
-// companion-linked travel memories and warm conversational acknowledgements.
+// companion-linked travel memories, warm conversational acknowledgements, and
+// linear human stories with minimally anchored multi-record questions.
 func TestV8KnownVector(t *testing.T) {
 	const (
 		seed = int64(123456789)
-		want = "a68c9af7771185f85546a4899e9e57336307774f9ee29233c34ac6b92e604d3d"
+		want = "cf6f09dc9273cead7f8d3da205f7c3c7dfddec2444fe7e2971b3e1622e937dce"
 	)
 	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
 	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV8)
