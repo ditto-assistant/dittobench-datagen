@@ -34,6 +34,9 @@ func TestStoryProfilesHaveFixedLargeMemoryEnvelope(t *testing.T) {
 				if len(story.Themes) < 2 || len(story.LessonsLearned) == 0 {
 					t.Fatalf("story %s lacks themes/lessons: %+v", story.ID, story)
 				}
+				if err := validateStoryStructure(story); err != nil {
+					t.Fatalf("story %s has invalid structured state: %v", story.ID, err)
+				}
 				kinds[story.Kind] = true
 			}
 			if !kinds[StoryPersonal] || !kinds[StoryBusiness] {
@@ -48,6 +51,8 @@ func TestStoryCompilerIsLinearHumanAndNonRepeating(t *testing.T) {
 		"later retelling", "a terse note", "worth a mention", "nothing urgent",
 		"not something about you", "complete version", "chronology matters",
 		"the phrase i carried", "what i remember most clearly", "i nearly left this out",
+		"a practical problem slipped into the story", "everyone from that part of my life calls",
+		"ref-", "dec-",
 	}
 	for seed := int64(1); seed <= 20; seed++ {
 		w := Generate(seed, 3)
@@ -206,7 +211,7 @@ func TestStoryProgramsAreInterpersonalComposedAndAnswerSafe(t *testing.T) {
 		if !contains(plan.Constraints, person.Nickname) {
 			t.Fatalf("story plan %s lacks the natural person anchor %q", plan.Case.ID, person.Nickname)
 		}
-		for _, hidden := range []string{arc.BridgeCode, arc.DecisionCode, arc.CurrentContact} {
+		for _, hidden := range []string{arc.CaseID, arc.PurchaseOrder, arc.CurrentContact} {
 			if strings.Contains(plan.Case.Question, hidden) {
 				t.Fatalf("story plan %s leaks hidden value %q", plan.Case.ID, hidden)
 			}
