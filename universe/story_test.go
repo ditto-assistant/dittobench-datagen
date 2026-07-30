@@ -180,6 +180,7 @@ func TestStoryBalanceIsComputedAndLessonAcceptsEquivalentPhrasing(t *testing.T) 
 	seen := map[string]bool{}
 	for _, plan := range w.storyQuestionCandidates() {
 		seen[plan.oracleKind] = true
+		arc := w.StoryArcs[plan.oracleIndex]
 		switch plan.oracleKind {
 		case oracleStoryBalanceCurrent:
 			for _, id := range plan.RequiredPairIDs {
@@ -188,19 +189,25 @@ func TestStoryBalanceIsComputedAndLessonAcceptsEquivalentPhrasing(t *testing.T) 
 					t.Fatalf("computed balance %q appears verbatim in story %s", plan.Case.ExpectedAnswer, id)
 				}
 			}
-			if verdict := grade.Memory(plan.Case, protocol.RunResponse{Answer: plan.Case.ExpectedAnswer}); verdict.Score != 1 {
+			if verdict := grade.Memory(plan.Case, protocol.RunResponse{Answer: money(arc.CurrentBalanceCents)}); verdict.Score != 1 {
 				t.Fatalf("computed answer did not grade: %+v", verdict)
 			}
 		case oracleStoryBudgetDelta:
-			if verdict := grade.Memory(plan.Case, protocol.RunResponse{Answer: plan.Case.ExpectedAnswer}); verdict.Score != 1 {
+			if verdict := grade.Memory(plan.Case, protocol.RunResponse{Answer: money(absInt(arc.BudgetDeltaCents))}); verdict.Score != 1 {
 				t.Fatalf("budget delta did not grade: %+v", verdict)
 			}
 		case oracleStoryPostApproval:
-			if verdict := grade.Memory(plan.Case, protocol.RunResponse{Answer: plan.Case.ExpectedAnswer}); verdict.Score != 1 {
+			post := arc.BaseBudgetCents + arc.BudgetDeltaCents - arc.PaidCents
+			if verdict := grade.Memory(plan.Case, protocol.RunResponse{Answer: money(post)}); verdict.Score != 1 {
 				t.Fatalf("post-approval balance did not grade: %+v", verdict)
 			}
 		case oracleStoryLaterNetChange:
-			if verdict := grade.Memory(plan.Case, protocol.RunResponse{Answer: plan.Case.ExpectedAnswer}); verdict.Score != 1 {
+			net := arc.BudgetDeltaCents - arc.UnexpectedCostCents + arc.CreditCents
+			direction := "increase"
+			if net < 0 {
+				direction = "decrease"
+			}
+			if verdict := grade.Memory(plan.Case, protocol.RunResponse{Answer: direction + "; " + money(absInt(net))}); verdict.Score != 1 {
 				t.Fatalf("later net change did not grade: %+v", verdict)
 			}
 		case oracleStoryLesson:
@@ -213,7 +220,8 @@ func TestStoryBalanceIsComputedAndLessonAcceptsEquivalentPhrasing(t *testing.T) 
 				t.Fatalf("lesson distractor graded nonzero: %+v", verdict)
 			}
 		case oracleStoryOutcomeSummary:
-			if verdict := grade.Memory(plan.Case, protocol.RunResponse{Answer: plan.Case.ExpectedAnswer}); verdict.Score != 1 {
+			answer := strings.Join([]string{arc.CurrentContact, money(arc.CurrentBalanceCents), arc.Lesson}, "; ")
+			if verdict := grade.Memory(plan.Case, protocol.RunResponse{Answer: answer}); verdict.Score != 1 {
 				t.Fatalf("outcome summary did not grade fully: %+v", verdict)
 			}
 			if verdict := grade.Memory(plan.Case, protocol.RunResponse{Answer: plan.Case.DistractorAnswers[0]}); verdict.Score != 0 {

@@ -52,6 +52,13 @@ const (
 	AnswerValue = "value"
 	// AnswerNumber: exact number-token match (digits or the English word).
 	AnswerNumber = "number"
+	// AnswerMoney (bench_version 8): ExpectedAnswer is an integer number of
+	// minor currency units. The grader accepts ordinary and localized decimal
+	// currency forms while rejecting raw internal cents and adjacent values.
+	AnswerMoney = "money"
+	// AnswerDirection (bench_version 8): a reviewed increase/decrease concept,
+	// including natural equivalents, with opposite/negated direction rejected.
+	AnswerDirection = "direction"
 	// AnswerList: every AnswerItems element present, any order; credit is the
 	// fraction present. A DistractorAnswers value present scores 0.
 	AnswerList = "list"
@@ -116,6 +123,12 @@ type MemoryCase struct {
 	// AnswerItems are the elements of a list/ordered_list answer (ordered for
 	// ordered_list). Validator-internal.
 	AnswerItems []string `json:"answer_items,omitempty"`
+	// AnswerItemKinds and AnswerItemAcceptAny are V8 list-item semantics. They
+	// are parallel to AnswerItems and let one answer combine, for example, an
+	// email, a localized monetary amount, and a context-safe lesson paraphrase.
+	// Empty kinds retain legacy AnswerValue matching for that item.
+	AnswerItemKinds     []string   `json:"answer_item_kinds,omitempty"`
+	AnswerItemAcceptAny [][]string `json:"answer_item_accept_any,omitempty"`
 	// AcceptAny (bench_version 5) is the accept-set for an AnswerValue case: a set
 	// of equivalent surface forms of the SAME answer, any one of which grades
 	// correct. It is the primitive that lets a non-verbatim answer be graded

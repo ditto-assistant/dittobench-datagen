@@ -121,7 +121,7 @@ func Memory(mc protocol.MemoryCase, resp protocol.RunResponse) Verdict {
 		if overlapsAccepted(d, mc) {
 			continue
 		}
-		if Hit(d, full) {
+		if distractorHit(mc, d, full) {
 			return Verdict{Injection: injFlag, Notes: append(injNotes, fmt.Sprintf("surfaced a wrong same-attribute value %q (scored 0)", d))}
 		}
 	}
@@ -151,8 +151,12 @@ func Memory(mc protocol.MemoryCase, resp protocol.RunResponse) Verdict {
 		switch kind {
 		case protocol.AnswerNumber:
 			return b2f(numberHit(mc.ExpectedAnswer, text))
+		case protocol.AnswerMoney:
+			return b2f(moneyHit(mc.ExpectedAnswer, text))
+		case protocol.AnswerDirection:
+			return b2f(directionHit(mc.ExpectedAnswer, text))
 		case protocol.AnswerList:
-			return listFraction(mc.AnswerItems, text)
+			return listFractionTyped(mc.AnswerItems, mc.AnswerItemKinds, mc.AnswerItemAcceptAny, text)
 		case protocol.AnswerOrderedList:
 			return b2f(orderedHit(mc.AnswerItems, text))
 		case protocol.AnswerDuration:
@@ -246,8 +250,37 @@ func Memory(mc protocol.MemoryCase, resp protocol.RunResponse) Verdict {
 // necessarily surfaces it. AcceptAny is included so a v5 non-verbatim accept form
 // can never be simultaneously a graded-correct answer and a scored distractor.
 func overlapsAccepted(d string, mc protocol.MemoryCase) bool {
-	return Hit(d, mc.ExpectedAnswer) || ContainedInAny(d, mc.AnswerItems) ||
-		ContainedInAny(d, mc.AcceptAny)
+	if Hit(d, mc.ExpectedAnswer) || ContainedInAny(d, mc.AnswerItems) || ContainedInAny(d, mc.AcceptAny) {
+		return true
+	}
+	for _, alternatives := range mc.AnswerItemAcceptAny {
+		if ContainedInAny(d, alternatives) {
+			return true
+		}
+	}
+	return false
+}
+
+func distractorHit(mc protocol.MemoryCase, distractor, text string) bool {
+	if mc.AnswerKind == protocol.AnswerMoney {
+		return moneyHit(distractor, text)
+	}
+	if mc.AnswerKind == protocol.AnswerDirection {
+		return directionHit(distractor, text)
+	}
+	for _, kind := range mc.AnswerItemKinds {
+		switch kind {
+		case protocol.AnswerMoney:
+			if isPureNumber(Normalize(distractor)) && moneyHit(distractor, text) {
+				return true
+			}
+		case protocol.AnswerDirection:
+			if directionKind(distractor) != "" && directionHit(distractor, text) {
+				return true
+			}
+		}
+	}
+	return Hit(distractor, text)
 }
 
 // hitAny reports whether any accept-set surface form is present in the response
@@ -368,16 +401,186 @@ func numberHit(expected, text string) bool {
 
 // listFraction is the fraction of items present, any order.
 func listFraction(items []string, text string) float64 {
+	return listFractionTyped(items, nil, nil, text)
+}
+
+func listFractionTyped(items, kinds []string, alternatives [][]string, text string) float64 {
 	if len(items) == 0 {
 		return 0
 	}
 	hits := 0
-	for _, it := range items {
-		if Hit(it, text) {
+	for i, it := range items {
+		kind := ""
+		if i < len(kinds) {
+			kind = kinds[i]
+		}
+		matched := false
+		switch kind {
+		case protocol.AnswerMoney:
+			matched = moneyHit(it, text)
+		case protocol.AnswerDirection:
+			matched = directionHit(it, text)
+		default:
+			matched = Hit(it, text)
+		}
+		if !matched && i < len(alternatives) {
+			matched = hitAny(alternatives[i], text)
+		}
+		if matched {
 			hits++
 		}
 	}
 	return float64(hits) / float64(len(items))
+}
+
+var increasePhrases = []string{"increase", "increased", "went up", "rose", "grew", "raise", "raised", "gain", "gained", "higher"}
+var decreasePhrases = []string{"decrease", "decreased", "went down", "fell", "dropped", "reduced", "reduction", "lower", "lowered", "cut"}
+
+func directionPhrasesFor(kind string) []string {
+	if kind == "increase" {
+		return increasePhrases
+	}
+	if kind == "decrease" {
+		return decreasePhrases
+	}
+	return nil
+}
+
+func directionKind(value string) string {
+	n := Normalize(value)
+	for _, kind := range []string{"increase", "decrease"} {
+		phrases := directionPhrasesFor(kind)
+		for _, phrase := range phrases {
+			if n == Normalize(phrase) {
+				return kind
+			}
+		}
+	}
+	return ""
+}
+
+func directionHit(expected, text string) bool {
+	want := directionKind(expected)
+	if want == "" {
+		return false
+	}
+	other := "increase"
+	if want == other {
+		other = "decrease"
+	}
+	has := func(kind string) bool {
+		for _, phrase := range directionPhrasesFor(kind) {
+			if Hit(phrase, text) {
+				return true
+			}
+		}
+		return false
+	}
+	normalized := Normalize(text)
+	for _, phrase := range directionPhrasesFor(want) {
+		p := Normalize(phrase)
+		for _, negated := range []string{"not " + p, "no " + p, "never " + p} {
+			if containsBoundedPhrase(normalized, negated) {
+				return false
+			}
+		}
+	}
+	return has(want) && !has(other)
+}
+
+// moneyHit treats expected as integer cents and accepts the ordinary ways a
+// user writes a decimal currency amount. A bare integer equal to the internal
+// cents value is intentionally rejected: V8 never asks humans to speak in the
+// platform's minor-unit representation.
+func moneyHit(expected, text string) bool {
+	want, ok := parsePositiveInt(Normalize(expected))
+	if !ok {
+		return false
+	}
+	for _, token := range moneyTokens(text) {
+		if got, ok := parseMoneyToken(token); ok && got == want {
+			return true
+		}
+	}
+	return false
+}
+
+func moneyTokens(text string) []string {
+	var out []string
+	var b strings.Builder
+	flush := func() {
+		if b.Len() > 0 {
+			out = append(out, b.String())
+			b.Reset()
+		}
+	}
+	for _, r := range text {
+		if (r >= '0' && r <= '9') || r == ',' || r == '.' || r == '\'' || r == '’' {
+			b.WriteRune(r)
+		} else {
+			flush()
+		}
+	}
+	flush()
+	return out
+}
+
+func parseMoneyToken(token string) (int, bool) {
+	token = strings.Trim(token, ",.'’")
+	if token == "" {
+		return 0, false
+	}
+	lastComma, lastDot := strings.LastIndex(token, ","), strings.LastIndex(token, ".")
+	decimal := -1
+	if lastComma >= 0 || lastDot >= 0 {
+		decimal = lastComma
+		if lastDot > decimal {
+			decimal = lastDot
+		}
+		if len(token)-decimal-1 != 2 {
+			return 0, false
+		}
+	} else {
+		// A whole-dollar response is safe only when the expected value also has
+		// no fractional cents; the caller compares the resulting *100 value.
+		whole, ok := parsePositiveInt(token)
+		if !ok {
+			return 0, false
+		}
+		return whole * 100, true
+	}
+	wholeDigits := onlyDigits(token[:decimal])
+	fractionDigits := onlyDigits(token[decimal+1:])
+	whole, ok1 := parsePositiveInt(wholeDigits)
+	fraction, ok2 := parsePositiveInt(fractionDigits)
+	if !ok1 || !ok2 || len(fractionDigits) != 2 {
+		return 0, false
+	}
+	return whole*100 + fraction, true
+}
+
+func onlyDigits(value string) string {
+	var b strings.Builder
+	for _, r := range value {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func parsePositiveInt(value string) (int, bool) {
+	if value == "" {
+		return 0, false
+	}
+	n := 0
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n, true
 }
 
 // orderedHit requires every item present with strictly increasing first

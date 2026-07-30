@@ -53,3 +53,59 @@ func TestV8PersistenceRejectsIncidentalGenericWords(t *testing.T) {
 		t.Fatalf("explicit persistence stance missed: %v", got)
 	}
 }
+
+func TestV8MoneyAcceptsHumanFormattingAndRejectsInternalCents(t *testing.T) {
+	mc := v8Case(protocol.AnswerMoney)
+	mc.ExpectedAnswer = "719076"
+	for _, answer := range []string{"$7,190.76", "$7190.76", "USD 7,190.76", "7.190,76 USD"} {
+		if got := Memory(mc, protocol.RunResponse{Answer: answer}).Score; got != 1 {
+			t.Errorf("money answer %q scored %v", answer, got)
+		}
+	}
+	for _, answer := range []string{"719076", "$7,190.75", "$71,907.60"} {
+		if got := Memory(mc, protocol.RunResponse{Answer: answer}).Score; got != 0 {
+			t.Errorf("wrong/internal money answer %q scored %v", answer, got)
+		}
+	}
+}
+
+func TestV8MoneyDistractorsUseTheSameParser(t *testing.T) {
+	mc := v8Case(protocol.AnswerMoney)
+	mc.ExpectedAnswer = "719076"
+	mc.DistractorAnswers = []string{"720076"}
+	resp := protocol.RunResponse{Answer: "$7,190.76 and maybe $7,200.76"}
+	if got := Memory(mc, resp).Score; got != 0 {
+		t.Fatalf("formatted wrong amount escaped distractor scan: %v", got)
+	}
+}
+
+func TestV8DirectionUsesReviewedContextualEquivalents(t *testing.T) {
+	mc := v8Case(protocol.AnswerDirection)
+	mc.ExpectedAnswer = "increase"
+	for _, answer := range []string{"It went up.", "Availability rose.", "The amount increased."} {
+		if got := Memory(mc, protocol.RunResponse{Answer: answer}).Score; got != 1 {
+			t.Errorf("direction answer %q scored %v", answer, got)
+		}
+	}
+	for _, answer := range []string{"It went down.", "It did not increase.", "It increased and then decreased."} {
+		if got := Memory(mc, protocol.RunResponse{Answer: answer}).Score; got != 0 {
+			t.Errorf("wrong/ambiguous direction %q scored %v", answer, got)
+		}
+	}
+}
+
+func TestV8TypedListCombinesDirectionMoneyAndParaphrase(t *testing.T) {
+	mc := v8Case(protocol.AnswerList)
+	mc.AnswerItems = []string{"increase", "719076", "separate drafts from approvals"}
+	mc.AnswerItemKinds = []string{protocol.AnswerDirection, protocol.AnswerMoney, protocol.AnswerValue}
+	mc.AnswerItemAcceptAny = [][]string{nil, nil, {"keep draft figures separate from approved numbers"}}
+	mc.DistractorAnswers = []string{"decrease", "720076"}
+	resp := protocol.RunResponse{Answer: "It went up by $7,190.76; keep draft figures separate from approved numbers."}
+	if got := Memory(mc, resp).Score; got != 1 {
+		t.Fatalf("typed list scored %v", got)
+	}
+	resp.Answer = "It went down by $7,190.76; keep draft figures separate from approved numbers."
+	if got := Memory(mc, resp).Score; got != 0 {
+		t.Fatalf("direction synonym escaped distractor scan: %v", got)
+	}
+}
