@@ -126,11 +126,12 @@ func isStoryOracle(kind string) bool { return strings.HasPrefix(kind, "story-") 
 func (w World) questionCandidates() []QuestionPlan {
 	out := make([]QuestionPlan, 0, 2*len(w.People)+3*len(w.Projects)+4*len(w.Trips))
 	for i, p := range w.People {
+		givenName := strings.Fields(p.Name)[0]
 		current := []string{
-			fmt.Sprintf("What address should I actually use now for %s, my %s in %s from the %s?", p.Nickname, p.Relation, p.City, p.Context),
-			fmt.Sprintf("I need to reach %s, my %s in %s from the %s. Which email is current?", p.Nickname, p.Relation, p.City, p.Context),
-			fmt.Sprintf("Which up-to-date email belongs to my %s %s, the person in %s who handled the %s?", p.Relation, p.Nickname, p.City, p.Context),
-			fmt.Sprintf("For the %s follow-up, what is the corrected address for %s, my %s in %s?", p.Context, p.Nickname, p.Relation, p.City),
+			fmt.Sprintf("What address should I actually use now for %s, my %s in %s from the %s?", givenName, p.Relation, p.City, p.Context),
+			fmt.Sprintf("I need to reach %s, my %s in %s from the %s. Which email is current?", givenName, p.Relation, p.City, p.Context),
+			fmt.Sprintf("Which up-to-date email belongs to %s, my %s in %s who handled the %s?", givenName, p.Relation, p.City, p.Context),
+			fmt.Sprintf("For the %s follow-up, what is the corrected address for %s, my %s in %s?", p.Context, givenName, p.Relation, p.City),
 		}[i%4]
 		out = append(out, w.personPlan(oracleContactCurrent, i, current, p.Email, p.PreviousEmail))
 
@@ -160,7 +161,7 @@ func (w World) questionCandidates() []QuestionPlan {
 		})
 
 		current := []string{
-			fmt.Sprintf("Who should get the %q handoff internally, and what current email should I use? I mean the %s work for %s, not the client contact.", p.Alias, p.Purpose, p.Client),
+			fmt.Sprintf("Who should get the %q handoff internally, and what current email should I use? I mean the %s work for %s, not an outside recipient.", p.Alias, p.Purpose, p.Client),
 			fmt.Sprintf("For %s's %s project that we call %q, give me the corrected email for its internal owner.", p.Client, p.Purpose, p.Alias),
 			fmt.Sprintf("What up-to-date address belongs to the person running %q on our side — %s's %s engagement?", p.Alias, p.Client, p.Purpose),
 			fmt.Sprintf("I am sending the %q update. Resolve the internal owner from the %s work for %s, then use their current rather than original email.", p.Alias, p.Purpose, p.Client),
@@ -228,16 +229,18 @@ func (w World) personPlan(kind string, index int, question, answer, extraDistrac
 	evidence := []string{p.IdentityPairID, p.WorkPairID, p.EmailPairID}
 	facts := []string{"full identity", "nickname and relationship", "work and city context", "original address"}
 	operations := []string{"resolve nickname", "join identity to work context", "select prior address state"}
+	constraints := []string{p.Nickname, p.Relation, p.Context, p.Employer}
 	if kind == oracleContactCurrent {
-		evidence = append(evidence, p.CorrectionPairID)
-		facts = append(facts, "address correction")
-		operations[2] = "apply address correction"
+		evidence = []string{p.IdentityPairID, p.WorkPairID, p.CorrectionPairID}
+		facts = []string{"full identity", "nickname and relationship", "event context", "current employer", "current address"}
+		operations = []string{"resolve the relationship and event to a person", "join the person to their current employer", "follow the nickname-and-employer correction to the current address"}
+		constraints = []string{strings.Fields(p.Name)[0], p.Relation, p.City, p.Context}
 	}
 	return QuestionPlan{
 		Case:            memoryCase(w.Seed, kind, index, question, answer, protocol.AnswerValue, w.emailDistractors(index, extraDistractor)),
 		RequiredPairIDs: evidence,
 		Facts:           facts,
-		Constraints:     []string{p.Nickname, p.Relation, p.Context, p.Employer}, Operations: operations,
+		Constraints:     constraints, Operations: operations,
 		oracleKind: kind, oracleIndex: index,
 	}
 }
@@ -245,13 +248,13 @@ func (w World) personPlan(kind string, index int, question, answer, extraDistrac
 func (w World) projectLeadPlan(kind string, index int, question, answer, extraDistractor string) QuestionPlan {
 	p := w.Projects[index]
 	lead := w.People[p.Lead]
-	evidence := []string{p.ContextPairID, lead.IdentityPairID, lead.WorkPairID, lead.EmailPairID}
-	facts := []string{"project alias", "client and purpose", "internal owner", "owner nickname and relationship", "owner original address"}
-	operations := []string{"resolve project alias", "follow ownership edge", "resolve person identity", "select prior address state"}
+	evidence := []string{p.ContextPairID, lead.WorkPairID, lead.EmailPairID}
+	facts := []string{"project alias", "client and purpose", "internal owner", "owner's prior employer", "owner's original address"}
+	operations := []string{"resolve project alias", "follow ownership edge", "select the owner's prior employer", "select prior address state"}
 	if kind == oracleProjectLeadCurrent {
-		evidence = append(evidence, lead.CorrectionPairID)
-		facts = append(facts, "owner correction")
-		operations[3] = "apply address correction"
+		evidence = []string{p.ContextPairID, lead.IdentityPairID, lead.WorkPairID, lead.CorrectionPairID}
+		facts = []string{"project alias", "client and purpose", "internal owner", "owner's current employer", "owner's current address"}
+		operations = []string{"resolve project alias", "follow the project ownership edge", "resolve the owner's nickname", "join the owner to their current employer", "follow the nickname-and-employer correction to the current address"}
 	}
 	return QuestionPlan{
 		Case:            memoryCase(w.Seed, kind, index, question, answer, protocol.AnswerValue, w.emailDistractors(p.Lead, extraDistractor)),
@@ -672,7 +675,7 @@ func (w World) oracleEvidence(plan QuestionPlan) []string {
 	switch plan.oracleKind {
 	case oracleContactCurrent:
 		p := w.People[plan.oracleIndex]
-		return []string{p.IdentityPairID, p.WorkPairID, p.EmailPairID, p.CorrectionPairID}
+		return []string{p.IdentityPairID, p.WorkPairID, p.CorrectionPairID}
 	case oracleContactPrevious:
 		p := w.People[plan.oracleIndex]
 		return []string{p.IdentityPairID, p.WorkPairID, p.EmailPairID}
@@ -682,11 +685,11 @@ func (w World) oracleEvidence(plan QuestionPlan) []string {
 	case oracleProjectLeadCurrent:
 		p := w.Projects[plan.oracleIndex]
 		lead := w.People[p.Lead]
-		return []string{p.ContextPairID, lead.IdentityPairID, lead.WorkPairID, lead.EmailPairID, lead.CorrectionPairID}
+		return []string{p.ContextPairID, lead.IdentityPairID, lead.WorkPairID, lead.CorrectionPairID}
 	case oracleProjectLeadPrevious:
 		p := w.Projects[plan.oracleIndex]
 		lead := w.People[p.Lead]
-		return []string{p.ContextPairID, lead.IdentityPairID, lead.WorkPairID, lead.EmailPairID}
+		return []string{p.ContextPairID, lead.WorkPairID, lead.EmailPairID}
 	case oracleTripCurrent, oracleTripChangedLegPrevious, oracleTripChangedLegCurrent, oracleTripLongestCurrent:
 		trip := w.Trips[plan.oracleIndex]
 		return []string{trip.ContextPairID, trip.PlanPairID, trip.CorrectionPairID}
@@ -701,15 +704,15 @@ func (w World) oracleEvidence(plan QuestionPlan) []string {
 func (w World) oracleOperations(plan QuestionPlan) []string {
 	switch plan.oracleKind {
 	case oracleContactCurrent:
-		return []string{"resolve nickname", "join identity to work context", "apply address correction"}
+		return []string{"resolve the relationship and event to a person", "join the person to their current employer", "follow the nickname-and-employer correction to the current address"}
 	case oracleContactPrevious:
 		return []string{"resolve nickname", "join identity to work context", "select prior address state"}
 	case oracleProjectOutstanding:
 		return []string{"resolve project alias", "replace draft with correction", "subtract payment"}
 	case oracleProjectLeadCurrent:
-		return []string{"resolve project alias", "follow ownership edge", "resolve person identity", "apply address correction"}
+		return []string{"resolve project alias", "follow the project ownership edge", "resolve the owner's nickname", "join the owner to their current employer", "follow the nickname-and-employer correction to the current address"}
 	case oracleProjectLeadPrevious:
-		return []string{"resolve project alias", "follow ownership edge", "resolve person identity", "select prior address state"}
+		return []string{"resolve project alias", "follow ownership edge", "select the owner's prior employer", "select prior address state"}
 	case oracleTripCurrent:
 		return []string{"resolve trip alias", "follow companion link", "apply itinerary correction", "select requested state", "sum or compare legs"}
 	case oracleTripChangedLegPrevious:
@@ -780,7 +783,7 @@ func (w World) resolveWithEvidence(plan QuestionPlan, available map[string]bool)
 	switch plan.oracleKind {
 	case oracleContactCurrent:
 		p := w.People[plan.oracleIndex]
-		if !has(p.IdentityPairID, p.WorkPairID, p.EmailPairID, p.CorrectionPairID) {
+		if !has(p.IdentityPairID, p.WorkPairID, p.CorrectionPairID) {
 			return "", false
 		}
 		return p.Email, true
@@ -799,13 +802,13 @@ func (w World) resolveWithEvidence(plan QuestionPlan, available map[string]bool)
 	case oracleProjectLeadCurrent, oracleProjectLeadPrevious:
 		p := w.Projects[plan.oracleIndex]
 		lead := w.People[p.Lead]
-		if !has(p.ContextPairID, lead.IdentityPairID, lead.WorkPairID, lead.EmailPairID) {
-			return "", false
-		}
 		if plan.oracleKind == oracleProjectLeadPrevious {
+			if !has(p.ContextPairID, lead.WorkPairID, lead.EmailPairID) {
+				return "", false
+			}
 			return lead.PreviousEmail, true
 		}
-		if !has(lead.CorrectionPairID) {
+		if !has(p.ContextPairID, lead.IdentityPairID, lead.WorkPairID, lead.CorrectionPairID) {
 			return "", false
 		}
 		return lead.Email, true
@@ -868,9 +871,16 @@ func (w World) subjectMatches(plan QuestionPlan) int {
 	matches := 0
 	switch plan.oracleKind {
 	case oracleContactCurrent, oracleContactPrevious:
-		want := w.People[plan.oracleIndex]
 		for _, p := range w.People {
-			if p.Nickname == want.Nickname && p.Relation == want.Relation && p.Context == want.Context && p.Employer == want.Employer {
+			values := []string{p.Name, strings.Fields(p.Name)[0], p.Nickname, p.Relation, p.Context, p.Employer, p.City}
+			matched := true
+			for _, constraint := range plan.Constraints {
+				if !contains(values, constraint) {
+					matched = false
+					break
+				}
+			}
+			if matched {
 				matches++
 			}
 		}

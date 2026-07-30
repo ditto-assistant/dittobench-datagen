@@ -46,6 +46,9 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 			if p.Employer == p.PreviousEmployer {
 				t.Fatalf("seed %d person %q has no employer transition", seed, p.Name)
 			}
+			if strings.EqualFold(strings.Fields(p.Name)[0], p.Nickname) {
+				t.Fatalf("seed %d person %q repeats their given name as nickname", seed, p.Name)
+			}
 		}
 		for _, p := range w.Projects {
 			projectNames = append(projectNames, p.Name)
@@ -83,6 +86,29 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 			}
 			if !hasRepeatedGiven {
 				t.Fatal("full world lacks an intentional repeated common given name")
+			}
+		}
+	}
+}
+
+func TestContactCorrectionsNameThePersonAndOnlyStateTheNewAddress(t *testing.T) {
+	for seed := int64(1); seed <= 50; seed++ {
+		w := Generate(seed, 3)
+		pairs := map[string]protocol.MemoryPair{}
+		for _, pair := range w.Pairs {
+			pairs[pair.PairID] = pair
+		}
+		for _, p := range w.People {
+			body := pairs[p.CorrectionPairID].Prompt
+			if !strings.Contains(body, p.Nickname) || !strings.Contains(body, p.Email) {
+				t.Fatalf("seed %d correction %q omits person or new address", seed, body)
+			}
+			if strings.Contains(body, p.PreviousEmail) {
+				t.Fatalf("seed %d correction unnecessarily repeats old address: %q", seed, body)
+			}
+			identity := pairs[p.IdentityPairID].Prompt
+			if strings.Count(identity, p.Name) != 1 || !strings.Contains(identity, "calls them “"+p.Nickname+".”") {
+				t.Fatalf("seed %d identity has contrived nickname prose: %q", seed, identity)
 			}
 		}
 	}

@@ -73,6 +73,58 @@ func PreferredName(given string, r *rand.Rand) string {
 	return options[r.Intn(len(options))]
 }
 
+// DistinctPreferredName returns a believable name that somebody might
+// actually use for the person in conversation, while guaranteeing that it is
+// not merely the given name repeated in a "nickname" field. Frozen documented
+// diminutives win. When a corpus mapping is unavailable, a reviewed familiar
+// contraction wins; every other name uses an ordinary social nickname (the
+// "everyone at school called me Scout" shape).
+//
+// This helper is V8-only through its universe caller. PreferredName remains
+// unchanged for every frozen pre-V8 generation path.
+func DistinctPreferredName(given string, r *rand.Rand, ordinal int) string {
+	var distinct []string
+	for _, option := range nicknames[strings.ToLower(given)] {
+		if !strings.EqualFold(option, given) {
+			distinct = append(distinct, option)
+		}
+	}
+	if len(distinct) > 0 {
+		return distinct[r.Intn(len(distinct))]
+	}
+	if short := informalShortForms[strings.ToLower(given)]; short != "" {
+		return short
+	}
+	start := (ordinal + r.Intn(len(socialNicknames))) % len(socialNicknames)
+	for offset := range socialNicknames {
+		candidate := socialNicknames[(start+offset)%len(socialNicknames)]
+		if !strings.EqualFold(candidate, given) {
+			return candidate
+		}
+	}
+	panic("humandata: social nickname corpus contains no distinct value")
+}
+
+// These reviewed spoken contractions cover names where the frozen source lacks
+// a mapping but the everyday shortening is unambiguous. Everything else uses a
+// social nickname; the generator never guesses by chopping an arbitrary suffix.
+var informalShortForms = map[string]string{
+	"alexandria": "Alex",
+	"arturo":     "Art",
+	"johanna":    "Jo",
+	"juliana":    "Jules",
+	"niko":       "Nik",
+	"ravi":       "Rav",
+	"savanna":    "Sav",
+}
+
+var socialNicknames = []string{
+	"Ace", "Bear", "Bee", "Birdie", "Blue", "Breezy", "Buddy", "Chip",
+	"Coach", "Dash", "Doc", "Flash", "Goldie", "Happy", "Indy", "Jazz",
+	"Junebug", "Kit", "Lucky", "Mack", "Midge", "Mo", "Nell", "Pip",
+	"Red", "Scout", "Skip", "Sparky", "Stretch", "Sunny", "Teddy", "Wren",
+}
+
 // AllGivenNames returns the frozen 10,000-name vocabulary for V8-only persona
 // attributes that need a broad, non-enumerable human-name surface.
 func AllGivenNames() []string {

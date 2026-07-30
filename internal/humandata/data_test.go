@@ -43,6 +43,31 @@ func TestPreferredNamesAreRealMappingsOrGivenNames(t *testing.T) {
 	}
 }
 
+func TestDistinctPreferredNamesNeverRepeatTheGivenName(t *testing.T) {
+	r := rand.New(rand.NewSource(17))
+	for i, name := range []string{"Savanna", "Ravi", "Leah", "Nicholas", "Elizabeth", "Priya", "Bo"} {
+		got := DistinctPreferredName(name, r, i)
+		if got == "" || lower(got) == lower(name) {
+			t.Fatalf("distinct preferred name for %q is %q", name, got)
+		}
+	}
+}
+
+func TestInformalShortFormsAreExplicitAndBelievable(t *testing.T) {
+	for name, want := range map[string]string{
+		"Savanna": "Sav",
+		"Juliana": "Jules",
+		"Ravi":    "Rav",
+		"Niko":    "Nik",
+		"Leah":    "",
+		"Robert":  "",
+	} {
+		if got := informalShortForms[lower(name)]; got != want {
+			t.Fatalf("informalShortForms[%q]=%q want %q", name, got, want)
+		}
+	}
+}
+
 func TestSamplingIsDeterministicAndIncludesLongTail(t *testing.T) {
 	a := rand.New(rand.NewSource(1234))
 	b := rand.New(rand.NewSource(1234))
