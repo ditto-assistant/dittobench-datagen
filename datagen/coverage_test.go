@@ -44,7 +44,7 @@ func TestV8DestructiveToolsCannotMutateScoredWorldEvidence(t *testing.T) {
 	seen := map[string]bool{}
 	profiles := []struct {
 		n, scale, worldCases int
-	}{{6, 1, 0}, {40, 2, 45}, {84, 3, 150}}
+	}{{6, 1, 0}, {48, 2, 57}, {100, 3, 190}}
 	for _, profile := range profiles {
 		for seed := int64(1); seed <= 100; seed++ {
 			world := universe.Generate(seed, profile.scale)
@@ -101,7 +101,7 @@ func TestV8CatalogUsesCurrentWorkflowSurface(t *testing.T) {
 			t.Fatal(err)
 		}
 		r := rand.New(rand.NewSource(rotated))
-		toolCases, _ := GenerateCasesWithFillersForVersion(r, seed, 84, protocol.BenchVersionV8)
+		toolCases, _ := GenerateCasesWithFillersForVersion(r, seed, 100, protocol.BenchVersionV8)
 		for _, c := range toolCases {
 			for _, ts := range c.ExpectedTools {
 				reachable[ts.Name] = true

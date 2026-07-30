@@ -57,8 +57,8 @@ func TestV8MemoryIsDominatedByValidatedWorldQuestions(t *testing.T) {
 		}
 		questions[c.Question] = true
 	}
-	if world != 150 || total != 198 {
-		t.Fatalf("full v8 memory mix world/total=%d/%d, want 150/198", world, total)
+	if world != 190 || total != 238 {
+		t.Fatalf("full v8 memory mix world/total=%d/%d, want 190/238", world, total)
 	}
 
 	v7, err := GenerateDataset(123456789, prof, protocol.BenchVersionV7)
@@ -317,7 +317,7 @@ func TestV8ReferenceRunHasFixedCaseAndBoundedIngestionEnvelope(t *testing.T) {
 			if err != nil {
 				t.Fatalf("v8 seed %d %s generation failed: %v", seed, runSize, err)
 			}
-			want := map[string]int{"small": 17, "medium": 110, "full": 282}[runSize]
+			want := map[string]int{"small": 17, "medium": 130, "full": 338}[runSize]
 			got := len(artifact.ToolCases) + len(artifact.MemoryCases)
 			if got != want {
 				t.Fatalf("v8 seed %d %s run has %d cases, want fixed envelope %d", seed, runSize, got, want)

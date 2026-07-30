@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ditto-assistant/dittobench-datagen/internal/textnoise"
 	"github.com/ditto-assistant/dittobench-datagen/persona"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 	"github.com/ditto-assistant/dittobench-datagen/toolexec"
@@ -1266,13 +1267,106 @@ func fuzzyWorldTool(id, category, prompt string, expected []protocol.ToolSpec, b
 }
 
 func misspellAlias(s string, salt int) string {
-	r := []rune(s)
-	if len(r) < 4 {
-		return s
+	projected, _ := textnoise.Project(s, int64(salt), "alias:"+s, textnoise.Options{MaxEdits: 1})
+	return projected
+}
+
+// applyV8WritingNoise projects ordinary mobile-keyboard typos and common
+// grammatical errors onto a stable share of every semantic tool domain. It also
+// projects user-authored prerequisite transcripts, except long stories (their
+// structured compiler owns fact-safe projection). Exact required arguments and
+// machine-like values stay canonical.
+func applyV8WritingNoise(seed int64, cases []protocol.ToolCase) map[string]int {
+	coverage := map[string]int{}
+	byDomain := map[string][]string{}
+	for _, tc := range cases {
+		domain := toolWritingDomain(tc.Category)
+		byDomain[domain] = append(byDomain[domain], tc.ID)
 	}
-	i := 1 + salt%(len(r)-2)
-	r[i], r[i+1] = r[i+1], r[i]
-	return string(r)
+	selected := map[string]bool{}
+	for domain, ids := range byDomain {
+		for id := range textnoise.Select(seed, "tool:"+domain, ids, 6_500) {
+			selected[id] = true
+		}
+	}
+	for i := range cases {
+		if !selected[cases[i].ID] {
+			continue
+		}
+		var protected []string
+		for _, spec := range cases[i].ExpectedTools {
+			for _, value := range spec.RequiredArgs {
+				protected = append(protected, value)
+			}
+		}
+		projected, stats := textnoise.Project(cases[i].Prompt, seed, "tool:"+cases[i].ID, textnoise.Options{
+			Grammar: true, Protected: protected,
+		})
+		if stats.Total() > 0 {
+			cases[i].Prompt = projected
+			coverage["prompt:"+toolWritingDomain(cases[i].Category)]++
+		}
+	}
+
+	// Select prerequisite pairs globally by pair identity. A pair repeated on
+	// multiple cases receives byte-identical noise because its projection key is
+	// the pair id, not its attachment position.
+	pairIDs := map[string][]string{}
+	for _, tc := range cases {
+		for _, pair := range tc.PrerequisitePairs {
+			if strings.HasPrefix(pair.SessionID, "story-") {
+				continue
+			}
+			domain := pairWritingDomain(pair.SessionID)
+			pairIDs[domain] = append(pairIDs[domain], pair.PairID)
+		}
+	}
+	selectedPairs := map[string]bool{}
+	for domain, ids := range pairIDs {
+		for id := range textnoise.Select(seed, "pair:"+domain, ids, 4_500) {
+			selectedPairs[id] = true
+		}
+	}
+	for i := range cases {
+		for j := range cases[i].PrerequisitePairs {
+			pair := &cases[i].PrerequisitePairs[j]
+			if !selectedPairs[pair.PairID] || strings.HasPrefix(pair.SessionID, "story-") {
+				continue
+			}
+			projected, stats := textnoise.Project(pair.Prompt, seed, "pair:"+pair.PairID, textnoise.Options{Grammar: true})
+			if stats.Total() > 0 {
+				pair.Prompt = projected
+				coverage["pair:"+pairWritingDomain(pair.SessionID)]++
+			}
+		}
+	}
+	return coverage
+}
+
+func toolWritingDomain(category string) string {
+	switch {
+	case strings.HasPrefix(category, "world_contact"), strings.HasPrefix(category, "world_memory"):
+		return "personal"
+	case strings.HasPrefix(category, "world_business"), strings.Contains(category, "workflow"), strings.Contains(category, "job"):
+		return "business"
+	case strings.Contains(category, "web"), strings.Contains(category, "link"), strings.Contains(category, "research"):
+		return "research"
+	case strings.Contains(category, "setting"), strings.Contains(category, "theme"), strings.HasPrefix(category, "set_"):
+		return "settings"
+	default:
+		return "general"
+	}
+}
+
+func pairWritingDomain(sessionID string) string {
+	switch {
+	case strings.HasPrefix(sessionID, "people-"), strings.HasPrefix(sessionID, "trip-"), strings.Contains(sessionID, "personal"):
+		return "personal"
+	case strings.HasPrefix(sessionID, "project-"), strings.Contains(sessionID, "business"):
+		return "business"
+	default:
+		return "general"
+	}
 }
 
 // categoriesForVersion returns the tool category set for a bench version. v5 adds
@@ -1539,6 +1633,7 @@ func GenerateCasesWithFillersForVersion(r *rand.Rand, seed int64, n, benchVersio
 	}
 	if benchVersion >= protocol.BenchVersionV8 {
 		applyV8WorldActions(seed, cases)
+		applyV8WritingNoise(seed, cases)
 	}
 	return cases, fillers
 }

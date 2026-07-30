@@ -273,7 +273,7 @@ func tripPlan(w World, kind string, index int, question string, answer int, evid
 }
 
 func (w World) storyQuestionCandidates() []QuestionPlan {
-	out := make([]QuestionPlan, 0, len(w.StoryArcs)*5)
+	out := make([]QuestionPlan, 0, len(w.StoryArcs)*7)
 	for i, arc := range w.StoryArcs {
 		person := w.People[arc.PersonIndex]
 		trip := w.Trips[arc.TripIndex]
@@ -335,7 +335,9 @@ func (w World) storyQuestionCandidates() []QuestionPlan {
 
 		financialPlans := []QuestionPlan{balancePlan, deltaPlan, postPlan, netPlan}
 		financialOrder := r.Perm(len(financialPlans))
-		out = append(out, financialPlans[financialOrder[0]], financialPlans[financialOrder[1]])
+		for _, index := range financialOrder {
+			out = append(out, financialPlans[index])
+		}
 
 		contactTask := []string{
 			"That introduction eventually acquired a work-only reviewer route and then a correction. Which email is current now?",

@@ -81,7 +81,7 @@ func TestStoryFactsAreInteriorAndExclusiveToLongMemories(t *testing.T) {
 func TestStoryQuestionsRequireThreeLongMemoriesAcrossDomains(t *testing.T) {
 	w := Generate(123456789, 3)
 	pairs := storyPairMap(w)
-	plans, err := w.QuestionPlans(150)
+	plans, err := w.QuestionPlans(190)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,8 +119,8 @@ func TestStoryQuestionsRequireThreeLongMemoriesAcrossDomains(t *testing.T) {
 			available[omitted] = true
 		}
 	}
-	if storyCount != 40 {
-		t.Fatalf("full story cases=%d, want fixed 40", storyCount)
+	if storyCount != 56 {
+		t.Fatalf("full story cases=%d, want fixed 56", storyCount)
 	}
 }
 
@@ -129,7 +129,7 @@ func TestStoryQuestionQuotaIsStableAcrossSeeds(t *testing.T) {
 		scale int
 		count int
 		want  int
-	}{{2, 45, 15}, {3, 150, 40}} {
+	}{{2, 57, 21}, {3, 190, 56}} {
 		for seed := int64(101); seed <= 120; seed++ {
 			plans, err := Generate(seed, tc.scale).QuestionPlans(tc.count)
 			if err != nil {

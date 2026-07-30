@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"strings"
 
+	"github.com/ditto-assistant/dittobench-datagen/internal/textnoise"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
@@ -433,12 +434,19 @@ func (s Story) render(seed int64) (string, string) {
 	b.WriteString(s.End.Summary)
 	fillStoryUntil(&b, s, s.End, "end", target, &endSeq)
 
+	protected := make([]string, 0, len(s.Facts))
+	for _, fact := range s.Facts {
+		protected = append(protected, fact.Value)
+	}
+	prompt, _ := textnoise.Project(b.String(), seed, "story:"+s.ID, textnoise.Options{
+		MaxEdits: 6, Grammar: true, Protected: protected,
+	})
 	response := []string{
 		"Thank you for telling me the complete version. I’ll keep the chronology, the personal context, the work state, and the later correction connected without flattening them into one generic note.",
 		"I’ve got the arc of it. I’ll preserve how the beginning led to the decision and how the later update changed its meaning, while keeping personal and business context distinct.",
 		"Understood. I’ll remember this as a connected story with an earlier state, a turning point, and a corrected outcome rather than as a bag of disconnected keywords.",
 	}[r.Intn(3)]
-	return b.String(), response
+	return prompt, response
 }
 
 func (w World) validateStoryPlan(plan QuestionPlan) error {

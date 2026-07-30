@@ -97,13 +97,13 @@ var profilesV7 = map[string]Profile{
 	"full":   {Tools: 84, Mem: 185, Waves: 5, RawPairsFrac: 0.5, IsoCases: 10},
 }
 
-// profilesV8 deliberately preserves v7's case counts and runtime envelope.
-// v8 raises difficulty by changing which cases land and what they require, not
-// by buying more tokens or time.
+// profilesV8 spends a modestly larger scored envelope on broad typo/domain
+// coverage and additional composed queries over the same seeded universe. Small
+// remains the compatibility smoke path; v7 and its historical costs are frozen.
 var profilesV8 = map[string]Profile{
 	"small":  {Tools: 6, Mem: 6, Waves: 1, RawPairsFrac: 0, IsoCases: 0},
-	"medium": {Tools: 40, Mem: 52, Waves: 4, RawPairsFrac: 0.45, IsoCases: 4},
-	"full":   {Tools: 84, Mem: 185, Waves: 5, RawPairsFrac: 0.5, IsoCases: 10},
+	"medium": {Tools: 48, Mem: 64, Waves: 4, RawPairsFrac: 0.45, IsoCases: 4},
+	"full":   {Tools: 100, Mem: 225, Waves: 5, RawPairsFrac: 0.5, IsoCases: 10},
 }
 
 // ProfileFor returns the Profile for a run_size, defaulting to small. Uses the

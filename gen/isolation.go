@@ -212,14 +212,14 @@ func GenerateIsolationForVersion(seed int64, primaryN, nWaves, isoCases, benchVe
 }
 
 func v8ScalarIsolationBudget(primaryN, requested int) int {
-	// The fixed full-profile total is more valuable than preserving v7's
+	// The fixed V8 full-profile total is more valuable than inheriting v7's
 	// seed-variable scalar slice. Medium spends its isolation budget on the five
 	// stronger write/delete/read cross-user cases; full retains four scalar
 	// conflicts in addition to those five.
 	switch primaryN {
-	case 185:
+	case 185, 225:
 		return 4
-	case 52:
+	case 52, 64:
 		return 0
 	default:
 		return requested

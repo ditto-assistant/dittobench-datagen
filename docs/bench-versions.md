@@ -23,8 +23,9 @@ applied to an existing version. It ships as a new one.
 
 ## What v8 is
 
-V8 keeps v7's locked model, run sizes, timeouts, deterministic scorer, and real
-runtime envelope (the public full reference remains 282 cases). It changes
+V8 keeps v7's locked model, run-size names, timeouts, and deterministic scorer.
+The public full profile grows to 338 cases so every semantic domain can carry a
+stable share of composed queries and realistic writing noise. It changes
 derivability. One seed now builds a shared procedural world: the fake user has
 people, nicknames, relationships, employers, projects, vendors, trips, original
 facts, later corrections, and both terse notes and messy business data pasted as
@@ -44,9 +45,10 @@ token efficiency remains separate.
 
 The memory mix similarly spends at least 65% on composition, indirection,
 temporal state, corrections, calculations, graph joins, and outcome verification.
-Every shared-world answer has three plausible near misses. The fixed 282-case
-budget is preserved by replacing saturated single-fact and repetitive scalar
-coverage, not by adding cases. Current ChatV2 wire tool names remain unchanged,
+Every shared-world answer has three plausible near misses. V8 also projects
+seed-derived keyboard slips, transpositions, omissions, duplications, common
+misspellings, and common grammatical errors onto user-authored prompts and
+transcripts while retaining a correctly spelled answer key. Current ChatV2 wire tool names remain unchanged,
 so a v7 harness can run v8; v8 changes what competence is required, not the
 transport contract. Free-form tasks remain free-form, and no LLM judge is added.
 Every change is gated on `bench_version >= 8`; the v7 known vector stays frozen.
@@ -62,7 +64,7 @@ seed-bound required arguments, and the served result where applicable. This is
 deliberately not merely a tool-name classifier—guessing `gmail_send` from the
 word “email” does not solve a case. The candidate must remain below 50% complete
 tool-outcome accuracy on ten held-out seeds. The pinned candidate measures
-26.55%; its deterministic oracle remains 100% scoreable.
+27.00%; its deterministic oracle remains 100% scoreable.
 
 ## What v7 is
 
