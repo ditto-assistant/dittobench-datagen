@@ -37,6 +37,13 @@ const (
 	oracleTripChangedLegPrevious = "trip-changed-leg-previous"
 	oracleTripChangedLegCurrent  = "trip-changed-leg-current"
 	oracleTripLongestCurrent     = "trip-longest-current"
+	oracleStoryBalanceCurrent    = "story-balance-current"
+	oracleStoryBudgetDelta       = "story-budget-delta"
+	oracleStoryPostApproval      = "story-post-approval-balance"
+	oracleStoryLaterNetChange    = "story-later-net-change"
+	oracleStoryContactCurrent    = "story-contact-current"
+	oracleStoryLesson            = "story-lesson"
+	oracleStoryOutcomeSummary    = "story-outcome-summary"
 )
 
 var errLexicalShortcut = errors.New("lexical shortcut")
@@ -62,7 +69,8 @@ func (w World) QuestionPlans(count int) ([]QuestionPlan, error) {
 	}
 	r := rand.New(rand.NewSource(questionSeed(w.Seed)))
 	r.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
-	selected := make([]QuestionPlan, 0, count)
+	storyPlans := make([]QuestionPlan, 0, len(w.StoryArcs)*5)
+	ordinaryPlans := make([]QuestionPlan, 0, len(candidates))
 	seenQuestions := make(map[string]bool, len(candidates))
 	for i := range candidates {
 		if err := w.validatePlan(candidates[i]); err != nil {
@@ -79,13 +87,41 @@ func (w World) QuestionPlans(count int) ([]QuestionPlan, error) {
 			return nil, fmt.Errorf("duplicate rendered question %q", candidates[i].Case.Question)
 		}
 		seenQuestions[q] = true
-		selected = append(selected, candidates[i])
-		if len(selected) == count {
-			return selected, nil
+		if isStoryOracle(candidates[i].oracleKind) {
+			storyPlans = append(storyPlans, candidates[i])
+		} else {
+			ordinaryPlans = append(ordinaryPlans, candidates[i])
 		}
 	}
-	return nil, fmt.Errorf("world has only %d shortcut-free question candidates, need %d", len(selected), count)
+	if len(storyPlans)+len(ordinaryPlans) < count {
+		return nil, fmt.Errorf("world has only %d shortcut-free question candidates, need %d", len(storyPlans)+len(ordinaryPlans), count)
+	}
+	// Every scored medium/full profile carries a fixed number of deep-story
+	// programs. Seed changes their entities, joins, state transitions, wording,
+	// and placement, but not the difficulty-class count.
+	storyQuota := storyQuestionQuota(count, len(storyPlans))
+	if len(ordinaryPlans) < count-storyQuota {
+		storyQuota = count - len(ordinaryPlans)
+	}
+	selected := make([]QuestionPlan, 0, count)
+	selected = append(selected, storyPlans[:storyQuota]...)
+	selected = append(selected, ordinaryPlans[:count-storyQuota]...)
+	r.Shuffle(len(selected), func(i, j int) { selected[i], selected[j] = selected[j], selected[i] })
+	return selected, nil
 }
+
+func storyQuestionQuota(count, available int) int {
+	want := count / 5
+	if count >= 40 {
+		want = available
+	}
+	if want > available {
+		want = available
+	}
+	return want
+}
+
+func isStoryOracle(kind string) bool { return strings.HasPrefix(kind, "story-") }
 
 func (w World) questionCandidates() []QuestionPlan {
 	out := make([]QuestionPlan, 0, 2*len(w.People)+3*len(w.Projects)+4*len(w.Trips))
@@ -183,6 +219,7 @@ func (w World) questionCandidates() []QuestionPlan {
 		}[i%4]
 		out = append(out, tripPlan(w, oracleTripLongestCurrent, i, change, longest, commonEvidence, constraints))
 	}
+	out = append(out, w.storyQuestionCandidates()...)
 	return out
 }
 
@@ -235,6 +272,291 @@ func tripPlan(w World, kind string, index int, question string, answer int, evid
 	}
 }
 
+func (w World) storyQuestionCandidates() []QuestionPlan {
+	out := make([]QuestionPlan, 0, len(w.StoryArcs)*5)
+	for i, arc := range w.StoryArcs {
+		person := w.People[arc.PersonIndex]
+		trip := w.Trips[arc.TripIndex]
+		r := rand.New(rand.NewSource(storyQuestionSeed(w.Seed, arc.ID)))
+		anchor, constraints := storyAnchor(r, person, trip)
+
+		balanceTask := []string{
+			"Reconcile the starting envelope, its later change, the payment already made, the separate new cost, and the credit. What remains available in cents?",
+			"Follow the resulting work through every financial change and tell me the current uncommitted amount in cents.",
+			"Work forward from what we first approved instead of using one isolated number. After every payment, correction, cost, and credit, how many cents remain?",
+			"I need the present balance, in cents, after reconstructing the original approval and applying all of the subsequent changes in their proper roles.",
+		}[r.Intn(4)]
+		balancePlan := w.storyPlan(oracleStoryBalanceCurrent, i, composeStoryQuestion(r, anchor, balanceTask), constraints,
+			fmt.Sprintf("%d", arc.CurrentBalanceCents), protocol.AnswerNumber, w.storyBalanceDistractors(i), nil,
+			[]string{"personal relationship and event", "personal-to-work bridge", "decision identity", "original budget", "budget correction", "prior payment", "later cost", "credit"},
+			storyBalanceOperations(arc))
+
+		deltaTask := []string{
+			"Finance later changed the original envelope before the separate cost and credit were applied. By how many cents did that budget correction itself move?",
+			"Ignore the payment, extra cost, and credit for this one. What was the magnitude of the later budget change in cents?",
+			"How many cents did the approval correction add to or remove from the starting budget, considered on its own?",
+			"I am trying to separate the budget revision from every other ledger movement. What was that revision's size in cents?",
+		}[r.Intn(4)]
+		deltaPlan := w.storyPlan(oracleStoryBudgetDelta, i, composeStoryQuestion(r, anchor, deltaTask), constraints,
+			fmt.Sprintf("%d", absInt(arc.BudgetDeltaCents)), protocol.AnswerNumber, w.storyDeltaDistractors(i), nil,
+			[]string{"personal relationship and event", "personal-to-work bridge", "decision identity", "original budget", "budget correction", "separate payment", "separate later cost and credit"},
+			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "isolate the budget correction", "convert the correction magnitude to cents"})
+
+		postTask := []string{
+			"After applying the budget correction and the payment already made—but before the later cost and credit—what balance did we have in cents?",
+			"Reconstruct the intermediate financial state: corrected envelope minus the original payment, excluding the subsequent expense and credit. How many cents remained?",
+			"What was available immediately after the revised approval and prior payment were reconciled, before the final follow-up movements? Give cents.",
+			"I need the middle state, not the starting or final one. In cents, what remained after the approval change and payment but before the extra cost and return credit?",
+		}[r.Intn(4)]
+		postAnswer := arc.BaseBudgetCents + arc.BudgetDeltaCents - arc.PaidCents
+		postPlan := w.storyPlan(oracleStoryPostApproval, i, composeStoryQuestion(r, anchor, postTask), constraints,
+			fmt.Sprintf("%d", postAnswer), protocol.AnswerNumber, w.storyPostApprovalDistractors(i), nil,
+			[]string{"personal relationship and event", "personal-to-work bridge", "decision identity", "original budget", "budget correction", "prior payment", "later cost boundary", "later credit boundary"},
+			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "apply the budget correction", "subtract the prior payment", "exclude later cost and credit", "convert the intermediate result to cents"})
+
+		net := arc.BudgetDeltaCents - arc.UnexpectedCostCents + arc.CreditCents
+		direction := "increase"
+		wrongDirection := "decrease"
+		if net < 0 {
+			direction, wrongDirection = wrongDirection, direction
+		}
+		netTask := []string{
+			"Considering only the later budget revision, new cost, and credit, did those follow-up changes increase or decrease availability, and by how many cents?",
+			"Ignore the starting envelope and payment. Net the later correction, expense, and credit: give the direction and magnitude in cents.",
+			"What was the net effect of the final three financial movements alone? Answer increase or decrease plus the number of cents.",
+			"Separate the follow-up from the earlier state. Did the revision, later cost, and credit raise or lower availability overall, and by how many cents?",
+		}[r.Intn(4)]
+		netItems := []string{direction, fmt.Sprintf("%d", absInt(net))}
+		netPlan := w.storyPlan(oracleStoryLaterNetChange, i, composeStoryQuestion(r, anchor, netTask), constraints,
+			strings.Join(netItems, "; "), protocol.AnswerList, storyNetDistractors(arc, net, wrongDirection), nil,
+			[]string{"personal relationship and event", "personal-to-work bridge", "decision identity", "budget correction", "later cost", "credit"},
+			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "combine the later budget change cost and credit", "classify the net direction", "convert the net magnitude to cents"})
+		netPlan.Case.AnswerItems = netItems
+
+		financialPlans := []QuestionPlan{balancePlan, deltaPlan, postPlan, netPlan}
+		financialOrder := r.Perm(len(financialPlans))
+		out = append(out, financialPlans[financialOrder[0]], financialPlans[financialOrder[1]])
+
+		contactTask := []string{
+			"That introduction eventually acquired a work-only reviewer route and then a correction. Which email is current now?",
+			"Connect the personal introduction to the work we eventually approved, then account for the later update. What address should I actually use for the reviewer?",
+			"I do not want the ordinary address-book entry or the stale work route. What is the corrected work-only email at the end of the story?",
+			"Which current reviewer address belongs to the work that grew from that conversation? I need the corrected one, not the first route we wrote down.",
+		}[r.Intn(4)]
+		out = append(out, w.storyPlan(oracleStoryContactCurrent, i, composeStoryQuestion(r, anchor, contactTask), constraints,
+			arc.CurrentContact, protocol.AnswerValue, w.storyContactDistractors(i), nil,
+			[]string{"personal relationship and event", "requested working name", "personal-to-work bridge", "decision identity", "original work channel", "channel correction"},
+			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "replace the stale work-only contact"}))
+
+		lessonTask := []string{
+			"After the introduction became work and the later correction was reconciled, what lesson did I explicitly carry forward?",
+			"Think through how that conversation became a business decision and how it ended. What was the final lesson learned?",
+			"What principle did I record at the end of the connected personal-and-work arc, after the state changed?",
+			"What durable lesson did I write down after everything was corrected? I mean the conclusion from this particular experience.",
+		}[r.Intn(4)]
+		out = append(out, w.storyPlan(oracleStoryLesson, i, composeStoryQuestion(r, anchor, lessonTask), constraints,
+			arc.Lesson, protocol.AnswerValue, w.storyLessonDistractors(i), arc.LessonAcceptAny,
+			[]string{"personal relationship and event", "personal-to-work bridge", "governed business decision", "corrected outcome", "explicit lesson"},
+			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "select the outcome lesson"}))
+
+		summaryTask := []string{
+			"Give me the final work-only reviewer email, the current available balance in cents, and the lesson I wrote down after the correction.",
+			"Summarize the outcome with exactly the three useful pieces: corrected reviewer route, reconciled balance in cents, and final lesson.",
+			"What did this ultimately leave me with? I need the current email, the remaining cents, and the principle I carried forward.",
+			"Pull together the corrected contact, the fully reconciled amount in cents, and the recorded lesson from the end of the experience.",
+		}[r.Intn(4)]
+		summaryItems := []string{arc.CurrentContact, fmt.Sprintf("%d", arc.CurrentBalanceCents), arc.Lesson}
+		summaryAnswer := strings.Join(summaryItems, "; ")
+		summary := w.storyPlan(oracleStoryOutcomeSummary, i, composeStoryQuestion(r, anchor, summaryTask), constraints,
+			summaryAnswer, protocol.AnswerList, w.storyOutcomeDistractors(i), nil,
+			[]string{"personal relationship and event", "personal-to-work bridge", "decision identity", "original budget and payment", "budget correction", "later cost and credit", "contact correction", "explicit lesson"},
+			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "reconcile the current balance", "replace the stale work-only contact", "select the outcome lesson"})
+		summary.Case.AnswerItems = summaryItems
+		out = append(out, summary)
+	}
+	return out
+}
+
+func storyAnchor(r *rand.Rand, person Person, trip Trip) (string, []string) {
+	type surface struct {
+		text        string
+		constraints []string
+	}
+	options := []surface{
+		{fmt.Sprintf("Think back to the %s, when %s—my %s from the %s—started that unexpected follow-up.", trip.Alias, person.Nickname, person.Relation, person.Context), []string{trip.Alias, person.Nickname, person.Relation, person.Context}},
+		{fmt.Sprintf("Start with %s, my %s in %s, and the conversation we had around the %s during the %s.", person.Nickname, person.Relation, person.City, trip.Alias, trip.Purpose), []string{person.Nickname, person.Relation, person.City, trip.Alias, trip.Purpose}},
+		{fmt.Sprintf("Use the personal account involving %s, my %s connected to the %s, when the %s came up.", person.Nickname, person.Relation, person.Context, trip.Alias), []string{person.Nickname, person.Relation, person.Context, trip.Alias}},
+		{fmt.Sprintf("The entry point is the %s: %s, my %s in %s, raised something while we were talking about its %s purpose.", trip.Alias, person.Nickname, person.Relation, person.City, trip.Purpose), []string{trip.Alias, person.Nickname, person.Relation, person.City, trip.Purpose}},
+		{fmt.Sprintf("Reconstruct the thread that began with %s—my %s from the %s—in the middle of our conversation about the %s.", person.Nickname, person.Relation, person.Context, trip.Alias), []string{person.Nickname, person.Relation, person.Context, trip.Alias}},
+	}
+	choice := options[r.Intn(len(options))]
+	return choice.text, append([]string(nil), choice.constraints...)
+}
+
+func composeStoryQuestion(r *rand.Rand, anchor, task string) string {
+	opener := []string{
+		"I know I told you this in pieces, but I need you to pull it together.",
+		"Can you help me reconstruct how this landed? The details came up in a few different conversations.",
+		"I'm trying to remember the final state of something that unfolded over several conversations.",
+		"There is a personal beginning and a work follow-up here, and I need to connect them again.",
+	}[r.Intn(4)]
+	return opener + " " + anchor + " " + task
+}
+
+func (w World) storyPlan(kind string, index int, question string, constraints []string, answer, answerKind string, distractors, acceptAny []string, facts, operations []string) QuestionPlan {
+	arc := w.StoryArcs[index]
+	caseValue := memoryCase(w.Seed, kind, index, question, answer, answerKind, distractors)
+	caseValue.AcceptAny = append([]string(nil), acceptAny...)
+	return QuestionPlan{
+		Case: caseValue, RequiredPairIDs: append([]string(nil), arc.StoryPairIDs[:]...),
+		Facts:       append([]string(nil), facts...),
+		Constraints: append([]string(nil), constraints...),
+		Operations:  append([]string(nil), operations...), oracleKind: kind, oracleIndex: index,
+	}
+}
+
+func storyBalanceOperations(arc StoryArc) []string {
+	direction := "apply the budget increase"
+	if arc.BudgetDeltaCents < 0 {
+		direction = "apply the budget reduction"
+	}
+	return []string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", direction, "subtract the prior payment", "subtract the later cost", "add the separate credit", "convert the result to cents"}
+}
+
+func (w World) storyBalanceDistractors(index int) []string {
+	arc := w.StoryArcs[index]
+	values := []int{arc.BaseBudgetCents, arc.BaseBudgetCents + arc.BudgetDeltaCents - arc.PaidCents, arc.CurrentBalanceCents - arc.CreditCents}
+	for j := 1; len(values) < 3 && j < len(w.StoryArcs); j++ {
+		values = append(values, w.StoryArcs[(index+j)%len(w.StoryArcs)].CurrentBalanceCents)
+	}
+	out := make([]string, 0, 3)
+	for _, value := range values {
+		candidate := fmt.Sprintf("%d", value)
+		if value > 0 && value != arc.CurrentBalanceCents && !contains(out, candidate) {
+			out = append(out, candidate)
+		}
+		if len(out) == 3 {
+			break
+		}
+	}
+	for delta := 12_500; len(out) < 3; delta += 12_500 {
+		candidate := fmt.Sprintf("%d", arc.CurrentBalanceCents+delta)
+		if !contains(out, candidate) {
+			out = append(out, candidate)
+		}
+	}
+	return out
+}
+
+func (w World) storyDeltaDistractors(index int) []string {
+	arc := w.StoryArcs[index]
+	values := []int{arc.UnexpectedCostCents, arc.CreditCents, arc.PaidCents}
+	out := make([]string, 0, 3)
+	for _, value := range values {
+		candidate := fmt.Sprintf("%d", value)
+		if value != absInt(arc.BudgetDeltaCents) && !contains(out, candidate) {
+			out = append(out, candidate)
+		}
+	}
+	for delta := 12_500; len(out) < 3; delta += 12_500 {
+		candidate := fmt.Sprintf("%d", absInt(arc.BudgetDeltaCents)+delta)
+		if !contains(out, candidate) {
+			out = append(out, candidate)
+		}
+	}
+	return out
+}
+
+func (w World) storyPostApprovalDistractors(index int) []string {
+	arc := w.StoryArcs[index]
+	correct := arc.BaseBudgetCents + arc.BudgetDeltaCents - arc.PaidCents
+	values := []int{arc.BaseBudgetCents - arc.PaidCents, arc.CurrentBalanceCents, arc.BaseBudgetCents + arc.BudgetDeltaCents}
+	out := make([]string, 0, 3)
+	for _, value := range values {
+		candidate := fmt.Sprintf("%d", value)
+		if value > 0 && value != correct && !contains(out, candidate) {
+			out = append(out, candidate)
+		}
+	}
+	for delta := 12_500; len(out) < 3; delta += 12_500 {
+		candidate := fmt.Sprintf("%d", correct+delta)
+		if !contains(out, candidate) {
+			out = append(out, candidate)
+		}
+	}
+	return out
+}
+
+func storyNetDistractors(arc StoryArc, net int, wrongDirection string) []string {
+	out := []string{wrongDirection}
+	correct := absInt(net)
+	for _, value := range []int{arc.UnexpectedCostCents, arc.CreditCents, absInt(arc.BudgetDeltaCents), arc.PaidCents} {
+		candidate := fmt.Sprintf("%d", value)
+		if value != correct && !contains(out, candidate) {
+			out = append(out, candidate)
+		}
+		if len(out) == 3 {
+			return out
+		}
+	}
+	for delta := 12_500; len(out) < 3; delta += 12_500 {
+		candidate := fmt.Sprintf("%d", correct+delta)
+		if !contains(out, candidate) {
+			out = append(out, candidate)
+		}
+	}
+	return out
+}
+
+func (w World) storyContactDistractors(index int) []string {
+	arc := w.StoryArcs[index]
+	out := []string{arc.OriginalContact}
+	for j := 1; len(out) < 3 && j < len(w.StoryArcs)+1; j++ {
+		candidate := w.StoryArcs[(index+j)%len(w.StoryArcs)].CurrentContact
+		if candidate != arc.CurrentContact && !contains(out, candidate) {
+			out = append(out, candidate)
+		}
+	}
+	for len(out) < 3 {
+		out = append(out, fmt.Sprintf("unused.review%d@post.team", index+len(out)+1))
+	}
+	return out
+}
+
+func (w World) storyLessonDistractors(index int) []string {
+	arc := w.StoryArcs[index]
+	out := []string{}
+	for j := 1; len(out) < 3 && j < len(w.StoryArcs)+1; j++ {
+		candidate := w.StoryArcs[(index+j)%len(w.StoryArcs)].Lesson
+		if candidate != arc.Lesson && !contains(out, candidate) {
+			out = append(out, candidate)
+		}
+	}
+	fallbacks := []string{"move quickly and document later", "keep every context in one flat note", "treat the first number as final"}
+	for _, candidate := range fallbacks {
+		if len(out) == 3 {
+			break
+		}
+		if candidate != arc.Lesson && !contains(out, candidate) {
+			out = append(out, candidate)
+		}
+	}
+	return out
+}
+
+func (w World) storyOutcomeDistractors(index int) []string {
+	arc := w.StoryArcs[index]
+	wrongBalance := w.storyBalanceDistractors(index)[0]
+	wrongLesson := w.storyLessonDistractors(index)[0]
+	return []string{arc.OriginalContact, wrongBalance, wrongLesson}
+}
+
+func storyQuestionSeed(seed int64, id string) int64 {
+	h := fnv.New64a()
+	_, _ = fmt.Fprintf(h, "dittobench-v8-story-question:%d:%s", seed, id)
+	return int64(h.Sum64() & ((1 << 63) - 1))
+}
+
 func memoryCase(seed int64, kind string, index int, question, answer, answerKind string, distractors []string) protocol.MemoryCase {
 	id := protocol.OpaqueCaseID(seed, "world-memory-"+kind, index)
 	return protocol.MemoryCase{
@@ -263,7 +585,15 @@ func (w World) validatePlan(plan QuestionPlan) error {
 		if !grade.Hit(plan.Case.ExpectedAnswer, body) {
 			continue
 		}
-		if overlap := contentOverlap(plan.Case.Question, body); overlap > 0.34 {
+		shortcutLimit := 0.34
+		if isStoryOracle(plan.oracleKind) {
+			// A long-story question necessarily shares generic concepts such as
+			// work, correction, and outcome with its answer-bearing narrative.
+			// Hidden two-hop identities plus causal three-record removal are the
+			// stronger shortcut proof for these plans.
+			shortcutLimit = 0.65
+		}
+		if overlap := contentOverlap(plan.Case.Question, body); overlap > shortcutLimit {
 			return fmt.Errorf("%w: answer-bearing pair %s overlaps question at %.2f", errLexicalShortcut, pair.PairID, overlap)
 		}
 	}
@@ -283,6 +613,9 @@ func (w World) validatePlan(plan QuestionPlan) error {
 	wantOperations := w.oracleOperations(plan)
 	if !sameStrings(plan.Operations, wantOperations) {
 		return fmt.Errorf("declared operations %v do not match oracle operations %v", plan.Operations, wantOperations)
+	}
+	if err := w.validateStoryPlan(plan); err != nil {
+		return err
 	}
 	for _, omitted := range plan.RequiredPairIDs {
 		counterfactual := make(map[string]bool, len(required)-1)
@@ -355,6 +688,9 @@ func (w World) oracleEvidence(plan QuestionPlan) []string {
 	case oracleTripCurrent, oracleTripChangedLegPrevious, oracleTripChangedLegCurrent, oracleTripLongestCurrent:
 		trip := w.Trips[plan.oracleIndex]
 		return []string{trip.ContextPairID, trip.PlanPairID, trip.CorrectionPairID}
+	case oracleStoryBalanceCurrent, oracleStoryBudgetDelta, oracleStoryPostApproval, oracleStoryLaterNetChange, oracleStoryContactCurrent, oracleStoryLesson, oracleStoryOutcomeSummary:
+		arc := w.StoryArcs[plan.oracleIndex]
+		return append([]string(nil), arc.StoryPairIDs[:]...)
 	default:
 		return nil
 	}
@@ -380,6 +716,20 @@ func (w World) oracleOperations(plan QuestionPlan) []string {
 		return []string{"resolve trip alias", "apply itinerary correction", "select requested state", "sum or compare legs"}
 	case oracleTripLongestCurrent:
 		return []string{"resolve trip alias", "apply itinerary correction", "select requested state", "sum or compare legs"}
+	case oracleStoryBalanceCurrent:
+		return storyBalanceOperations(w.StoryArcs[plan.oracleIndex])
+	case oracleStoryBudgetDelta:
+		return []string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "isolate the budget correction", "convert the correction magnitude to cents"}
+	case oracleStoryPostApproval:
+		return []string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "apply the budget correction", "subtract the prior payment", "exclude later cost and credit", "convert the intermediate result to cents"}
+	case oracleStoryLaterNetChange:
+		return []string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "combine the later budget change cost and credit", "classify the net direction", "convert the net magnitude to cents"}
+	case oracleStoryContactCurrent:
+		return []string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "replace the stale work-only contact"}
+	case oracleStoryLesson:
+		return []string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "select the outcome lesson"}
+	case oracleStoryOutcomeSummary:
+		return []string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "reconcile the current balance", "replace the stale work-only contact", "select the outcome lesson"}
 	default:
 		return nil
 	}
@@ -481,6 +831,32 @@ func (w World) resolveWithEvidence(plan QuestionPlan, available map[string]bool)
 			}
 		}
 		return fmt.Sprintf("%d", longest), true
+	case oracleStoryBalanceCurrent, oracleStoryBudgetDelta, oracleStoryPostApproval, oracleStoryLaterNetChange, oracleStoryContactCurrent, oracleStoryLesson, oracleStoryOutcomeSummary:
+		arc := w.StoryArcs[plan.oracleIndex]
+		if !has(arc.StoryPairIDs[0], arc.StoryPairIDs[1], arc.StoryPairIDs[2]) {
+			return "", false
+		}
+		switch plan.oracleKind {
+		case oracleStoryBalanceCurrent:
+			return fmt.Sprintf("%d", arc.BaseBudgetCents+arc.BudgetDeltaCents-arc.PaidCents-arc.UnexpectedCostCents+arc.CreditCents), true
+		case oracleStoryBudgetDelta:
+			return fmt.Sprintf("%d", absInt(arc.BudgetDeltaCents)), true
+		case oracleStoryPostApproval:
+			return fmt.Sprintf("%d", arc.BaseBudgetCents+arc.BudgetDeltaCents-arc.PaidCents), true
+		case oracleStoryLaterNetChange:
+			net := arc.BudgetDeltaCents - arc.UnexpectedCostCents + arc.CreditCents
+			direction := "increase"
+			if net < 0 {
+				direction = "decrease"
+			}
+			return strings.Join([]string{direction, fmt.Sprintf("%d", absInt(net))}, "; "), true
+		case oracleStoryContactCurrent:
+			return arc.CurrentContact, true
+		case oracleStoryOutcomeSummary:
+			return strings.Join([]string{arc.CurrentContact, fmt.Sprintf("%d", arc.CurrentBalanceCents), arc.Lesson}, "; "), true
+		default:
+			return arc.Lesson, true
+		}
 	default:
 		return "", false
 	}
@@ -507,6 +883,22 @@ func (w World) subjectMatches(plan QuestionPlan) int {
 		want := w.Trips[plan.oracleIndex]
 		for _, trip := range w.Trips {
 			if trip.Alias == want.Alias && trip.Purpose == want.Purpose && trip.When == want.When && trip.Countries == want.Countries {
+				matches++
+			}
+		}
+	case oracleStoryBalanceCurrent, oracleStoryBudgetDelta, oracleStoryPostApproval, oracleStoryLaterNetChange, oracleStoryContactCurrent, oracleStoryLesson, oracleStoryOutcomeSummary:
+		for _, arc := range w.StoryArcs {
+			person := w.People[arc.PersonIndex]
+			trip := w.Trips[arc.TripIndex]
+			values := []string{person.Nickname, person.Relation, person.Context, person.City, trip.Alias, trip.Purpose}
+			matched := true
+			for _, constraint := range plan.Constraints {
+				if !contains(values, constraint) {
+					matched = false
+					break
+				}
+			}
+			if matched {
 				matches++
 			}
 		}
