@@ -158,8 +158,11 @@ func buildStories(seed int64, scale int, w World) ([]StoryArc, []Story) {
 		trip := w.Trips[tripIndex]
 
 		preferred := uniqueStoryName(r, person.Nickname, seenNames)
-		originalContact := uniqueEmail(person.Name, project.Name, 7000+i*2, true, seenEmails)
-		currentContact := uniqueEmail(person.Name, project.Name, 7001+i*2, true, seenEmails)
+		// This is a project-specific reviewer channel, not the person's ordinary
+		// mailbox. A role address is both more believable and avoids encoding the
+		// hidden owner identity into a second, unintended lookup path.
+		originalContact := uniqueEmail("Review Team", project.Name, 7000+i*2, true, seenEmails)
+		currentContact := uniqueEmail("Review Team", project.Name, 7001+i*2, true, seenEmails)
 		base := uniqueStoryAmount(r, seenAmounts, 1_200_000, 4_800_000, 12_500)
 		deltaMagnitude := uniqueStoryAmount(r, seenAmounts, 50_000, 450_000, 12_500)
 		delta := deltaMagnitude
@@ -570,7 +573,14 @@ func uniqueStoryName(r *rand.Rand, base string, seen map[string]bool) string {
 			candidate = fmt.Sprintf("%s %d", base, attempt-len(storyNameWords)+2)
 		}
 		key := strings.ToLower(candidate)
-		if !seen[key] {
+		collides := false
+		for used := range seen {
+			if strings.Contains(used, key) {
+				collides = true
+				break
+			}
+		}
+		if !collides {
 			seen[key] = true
 			return candidate
 		}

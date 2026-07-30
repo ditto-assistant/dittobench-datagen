@@ -28,6 +28,8 @@
 // multiplies the space further. There is nothing to memorize.
 package persona
 
+import "github.com/ditto-assistant/dittobench-datagen/internal/humandata"
+
 // The pools are the combinatorial vocabulary of the persona universe. They are
 // deliberately large and disjoint enough that same-attribute/different-value
 // near-miss distractors are easy to draw. Values are clean canonical
@@ -43,6 +45,8 @@ var firstNames = []string{
 	"Elias", "Noor", "Theo", "Camila", "Aran", "Yara", "Nikolai", "Esme",
 	"Rafael", "Iris", "Malik", "Greta", "Sanjay", "Wren", "Otto", "Delphine",
 }
+
+var v8HumanGivenNames = humandata.AllGivenNames()
 
 var lastNames = []string{
 	"Okafor", "Petrov", "Nakamura", "Silva", "Haugen", "Bianchi", "Kowalski",
