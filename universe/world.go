@@ -57,11 +57,13 @@ type Project struct {
 	ToolNotePairID   string
 }
 
-// Trip is a multi-leg event with a later correction. CurrentDays and
-// PreviousDays are computed from the legs and are never written as totals.
+// Trip is a multi-leg event with a later correction. Companion provides the
+// natural human link among memories; generated conversations never invent an
+// itinerary ID. CurrentDays and PreviousDays are computed from the legs and
+// are never written as totals.
 type Trip struct {
 	Alias            string
-	RecordID         string
+	Companion        int
 	Purpose          string
 	When             string
 	Countries        [3]string
@@ -187,9 +189,9 @@ func Generate(seed int64, scale int) World {
 			legs[changed] = 2
 		}
 		t := Trip{
-			Alias:    uniqueString(r, seenTripAliases, tripAlias),
-			RecordID: "IT-" + strings.ToUpper(protocol.OpaqueCaseID(seed, "world-trip-record", i)[:8]),
-			Purpose:  tripPurpose(r), When: tripWhen(r), Countries: countries,
+			Alias:     uniqueString(r, seenTripAliases, tripAlias),
+			Companion: (i*2 + 1) % len(w.People),
+			Purpose:   tripPurpose(r), When: tripWhen(r), Countries: countries,
 			OldLegDays: oldLegs, LegDays: legs, PreviousDays: sum3(oldLegs), CurrentDays: sum3(legs),
 			ContextPairID:    protocol.OpaqueCaseID(seed, "world-trip-context", i),
 			PlanPairID:       protocol.OpaqueCaseID(seed, "world-trip-plan", i),
@@ -213,17 +215,32 @@ func (w World) renderPairs(r *rand.Rand) []protocol.MemoryPair {
 		pairs = append(pairs, protocol.MemoryPair{PairID: id, SessionID: session, Timestamp: base.Add(time.Duration(len(pairs)*137) * time.Hour).Format(time.RFC3339), Prompt: prompt, Response: response})
 	}
 	for i, p := range w.People {
-		add(p.IdentityPairID, fmt.Sprintf("people-%02d-a", i), shortLead(r)+p.Name+" is my "+p.Relation+". Everyone around "+p.Context+" calls "+p.Name+" “"+p.Nickname+".”", "Got it.")
-		add(p.WorkPairID, fmt.Sprintf("people-%02d-b", i), fmt.Sprintf("For context, %s works as the %s at %s in %s and handled the %s.", p.Name, p.Role, p.Employer, p.City, p.Context), "I’ll keep that context connected.")
+		add(p.IdentityPairID, fmt.Sprintf("people-%02d-a", i), shortLead(r)+p.Name+" is my "+p.Relation+". Everyone around "+p.Context+" calls "+p.Name+" “"+p.Nickname+".”", warmResponse(w.Seed, p.IdentityPairID,
+			"Aw, I love the nickname story. I’ll remember who you mean.",
+			"That history helps. I’ll remember the nickname and your connection.",
+			"I’ve got you — nickname, person, and shared history together."))
+		add(p.WorkPairID, fmt.Sprintf("people-%02d-b", i), fmt.Sprintf("For context, %s works as the %s at %s in %s and handled the %s.", p.Name, p.Role, p.Employer, p.City, p.Context), warmResponse(w.Seed, p.WorkPairID,
+			"Got you — I’ll connect their work life to the person you know.",
+			"That makes sense. I’ll remember their work and personal context together.",
+			"I’m with you — I’ll keep both sides of their story connected."))
 		// Contact values deliberately do not repeat the person's name, nickname,
 		// relationship, or event context. Resolving one requires the identity ->
 		// work -> address -> correction chain instead of one lexical lookup.
-		add(p.EmailPairID, fmt.Sprintf("people-%02d-c", i), fmt.Sprintf("For the %s at %s, the address I first had on file was %s.", p.Role, p.Employer, p.PreviousEmail), "Saved.")
-		add(p.CorrectionPairID, fmt.Sprintf("people-%02d-d", i), fmt.Sprintf("Quick contact cleanup: %s is stale now. Replace it with %s.", p.PreviousEmail, p.Email), "Updated the contact record.")
+		add(p.EmailPairID, fmt.Sprintf("people-%02d-c", i), fmt.Sprintf("For the %s at %s, the address I first had on file was %s.", p.Role, p.Employer, p.PreviousEmail), warmResponse(w.Seed, p.EmailPairID,
+			"I’ll remember this as the first address, in case the trail matters.",
+			"Okay, I’ll keep that as the original address, not necessarily the current one.",
+			"Got it — this stays as the earlier contact point if an update comes."))
+		add(p.CorrectionPairID, fmt.Sprintf("people-%02d-d", i), fmt.Sprintf("Quick contact cleanup: %s is stale now. Replace it with %s.", p.PreviousEmail, p.Email), warmResponse(w.Seed, p.CorrectionPairID,
+			"Good catch — I’ll use the new address and keep the old one as history.",
+			"Thanks for the heads-up. I’ll switch over and remember the old one is stale.",
+			"All right, I’ve got the change: new one now, old one in the history."))
 		// Destructive tool cases target this disposable note, never a fact row
 		// required by later memory scoring. Tool execution and memory evaluation
 		// therefore share one universe without mutating its canonical evidence.
-		add(p.ToolNotePairID, fmt.Sprintf("people-%02d-tool", i), fmt.Sprintf("Contact-maintenance receipt for %s after the %s: I finished reconciling the stale address. This receipt can be deleted once reviewed.", p.Nickname, p.Context), "Marked as a disposable maintenance note.")
+		add(p.ToolNotePairID, fmt.Sprintf("people-%02d-tool", i), fmt.Sprintf("Contact-maintenance receipt for %s after the %s: I finished reconciling the stale address. This receipt can be deleted once reviewed.", p.Nickname, p.Context), warmResponse(w.Seed, p.ToolNotePairID,
+			"Perfect — this can stay temporary while the real contact history stays safe.",
+			"Sounds good. I’ll keep this disposable and leave the meaningful history alone.",
+			"Got you — this cleanup receipt stays separate from the memories that matter."))
 	}
 
 	// One deliberately long, messy paste mixes prose, headings, shorthand, and
@@ -234,18 +251,37 @@ func (w World) renderPairs(r *rand.Rand) []protocol.MemoryPair {
 	for i, p := range w.Projects {
 		fmt.Fprintf(&wall, "PROJECT %d — %s (we usually call it %q)\nClient: %s. Purpose: %s. Vendor line: %s. Ownership and figures live in their separate project/AP records, not this pasted summary.\n\n", i+1, p.Name, p.Alias, p.Client, p.Purpose, p.Vendor)
 	}
-	add(w.BusinessPairID, "business-import", "Here is the raw operations paste:\n\n"+wall.String(), "Imported. I’ll treat the aliases, people, clients, vendors, and payments as linked context.")
+	add(w.BusinessPairID, "business-import", "Here is the raw operations paste:\n\n"+wall.String(), "Send it my way — I’ll untangle this without losing how everything connects.")
 	for i, p := range w.Projects {
 		lead := w.People[p.Lead]
-		add(p.ContextPairID, fmt.Sprintf("project-%02d-context", i), fmt.Sprintf("When I say “%s” I mean %s for %s, not the similarly named client work. %q owns it internally; %s is the vendor, and the AP record is %s.", p.Alias, p.Name, p.Client, lead.Nickname, p.Vendor, p.RecordID), "Understood.")
-		add(p.LedgerPairID, fmt.Sprintf("project-%02d-ledger", i), fmt.Sprintf("Accounts payable record %s: the original invoice was %s; we have already paid %s against it.", p.RecordID, money(p.OriginalCents), money(p.PaidCents)), "Recorded.")
-		add(p.CorrectionPairID, fmt.Sprintf("project-%02d-correction", i), fmt.Sprintf("Approval correction for AP record %s: the approved invoice total is %s, replacing the earlier %s figure. The partial payment is unchanged.", p.RecordID, money(p.CorrectedCents), money(p.OriginalCents)), "Corrected the total while retaining the payment.")
-		add(p.ToolNotePairID, fmt.Sprintf("project-%02d-tool", i), fmt.Sprintf("Handoff scratchpad for %q at %s: add scheduling details here rather than editing the project identity or ownership record.", p.Alias, p.Client), "Opened a separate mutable handoff note.")
+		add(p.ContextPairID, fmt.Sprintf("project-%02d-context", i), fmt.Sprintf("When I say “%s” I mean %s for %s, not the similarly named client work. %q owns it internally; %s is the vendor, and the AP record is %s.", p.Alias, p.Name, p.Client, lead.Nickname, p.Vendor, p.RecordID), warmResponse(w.Seed, p.ContextPairID,
+			"Got you — I’ll keep every name and person in the right role.",
+			"That distinction makes sense. I’ll keep the shorthand mapped correctly.",
+			"I’m following — I won’t mix up the project, client, vendor, or owner."))
+		add(p.LedgerPairID, fmt.Sprintf("project-%02d-ledger", i), fmt.Sprintf("Accounts payable record %s: the original invoice was %s; we have already paid %s against it.", p.RecordID, money(p.OriginalCents), money(p.PaidCents)), warmResponse(w.Seed, p.LedgerPairID,
+			"I’ve got the starting total and what has gone out so far.",
+			"Okay, I’ll keep the original amount and payment together.",
+			"I’m with you — I’ll remember the starting bill and what was paid."))
+		add(p.CorrectionPairID, fmt.Sprintf("project-%02d-correction", i), fmt.Sprintf("Approval correction for AP record %s: the approved invoice total is %s, replacing the earlier %s figure. The partial payment is unchanged.", p.RecordID, money(p.CorrectedCents), money(p.OriginalCents)), warmResponse(w.Seed, p.CorrectionPairID,
+			"Thanks for catching that — I’ll use the approved total now.",
+			"Got it. The new total is current, and the payment stays put.",
+			"That’s clear — approved figure now, with the same payment."))
+		add(p.ToolNotePairID, fmt.Sprintf("project-%02d-tool", i), fmt.Sprintf("Handoff scratchpad for %q at %s: add scheduling details here rather than editing the project identity or ownership record.", p.Alias, p.Client), warmResponse(w.Seed, p.ToolNotePairID,
+			"Sounds good — scheduling stays here and the project details stay clean.",
+			"Perfect, the moving pieces can live here without muddying the project.",
+			"Got you — loose notes here, important project history untouched."))
 	}
 
 	for i, t := range w.Trips {
-		add(t.ContextPairID, fmt.Sprintf("trip-%02d-context", i), fmt.Sprintf("Our %s was the %s trip in %s — the one through %s, %s, and %s. Its itinerary record is %s.", t.Alias, t.Purpose, t.When, t.Countries[0], t.Countries[1], t.Countries[2], t.RecordID), "I know which trip you mean.")
-		add(t.PlanPairID, fmt.Sprintf("trip-%02d-plan", i), fmt.Sprintf("Original itinerary %s: %d days in %s, %d in %s, then %d in %s.", t.RecordID, t.OldLegDays[0], t.Countries[0], t.OldLegDays[1], t.Countries[1], t.OldLegDays[2], t.Countries[2]), "Saved the original legs.")
+		companion := w.People[t.Companion]
+		add(t.ContextPairID, fmt.Sprintf("trip-%02d-context", i), fmt.Sprintf("Our %s was the %s trip in %s — the one through %s, %s, and %s that I planned with %s, my %s.", t.Alias, t.Purpose, t.When, t.Countries[0], t.Countries[1], t.Countries[2], companion.Nickname, companion.Relation), warmResponse(w.Seed, t.ContextPairID,
+			"Oh yes, I know the one. I’ll remember who planned it with you.",
+			"I’m with you — I’ll keep the route and your travel companion connected.",
+			"That trip has a whole story. I’ll remember who helped you dream it up."))
+		add(t.PlanPairID, fmt.Sprintf("trip-%02d-plan", i), fmt.Sprintf("When %s and I first mapped that trip out, we had %d days in %s, %d in %s, then %d in %s.", companion.Nickname, t.OldLegDays[0], t.Countries[0], t.OldLegDays[1], t.Countries[1], t.OldLegDays[2], t.Countries[2]), warmResponse(w.Seed, t.PlanPairID,
+			"That sounds lovely. I’ll remember this first version if the plan shifts.",
+			"Ooh, I can picture it. I’ll keep this first plan for context.",
+			"I’ve got the original shape of the trip if anything changes."))
 		changed := 0
 		for j := range t.LegDays {
 			if t.LegDays[j] != t.OldLegDays[j] {
@@ -254,18 +290,21 @@ func (w World) renderPairs(r *rand.Rand) []protocol.MemoryPair {
 			}
 		}
 		delta := t.LegDays[changed] - t.OldLegDays[changed]
-		direction := "extended"
+		change := fmt.Sprintf("adding %d days to our time in %s", delta, t.Countries[changed])
 		if delta < 0 {
-			direction = "shortened"
 			delta = -delta
+			change = fmt.Sprintf("cutting %d days from our time in %s", delta, t.Countries[changed])
 		}
-		add(t.CorrectionPairID, fmt.Sprintf("trip-%02d-correction", i), fmt.Sprintf("Itinerary correction %s: the %s leg was %s by %d days. The other country stays are unchanged.", t.RecordID, t.Countries[changed], direction, delta), "Updated that leg only.")
+		add(t.CorrectionPairID, fmt.Sprintf("trip-%02d-correction", i), fmt.Sprintf("Quick update on the trip %s and I planned: we’re %s, but leaving the other two stays alone.", companion.Nickname, change), warmResponse(w.Seed, t.CorrectionPairID,
+			"Got you — both versions remembered, with this as the current plan.",
+			"That makes sense. I’ll keep the old plan as history and use this one now.",
+			"Okay, I’ve got the change — everything else stays put."))
 	}
 	for _, story := range w.Stories {
 		prompt, response := story.render(w.Seed)
 		add(story.PairID, story.SessionID, prompt, response)
 	}
-	add(protocol.OpaqueCaseID(w.Seed, "world-preference", 0), "preferences", fmt.Sprintf("For Ditto itself I like a %s accent, but client brand colors should never override my app preference.", w.Accent), "I’ll keep your personal app preference separate from client branding.")
+	add(protocol.OpaqueCaseID(w.Seed, "world-preference", 0), "preferences", fmt.Sprintf("For Ditto itself I like a %s accent, but client brand colors should never override my app preference.", w.Accent), fmt.Sprintf("Love it — %s for your Ditto, and client palettes can stay in their own lane.", w.Accent))
 	return spreadPairs(pairs)
 }
 
@@ -369,6 +408,15 @@ func worldSeed(seed int64) int64 {
 	h := fnv.New64a()
 	_, _ = fmt.Fprintf(h, "dittobench-v8-world:%d", seed)
 	return int64(h.Sum64() & ((1 << 63) - 1))
+}
+
+func warmResponse(seed int64, pairID string, variants ...string) string {
+	if len(variants) == 0 {
+		return ""
+	}
+	h := fnv.New64a()
+	_, _ = fmt.Fprintf(h, "dittobench-v8-warm-response:%d:%s", seed, pairID)
+	return variants[h.Sum64()%uint64(len(variants))]
 }
 
 func uniquePersonName(r *rand.Rand, seen map[string]bool, index int) string {

@@ -27,7 +27,7 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 		w := Generate(seed, 3)
 		assertUnique(t, seed, "pair id", w.SortedPairIDs())
 
-		var names, nicknames, emails, projectNames, projectAliases, projectRecords, tripAliases, tripRecords []string
+		var names, nicknames, emails, projectNames, projectAliases, projectRecords, tripAliases, tripCompanions []string
 		for _, p := range w.People {
 			names = append(names, p.Name)
 			nicknames = append(nicknames, p.Nickname)
@@ -49,7 +49,7 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 		}
 		for _, trip := range w.Trips {
 			tripAliases = append(tripAliases, trip.Alias)
-			tripRecords = append(tripRecords, trip.RecordID)
+			tripCompanions = append(tripCompanions, w.People[trip.Companion].Nickname)
 			if trip.PreviousDays != sum3(trip.OldLegDays) || trip.CurrentDays != sum3(trip.LegDays) {
 				t.Fatalf("seed %d trip %q has inconsistent leg totals", seed, trip.Alias)
 			}
@@ -64,7 +64,7 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 		assertUnique(t, seed, "project alias", projectAliases)
 		assertUnique(t, seed, "project record", projectRecords)
 		assertUnique(t, seed, "trip alias", tripAliases)
-		assertUnique(t, seed, "trip record", tripRecords)
+		assertUnique(t, seed, "trip companion", tripCompanions)
 	}
 }
 
@@ -108,7 +108,7 @@ func TestWorldQuestionsHaveThreeNearMissesAndDoNotLeakAnswers(t *testing.T) {
 	}
 }
 
-func TestWorldOpaqueRecordsForceMultiRowJoins(t *testing.T) {
+func TestWorldNaturalJoinsForceMultiRowRetrieval(t *testing.T) {
 	w := Generate(123456789, 3)
 	pairBody := map[string]string{}
 	for _, pair := range w.Pairs {
@@ -126,14 +126,41 @@ func TestWorldOpaqueRecordsForceMultiRowJoins(t *testing.T) {
 		}
 	}
 	for _, trip := range w.Trips {
-		if !strings.Contains(pairBody[trip.ContextPairID], trip.RecordID) {
-			t.Fatalf("trip %s context does not seed record join", trip.Alias)
+		companion := w.People[trip.Companion]
+		for _, pairID := range []string{trip.ContextPairID, trip.PlanPairID, trip.CorrectionPairID} {
+			body := pairBody[pairID]
+			if !strings.Contains(body, companion.Nickname) {
+				t.Fatalf("trip memory %s does not use the natural companion join %q", pairID, companion.Nickname)
+			}
+			for _, synthetic := range []string{"IT-", "itinerary record", "Original itinerary", "Itinerary correction"} {
+				if strings.Contains(body, synthetic) {
+					t.Fatalf("trip memory %s leaks synthetic planner language %q", pairID, synthetic)
+				}
+			}
 		}
 		for _, pairID := range []string{trip.PlanPairID, trip.CorrectionPairID} {
 			body := pairBody[pairID]
 			if strings.Contains(body, trip.Alias) || strings.Contains(body, trip.Purpose) || strings.Contains(body, trip.When) {
 				t.Fatalf("trip record %s leaks a query-facing identifier", pairID)
 			}
+		}
+	}
+}
+
+func TestWorldAssistantRepliesSoundLikeACompanion(t *testing.T) {
+	w := Generate(123456789, 3)
+	cold := map[string]bool{
+		"got it.": true, "saved.": true, "understood.": true, "recorded.": true,
+		"updated the contact record.": true, "saved the original legs.": true,
+		"updated that leg only.": true,
+	}
+	for _, pair := range w.Pairs {
+		response := strings.TrimSpace(pair.Response)
+		if cold[strings.ToLower(response)] {
+			t.Fatalf("pair %s uses a cold transactional reply %q", pair.PairID, response)
+		}
+		if len(response) < 40 {
+			t.Fatalf("pair %s reply is too terse to feel conversational: %q", pair.PairID, response)
 		}
 	}
 }
