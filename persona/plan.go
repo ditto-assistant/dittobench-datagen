@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"sort"
 
+	"github.com/ditto-assistant/dittobench-datagen/internal/humandata"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
@@ -573,6 +574,9 @@ func BuildPlanForVersion(seed int64, opts Opts, benchVersion int) (*Plan, error)
 	}
 
 	name := pick(r, firstNames) + " " + pick(r, lastNames)
+	if benchVersion >= protocol.BenchVersionV8 {
+		name = humandata.GivenName(r, 0) + " " + humandata.Surname(r, 0)
+	}
 	p := &Plan{Seed: seed, BenchVersion: benchVersion, Name: name}
 
 	// Assign one professional domain (seed-derived) and fold its scalar families
@@ -1263,6 +1267,8 @@ func answerPoolForVersion(attr string, pool []string, benchVersion int) []string
 		return v8Colors
 	case "primary_language":
 		return v8SoftwareLanguages
+	case "middle_name":
+		return v8HumanGivenNames
 	default:
 		return pool
 	}

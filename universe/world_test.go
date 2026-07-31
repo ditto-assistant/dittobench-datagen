@@ -28,13 +28,23 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 		w := Generate(seed, 3)
 		assertUnique(t, seed, "pair id", w.SortedPairIDs())
 
-		var names, nicknames, emails, projectNames, projectAliases, projectRecords, tripAliases, tripCompanions []string
+		var names, emails, projectNames, projectAliases, projectRecords, tripAliases []string
+		givenCounts := map[string]int{}
 		for _, p := range w.People {
 			names = append(names, p.Name)
-			nicknames = append(nicknames, p.Nickname)
+			givenCounts[strings.Fields(p.Name)[0]]++
 			emails = append(emails, p.Email, p.PreviousEmail)
 			if p.Email == p.PreviousEmail {
 				t.Fatalf("seed %d person %q has no effective email correction", seed, p.Name)
+			}
+			if !strings.HasSuffix(p.Email, "@"+companyDomain(p.Employer)) {
+				t.Fatalf("seed %d person %q current email %q does not match employer %q", seed, p.Name, p.Email, p.Employer)
+			}
+			if !strings.HasSuffix(p.PreviousEmail, "@"+companyDomain(p.PreviousEmployer)) {
+				t.Fatalf("seed %d person %q previous email %q does not match employer %q", seed, p.Name, p.PreviousEmail, p.PreviousEmployer)
+			}
+			if p.Employer == p.PreviousEmployer {
+				t.Fatalf("seed %d person %q has no employer transition", seed, p.Name)
 			}
 		}
 		for _, p := range w.Projects {
@@ -50,7 +60,6 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 		}
 		for _, trip := range w.Trips {
 			tripAliases = append(tripAliases, trip.Alias)
-			tripCompanions = append(tripCompanions, w.People[trip.Companion].Nickname)
 			if trip.PreviousDays != sum3(trip.OldLegDays) || trip.CurrentDays != sum3(trip.LegDays) {
 				t.Fatalf("seed %d trip %q has inconsistent leg totals", seed, trip.Alias)
 			}
@@ -59,13 +68,20 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 			}
 		}
 		assertUnique(t, seed, "person name", names)
-		assertUnique(t, seed, "nickname", nicknames)
 		assertUnique(t, seed, "email", emails)
 		assertUnique(t, seed, "project name", projectNames)
 		assertUnique(t, seed, "project alias", projectAliases)
 		assertUnique(t, seed, "project record", projectRecords)
 		assertUnique(t, seed, "trip alias", tripAliases)
-		assertUnique(t, seed, "trip companion", tripCompanions)
+		if seed == 1 {
+			hasRepeatedGiven := false
+			for _, count := range givenCounts {
+				hasRepeatedGiven = hasRepeatedGiven || count > 1
+			}
+			if !hasRepeatedGiven {
+				t.Fatal("full world lacks an intentional repeated common given name")
+			}
+		}
 	}
 }
 
@@ -320,7 +336,7 @@ func TestWorldProjectContextIsTheOnlySeededOwnershipEdge(t *testing.T) {
 				body := normalize(pair.Prompt + " " + pair.Response)
 				mentionsProject := strings.Contains(body, normalize(project.Alias)) ||
 					(strings.Contains(body, normalize(project.Client)) && strings.Contains(body, normalize(project.Purpose)))
-				mentionsOwner := strings.Contains(body, normalize(lead.Name)) || strings.Contains(body, normalize(lead.Nickname))
+				mentionsOwner := strings.Contains(body, normalize(lead.Name))
 				if mentionsProject && mentionsOwner {
 					t.Fatalf("seed %d pair %s duplicates ownership edge for %s -> %s", seed, pair.PairID, project.Alias, lead.Nickname)
 				}

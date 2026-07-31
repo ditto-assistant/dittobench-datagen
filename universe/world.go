@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ditto-assistant/dittobench-datagen/internal/humandata"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
@@ -24,6 +25,7 @@ type Person struct {
 	Nickname         string
 	Relation         string
 	Employer         string
+	PreviousEmployer string
 	Role             string
 	City             string
 	Email            string
@@ -90,11 +92,6 @@ type World struct {
 	Accent         string
 }
 
-var ordinaryFirst = []string{
-	"Avery", "Jordan", "Morgan", "Riley", "Samira", "Tomas", "Nadia", "Jules",
-	"Dorian", "Mina", "Caleb", "Priya", "Leonie", "Hector", "Sasha", "Inez",
-}
-
 var coinedStarts = []string{"Bel", "Cor", "Dra", "Eli", "Fen", "Har", "Ivo", "Kes", "Lor", "Mey", "Nor", "Ori", "Pera", "Qua", "Ryn", "Sel", "Tal", "Vae", "Wen", "Zor"}
 var coinedEnds = []string{"adin", "ara", "elis", "enne", "ian", "ira", "orin", "essa", "ovan", "urel", "yra", "eth"}
 var familyStarts = []string{"Ash", "Bram", "Cinder", "Dun", "Ever", "Fair", "Glen", "Holl", "Kest", "Mar", "Norr", "Pen", "Quill", "Raven", "Stone", "Tal", "Vale", "West"}
@@ -127,21 +124,23 @@ func Generate(seed int64, scale int) World {
 	w.BusinessPairID = protocol.OpaqueCaseID(seed, "world-business-wall", 0)
 
 	seenNames := map[string]bool{}
-	seenNicknames := map[string]bool{}
 	seenCompanies := map[string]bool{w.UserCompany: true}
 	seenEmails := map[string]bool{}
 	for i := 0; i < peopleN; i++ {
-		name := uniquePersonName(r, seenNames, i)
-		nick := uniqueNickname(name, r, seenNicknames)
+		name := uniquePersonName(r, seenNames, w.People, i)
+		given := strings.Fields(name)[0]
+		nick := humandata.PreferredName(given, r)
+		previousEmployer := uniqueString(r, seenCompanies, coinedCompany)
 		employer := uniqueString(r, seenCompanies, coinedCompany)
-		previous := uniqueEmail(name, employer, 2*i, false, seenEmails)
-		current := uniqueEmail(name, employer, 2*i+1, i%3 == 0, seenEmails)
+		previous := uniqueEmail(name, previousEmployer, 2*i, true, seenEmails)
+		current := uniqueEmail(name, employer, 2*i+1, true, seenEmails)
 		if previous == current {
 			previous = "old." + previous
 		}
 		p := Person{
 			Name: name, Nickname: nick, Relation: relations[(i+r.Intn(len(relations)))%len(relations)],
-			Employer: employer, Role: roles[(i+r.Intn(len(roles)))%len(roles)],
+			Employer: employer, PreviousEmployer: previousEmployer,
+			Role: roles[(i+r.Intn(len(roles)))%len(roles)],
 			City: cities[(i+r.Intn(len(cities)))%len(cities)], Email: current,
 			PreviousEmail: previous, Context: contexts[(i+r.Intn(len(contexts)))%len(contexts)],
 			IdentityPairID:   protocol.OpaqueCaseID(seed, "world-person-identity", i),
@@ -219,18 +218,18 @@ func (w World) renderPairs(r *rand.Rand) []protocol.MemoryPair {
 			"Aw, I love that nickname. I’ll remember them.",
 			"That history helps — I know who you mean.",
 			"I’ve got the person and nickname together."))
-		add(p.WorkPairID, fmt.Sprintf("people-%02d-b", i), fmt.Sprintf("For context, %s works as the %s at %s in %s and handled the %s.", p.Name, p.Role, p.Employer, p.City, p.Context), warmResponse(w.Seed, p.WorkPairID,
+		add(p.WorkPairID, fmt.Sprintf("people-%02d-b", i), fmt.Sprintf("%s used to work at %s. These days they’re the %s at %s in %s; that’s how they ended up handling the %s.", p.Name, p.PreviousEmployer, p.Role, p.Employer, p.City, p.Context), warmResponse(w.Seed, p.WorkPairID,
 			"Got you — work and person connected.",
 			"I’ll remember both sides of their life.",
 			"I’ll keep their whole story together."))
 		// Contact values deliberately do not repeat the person's name, nickname,
 		// relationship, or event context. Resolving one requires the identity ->
 		// work -> address -> correction chain instead of one lexical lookup.
-		add(p.EmailPairID, fmt.Sprintf("people-%02d-c", i), fmt.Sprintf("For the %s at %s, the address I first had on file was %s.", p.Role, p.Employer, p.PreviousEmail), warmResponse(w.Seed, p.EmailPairID,
+		add(p.EmailPairID, fmt.Sprintf("people-%02d-c", i), fmt.Sprintf("Back when they were at %s, the work address I had saved was %s.", p.PreviousEmployer, p.PreviousEmail), warmResponse(w.Seed, p.EmailPairID,
 			"I’ll keep this as their first address.",
 			"I’ll remember this as the original address, not necessarily the current one.",
 			"I’ve got the earlier contact point."))
-		add(p.CorrectionPairID, fmt.Sprintf("people-%02d-d", i), fmt.Sprintf("Quick contact cleanup: %s is stale now. Replace it with %s.", p.PreviousEmail, p.Email), warmResponse(w.Seed, p.CorrectionPairID,
+		add(p.CorrectionPairID, fmt.Sprintf("people-%02d-d", i), fmt.Sprintf("Since the move to %s, %s is stale. Their current work email is %s.", p.Employer, p.PreviousEmail, p.Email), warmResponse(w.Seed, p.CorrectionPairID,
 			"Good catch — I’ll use the new address.",
 			"Thanks — switched, with the old one kept.",
 			"I’ve got the new one now; the old one stays in history."))
@@ -254,7 +253,7 @@ func (w World) renderPairs(r *rand.Rand) []protocol.MemoryPair {
 	add(w.BusinessPairID, "business-import", "Here is the raw operations paste:\n\n"+wall.String(), "Send it my way — I’ll untangle this without losing how everything connects.")
 	for i, p := range w.Projects {
 		lead := w.People[p.Lead]
-		add(p.ContextPairID, fmt.Sprintf("project-%02d-context", i), fmt.Sprintf("When I say “%s” I mean %s for %s, not the similarly named client work. %q owns it internally; %s is the vendor, and the AP record is %s.", p.Alias, p.Name, p.Client, lead.Nickname, p.Vendor, p.RecordID), warmResponse(w.Seed, p.ContextPairID,
+		add(p.ContextPairID, fmt.Sprintf("project-%02d-context", i), fmt.Sprintf("When I say “%s” I mean %s for %s, not the similarly named client work. %s owns it internally; %s is the vendor, and the AP record is %s.", p.Alias, p.Name, p.Client, lead.Name, p.Vendor, p.RecordID), warmResponse(w.Seed, p.ContextPairID,
 			"Got you — every name in the right role.",
 			"I’ll keep the shorthand mapped correctly.",
 			"I won’t mix up the project or people."))
@@ -419,13 +418,16 @@ func warmResponse(seed int64, pairID string, variants ...string) string {
 	return variants[h.Sum64()%uint64(len(variants))]
 }
 
-func uniquePersonName(r *rand.Rand, seen map[string]bool, index int) string {
+func uniquePersonName(r *rand.Rand, seen map[string]bool, prior []Person, index int) string {
 	for {
-		first := ordinaryFirst[r.Intn(len(ordinaryFirst))]
-		if index%3 == 0 {
-			first = coinedStarts[r.Intn(len(coinedStarts))] + coinedEnds[r.Intn(len(coinedEnds))]
+		first := humandata.GivenName(r, index)
+		// Deliberately repeat ordinary first names in full worlds. A real user
+		// knows multiple Sams, Marias, and Alexes; the event/employer graph must
+		// disambiguate them instead of a globally unique preferred name doing it.
+		if index >= 5 && index%6 == 5 {
+			first = strings.Fields(prior[index-5].Name)[0]
 		}
-		last := familyStarts[r.Intn(len(familyStarts))] + familyEnds[r.Intn(len(familyEnds))]
+		last := humandata.Surname(r, index)
 		name := first + " " + last
 		if !seen[name] {
 			seen[name] = true
@@ -434,59 +436,41 @@ func uniquePersonName(r *rand.Rand, seen map[string]bool, index int) string {
 	}
 }
 
-func nicknameFor(name string, r *rand.Rand) string {
-	first := strings.Fields(name)[0]
-	if len(first) > 5 {
-		return first[:3+randIndex(r, 2)]
-	}
-	return []string{"Sam", "Jules", "Ren", "Mick", "Dee", "Ro", "Ash", "Kit"}[r.Intn(8)]
-}
-
-func uniqueNickname(name string, r *rand.Rand, seen map[string]bool) string {
-	parts := strings.Fields(name)
-	first, last := parts[0], parts[len(parts)-1]
-	for attempt := 0; ; attempt++ {
-		candidate := nicknameFor(name, r)
-		if attempt > 0 {
-			width := 3 + attempt
-			if width <= len(first) {
-				candidate = first[:width]
-			} else {
-				lastWidth := width - len(first)
-				if lastWidth > len(last) {
-					lastWidth = len(last)
-				}
-				candidate = first + " " + last[:lastWidth]
-			}
-		}
-		if !seen[candidate] {
-			seen[candidate] = true
-			return candidate
-		}
-	}
-}
-
 func emailFor(name, employer string, index int, business bool) string {
-	// The address itself must not encode the person's name or employer: doing so
-	// turns an intended identity join into substring matching. Opaque but
-	// plausible mailbox handles mirror real users whose contact address bears no
-	// resemblance to the name saved in an address book.
 	h := fnv.New64a()
 	_, _ = fmt.Fprintf(h, "%s|%s|%d|%t", name, employer, index, business)
 	sum := h.Sum64()
-	left := []string{"quiet", "silver", "maple", "moss", "copper", "lunar", "cedar", "paper", "amber", "violet", "river", "north"}
-	right := []string{"orchard", "lantern", "window", "harbor", "sparrow", "studio", "meadow", "signal", "bridge", "thimble", "garden", "atlas"}
-	local := fmt.Sprintf("%s.%s%d", left[sum%uint64(len(left))], right[(sum/17)%uint64(len(right))], 10+(sum/257)%90)
+	parts := strings.Fields(strings.ToLower(name))
+	first, last := slug(parts[0]), slug(parts[len(parts)-1])
+	locals := []string{first, first + "." + last, first[:1] + last, first + "." + last[:1]}
+	local := locals[sum%uint64(len(locals))]
 	domain := []string{"gmail.com", "outlook.com", "proton.me", "fastmail.com", "hey.com"}[(sum/4099)%5]
 	if business {
-		domain = []string{"post.team", "contact.work", "mail.studio"}[(sum/8191)%3]
+		domain = companyDomain(employer)
 	}
 	return local + "@" + domain
 }
 
+func companyDomain(employer string) string {
+	words := strings.Fields(employer)
+	if len(words) > 1 {
+		words = words[:len(words)-1]
+	}
+	joined := slug(strings.Join(words, ""))
+	if joined == "" {
+		joined = "company"
+	}
+	return joined + ".com"
+}
+
 func uniqueEmail(name, employer string, index int, business bool, seen map[string]bool) string {
+	base := emailFor(name, employer, index, business)
 	for attempt := 0; ; attempt++ {
-		candidate := emailFor(name, employer, index+attempt*1009, business)
+		candidate := base
+		if attempt > 0 {
+			parts := strings.SplitN(base, "@", 2)
+			candidate = fmt.Sprintf("%s%d@%s", parts[0], attempt+1, parts[1])
+		}
 		if !seen[candidate] {
 			seen[candidate] = true
 			return candidate
