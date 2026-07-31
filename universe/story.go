@@ -442,9 +442,9 @@ func (s Story) render(seed int64) (string, string) {
 		MaxEdits: 6, Grammar: true, Protected: protected,
 	})
 	response := []string{
-		"Thank you for telling me the complete version. I’ll keep the chronology, the personal context, the work state, and the later correction connected without flattening them into one generic note.",
-		"I’ve got the arc of it. I’ll preserve how the beginning led to the decision and how the later update changed its meaning, while keeping personal and business context distinct.",
-		"Understood. I’ll remember this as a connected story with an earlier state, a turning point, and a corrected outcome rather than as a bag of disconnected keywords.",
+		"Thank you for telling me the whole story. I’ll remember how the personal part, work decision, and later change connect.",
+		"Okay, I can feel the shape of it now. I’ll remember what led here, what changed, and why the people matter.",
+		"I’m with you. I’ll hold onto the before, the turning point, and where things landed.",
 	}[r.Intn(3)]
 	return prompt, response
 }

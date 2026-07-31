@@ -326,11 +326,12 @@ func TestV7KnownVector(t *testing.T) {
 // TestV8KnownVector pins the answering-machine-proof release. V8 retains the
 // v7 execution envelope while making the tool route depend on fresh seeded
 // state and increasing the share of context-bound computed/non-verbatim memory
-// cases, including multi-leg trip totals.
+// cases, including multi-leg trip totals. The public bytes also pin natural
+// companion-linked travel memories and warm conversational acknowledgements.
 func TestV8KnownVector(t *testing.T) {
 	const (
 		seed = int64(123456789)
-		want = "ed70c7d9fa8718fffb2ed634deca1383727a2f28437eaeb46db88d5a93864b19"
+		want = "43a3717cc9095e05730b24c11fdd8cad10708203c6b112cad10c69e221626531"
 	)
 	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
 	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV8)

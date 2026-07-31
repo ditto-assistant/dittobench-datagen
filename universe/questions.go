@@ -182,26 +182,26 @@ func (w World) questionCandidates() []QuestionPlan {
 		constraints := []string{trip.Alias, trip.Purpose, trip.When, trip.Countries[changed]}
 
 		current := []string{
-			fmt.Sprintf("How long does %s work out to now — the %s trip in %s through %s, %s, and %s — after the itinerary change?", trip.Alias, trip.Purpose, trip.When, trip.Countries[0], trip.Countries[1], trip.Countries[2]),
-			fmt.Sprintf("After updating the %s leg, what is the total length of %s, our %s trip from %s?", trip.Countries[changed], trip.Alias, trip.Purpose, trip.When),
-			fmt.Sprintf("Reconcile the revised country stays for %s, our %s trip in %s. How many days is the whole route now?", trip.Alias, trip.Purpose, trip.When),
-			fmt.Sprintf("What is the current all-in duration for the %s route we called %s in %s, including the corrected %s stay?", trip.Purpose, trip.Alias, trip.When, trip.Countries[changed]),
+			fmt.Sprintf("How many days is %s now — the %s trip we took in %s through %s, %s, and %s — after the change?", trip.Alias, trip.Purpose, trip.When, trip.Countries[0], trip.Countries[1], trip.Countries[2]),
+			fmt.Sprintf("We changed the %s part of %s, our %s trip from %s. How many days is the whole trip now?", trip.Countries[changed], trip.Alias, trip.Purpose, trip.When),
+			fmt.Sprintf("Can you piece together the updated stays for %s, our %s trip from %s? How long is the trip altogether now?", trip.Alias, trip.Purpose, trip.When),
+			fmt.Sprintf("Remind me how long %s is now — the %s trip from %s — after we changed the %s stay.", trip.Alias, trip.Purpose, trip.When, trip.Countries[changed]),
 		}[i%4]
 		out = append(out, tripPlan(w, oracleTripCurrent, i, current, trip.CurrentDays, commonEvidence, constraints))
 
 		previous := []string{
-			fmt.Sprintf("Before the itinerary correction, how many days had we planned for the leg that later changed on %s, our %s route in %s?", trip.Alias, trip.Purpose, trip.When),
-			fmt.Sprintf("For %s, the %s trip from %s, how long was the stay that was later corrected before it changed?", trip.Alias, trip.Purpose, trip.When),
-			fmt.Sprintf("Give me the old duration for the leg we later revised on the %s route called %s in %s.", trip.Purpose, trip.Alias, trip.When),
-			fmt.Sprintf("Looking at the first plan, how many days was the stay that later changed on %s, our %s trip in %s?", trip.Alias, trip.Purpose, trip.When),
+			fmt.Sprintf("Before we changed one of the stays on %s, our %s trip from %s, how many days had we planned for that stay?", trip.Alias, trip.Purpose, trip.When),
+			fmt.Sprintf("Thinking back to the first version of %s — the %s trip from %s — how long was the stay we later changed?", trip.Alias, trip.Purpose, trip.When),
+			fmt.Sprintf("How many days had we originally planned for the stay we later revised on %s, our %s trip from %s?", trip.Alias, trip.Purpose, trip.When),
+			fmt.Sprintf("In our first plan for %s, the %s trip from %s, how long was the stay that eventually changed?", trip.Alias, trip.Purpose, trip.When),
 		}[i%4]
 		out = append(out, tripPlan(w, oracleTripChangedLegPrevious, i, previous, trip.OldLegDays[changed], commonEvidence, []string{trip.Alias, trip.Purpose, trip.When}))
 
 		leg := []string{
-			fmt.Sprintf("On %s, the %s trip in %s, how many days is the revised %s stay itself?", trip.Alias, trip.Purpose, trip.When, trip.Countries[changed]),
-			fmt.Sprintf("What is the corrected number of days in %s for %s, the %s route from %s?", trip.Countries[changed], trip.Alias, trip.Purpose, trip.When),
-			fmt.Sprintf("For the %s itinerary known as %s, how long is the changed %s leg now, not the whole trip?", trip.Purpose, trip.Alias, trip.Countries[changed]),
-			fmt.Sprintf("After the update to %s on our %s trip %s, what duration applies to that country leg?", trip.Countries[changed], trip.When, trip.Alias),
+			fmt.Sprintf("On %s, the %s trip from %s, how many days are we spending in %s after the change?", trip.Alias, trip.Purpose, trip.When, trip.Countries[changed]),
+			fmt.Sprintf("How long is the updated stay in %s for %s, the %s trip from %s?", trip.Countries[changed], trip.Alias, trip.Purpose, trip.When),
+			fmt.Sprintf("For %s, our %s trip, how many days is the changed %s stay now?", trip.Alias, trip.Purpose, trip.Countries[changed]),
+			fmt.Sprintf("After changing the %s part of %s, our trip from %s, how many days are we spending there?", trip.Countries[changed], trip.Alias, trip.When),
 		}[i%4]
 		out = append(out, tripPlan(w, oracleTripChangedLegCurrent, i, leg, trip.LegDays[changed], commonEvidence, constraints))
 
@@ -212,10 +212,10 @@ func (w World) questionCandidates() []QuestionPlan {
 			}
 		}
 		change := []string{
-			fmt.Sprintf("After the %s correction, how many days is the longest country stay on %s, our %s trip in %s?", trip.Countries[changed], trip.Alias, trip.Purpose, trip.When),
-			fmt.Sprintf("Compare every revised country leg for %s, the %s route from %s. What is the longest stay in days after the %s change?", trip.Alias, trip.Purpose, trip.When, trip.Countries[changed]),
-			fmt.Sprintf("How many days is the longest current leg of the %s route called %s in %s, once the %s update is applied?", trip.Purpose, trip.Alias, trip.When, trip.Countries[changed]),
-			fmt.Sprintf("For %s in %s, our %s trip with the revised %s leg, what is the maximum country-stay duration?", trip.Alias, trip.When, trip.Purpose, trip.Countries[changed]),
+			fmt.Sprintf("After changing the %s stay, what is the longest amount of time we spend in any one country on %s, our %s trip from %s?", trip.Countries[changed], trip.Alias, trip.Purpose, trip.When),
+			fmt.Sprintf("Looking across the updated plan for %s, the %s trip from %s, how many days is our longest stay?", trip.Alias, trip.Purpose, trip.When),
+			fmt.Sprintf("Once the %s change is included, what is the longest stay on %s, our %s trip from %s?", trip.Countries[changed], trip.Alias, trip.Purpose, trip.When),
+			fmt.Sprintf("For %s in %s, our %s trip with the changed %s stay, how many days is the longest stop?", trip.Alias, trip.When, trip.Purpose, trip.Countries[changed]),
 		}[i%4]
 		out = append(out, tripPlan(w, oracleTripLongestCurrent, i, change, longest, commonEvidence, constraints))
 	}
@@ -266,8 +266,8 @@ func tripPlan(w World, kind string, index int, question string, answer int, evid
 	return QuestionPlan{
 		Case:            memoryCase(w.Seed, kind, index, question, fmt.Sprintf("%d", answer), protocol.AnswerNumber, w.tripDistractors(index, answer)),
 		RequiredPairIDs: append([]string(nil), evidence...),
-		Facts:           []string{"trip alias", "purpose and time", "three original leg durations", "changed country", "corrected leg duration"},
-		Constraints:     append([]string(nil), constraints...), Operations: []string{"resolve trip alias", "apply itinerary correction", "select requested state", "sum or compare legs"},
+		Facts:           []string{"trip alias", "purpose and time", "travel companion", "three original leg durations", "changed country", "corrected leg duration"},
+		Constraints:     append([]string(nil), constraints...), Operations: []string{"resolve trip alias", "follow companion link", "apply itinerary correction", "select requested state", "sum or compare legs"},
 		oracleKind: kind, oracleIndex: index,
 	}
 }
@@ -711,13 +711,13 @@ func (w World) oracleOperations(plan QuestionPlan) []string {
 	case oracleProjectLeadPrevious:
 		return []string{"resolve project alias", "follow ownership edge", "resolve person identity", "select prior address state"}
 	case oracleTripCurrent:
-		return []string{"resolve trip alias", "apply itinerary correction", "select requested state", "sum or compare legs"}
+		return []string{"resolve trip alias", "follow companion link", "apply itinerary correction", "select requested state", "sum or compare legs"}
 	case oracleTripChangedLegPrevious:
-		return []string{"resolve trip alias", "apply itinerary correction", "select requested state", "sum or compare legs"}
+		return []string{"resolve trip alias", "follow companion link", "apply itinerary correction", "select requested state", "sum or compare legs"}
 	case oracleTripChangedLegCurrent:
-		return []string{"resolve trip alias", "apply itinerary correction", "select requested state", "sum or compare legs"}
+		return []string{"resolve trip alias", "follow companion link", "apply itinerary correction", "select requested state", "sum or compare legs"}
 	case oracleTripLongestCurrent:
-		return []string{"resolve trip alias", "apply itinerary correction", "select requested state", "sum or compare legs"}
+		return []string{"resolve trip alias", "follow companion link", "apply itinerary correction", "select requested state", "sum or compare legs"}
 	case oracleStoryBalanceCurrent:
 		return storyBalanceOperations(w.StoryArcs[plan.oracleIndex])
 	case oracleStoryBudgetDelta:
