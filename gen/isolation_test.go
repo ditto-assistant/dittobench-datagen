@@ -219,8 +219,9 @@ func TestV8IsolationUsesPlausibleSharedGivenNames(t *testing.T) {
 			if i%2 == 0 {
 				wantPlan = secondaryPlan
 			}
-			if got := iso.ReviewPlans[i].Case.Question; got != wantPlan.Case.Question {
-				t.Fatalf("seed %d person %d isolation question diverged:\n got %q\nwant %q", seed, i, got, wantPlan.Case.Question)
+			wantQuestion := "For this contact list: " + wantPlan.Case.Question
+			if got := iso.ReviewPlans[i].Case.Question; got != wantQuestion {
+				t.Fatalf("seed %d person %d isolation question diverged:\n got %q\nwant %q", seed, i, got, wantQuestion)
 			}
 
 			for _, session := range []string{"a", "b", "d"} {

@@ -20,6 +20,13 @@ func TestStoryProfilesHaveFixedLargeMemoryEnvelope(t *testing.T) {
 			if len(w.Stories) != tc.stories {
 				t.Fatalf("scale %d seed %d stories=%d, want %d", tc.scale, seed, len(w.Stories), tc.stories)
 			}
+			hasRealCents := false
+			for _, arc := range w.StoryArcs {
+				hasRealCents = hasRealCents || arc.BaseBudgetCents%100 != 0 || arc.BudgetDeltaCents%100 != 0 || arc.PaidCents%100 != 0
+			}
+			if !hasRealCents {
+				t.Fatalf("scale %d seed %d story finances collapsed to whole-dollar grid", tc.scale, seed)
+			}
 			pairs := storyPairMap(w)
 			kinds := map[StoryKind]bool{}
 			for _, story := range w.Stories {

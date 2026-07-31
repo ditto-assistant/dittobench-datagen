@@ -35,6 +35,14 @@ facts, later corrections, and both terse notes and messy business data pasted as
 a wall of text. Tool and memory cases ask about that same world instead of
 drawing unrelated cards.
 
+The ordering is part of the V8 contract. Before any scored tool case, the
+validator sends the tool-prerequisite payload as the initial shared-world seed.
+Tool cases then run against that state, and the memory half follows in the same
+harness container and user store. The store is not reset between halves. Memory
+waves are later staging additions, not a replacement copy of the initial world.
+Generation and the scoring API both fail closed when a memory case declares an
+evidence record that is unavailable through this ordered seed boundary.
+
 At least 65% of tool cases are composed, seed-bound tasks. They combine four or
 more facts, several constraints, and an outcome such as contacting the right
 person at their corrected address, mutating the uniquely described memory,
@@ -50,8 +58,9 @@ The memory mix similarly spends at least 65% on composition, indirection,
 temporal state, corrections, calculations, graph joins, and outcome verification.
 Every shared-world answer has three plausible near misses. V8 also projects
 seed-derived keyboard slips, transpositions, omissions, duplications, common
-misspellings, and common grammatical errors onto user-authored prompts and
-transcripts while retaining a correctly spelled answer key. Current ChatV2 wire tool names remain unchanged,
+misspellings, and common grammatical errors onto ordinary prose while keeping
+names, organizations, aliases, places, products, and other semantic join keys
+canonical. Current ChatV2 wire tool names remain unchanged,
 so a v7 harness can run v8; v8 changes what competence is required, not the
 transport contract. Free-form tasks remain free-form, and no LLM judge is added.
 Every change is gated on `bench_version >= 8`; the v7 known vector stays frozen.
@@ -71,7 +80,7 @@ seed-bound required arguments, and the served result where applicable. This is
 deliberately not merely a tool-name classifier—guessing `gmail_send` from the
 word “email” does not solve a case. The candidate must remain below 50% complete
 tool-outcome accuracy on ten held-out seeds. The pinned candidate measures
-27.00%; its deterministic oracle remains 100% scoreable.
+36.00%; its deterministic oracle remains 100% scoreable.
 
 ## What v7 is
 

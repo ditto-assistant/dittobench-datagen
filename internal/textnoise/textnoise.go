@@ -235,7 +235,7 @@ func unsafeSegment(text string, start, end int) bool {
 }
 
 func protectedWords(values []string) map[string]bool {
-	out := map[string]bool{}
+	out := map[string]bool{"ditto": true, "dittocode": true, "code": true}
 	for _, value := range values {
 		for _, token := range scanWords(value) {
 			lower := strings.ToLower(token.word)
@@ -282,7 +282,7 @@ func mutateWord(word string, r *rand.Rand) (string, Kind) {
 
 func keyboardNeighbor(word string, r *rand.Rand) string {
 	chars := []byte(word)
-	positions := letterPositions(chars, true)
+	positions := letterPositions(chars, false)
 	if len(positions) == 0 {
 		return word
 	}
@@ -307,7 +307,7 @@ func keyboardNeighbor(word string, r *rand.Rand) string {
 func transpose(word string, r *rand.Rand) string {
 	chars := []byte(word)
 	var positions []int
-	for i := 1; i+1 < len(chars); i++ {
+	for i := 1; i+2 < len(chars); i++ {
 		if isASCIIAlpha(chars[i]) && isASCIIAlpha(chars[i+1]) && strings.ToLower(string(chars[i])) != strings.ToLower(string(chars[i+1])) {
 			positions = append(positions, i)
 		}
@@ -332,7 +332,7 @@ func omit(word string, r *rand.Rand) string {
 
 func duplicate(word string, r *rand.Rand) string {
 	chars := []byte(word)
-	positions := letterPositions(chars, true)
+	positions := letterPositions(chars, false)
 	if len(positions) == 0 {
 		return word
 	}
@@ -371,9 +371,8 @@ type grammarRule struct{ from, to string }
 var grammarRules = []grammarRule{
 	{"could have", "could of"}, {"should have", "should of"}, {"would have", "would of"},
 	{"supposed to", "suppose to"}, {"used to", "use to"}, {"a lot", "alot"},
-	{"you're", "your"}, {"your", "you're"}, {"they're", "their"}, {"their", "there"},
-	{"it's", "its"}, {"its", "it's"}, {"then", "than"}, {"than", "then"},
-	{"who's", "whose"}, {"doesn't", "doesnt"}, {"don't", "dont"}, {"i'm", "im"},
+	{"it's", "its"}, {"who's", "whose"}, {"doesn't", "doesnt"},
+	{"don't", "dont"}, {"i'm", "im"},
 }
 
 func projectGrammar(text string, r *rand.Rand, protected map[string]bool) (string, bool) {

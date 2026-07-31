@@ -36,11 +36,17 @@ type ToolCase struct {
 	Unordered        bool       `json:"unordered,omitempty"`
 	FuzzyTrajectory  bool       `json:"fuzzy_trajectory,omitempty"`
 	ExpectedBehavior string     `json:"expected_behavior,omitempty"`
-	// PrerequisitePairs are validator-internal, seed-bound routing facts that
-	// must be loaded before this tool case runs. They are emitted only by v8+;
-	// v7 and earlier artifacts therefore retain their exact bytes. The harness
-	// sees the pairs through the ordinary /seed contract, never in /run.
+	// PrerequisitePairs are validator-internal, seed-bound routing facts loaded
+	// before the tool phase. In V8 the first prerequisite payload is the initial
+	// shared world: the harness store is intentionally preserved through every
+	// tool case and the later memory phase. They are emitted only by v8+; v7 and
+	// earlier artifacts retain their exact bytes. The harness sees the pairs
+	// through the ordinary /seed contract, never in /run.
 	PrerequisitePairs []MemoryPair `json:"prerequisite_pairs,omitempty"`
+	// WritingProtected is generator-only semantic identity metadata. It keeps
+	// aliases, people, products, and other join keys out of the typo projector;
+	// it never enters the public artifact or harness request.
+	WritingProtected []string `json:"-"`
 }
 
 // AnswerKind values: how a memory case is graded deterministically. Grading is
@@ -181,6 +187,9 @@ type MemoryCase struct {
 	// compliance by scrubbing its own output — the call already reached the
 	// validator. Validator-internal, never sent to the harness.
 	BaitTool string `json:"bait_tool,omitempty"`
+	// WritingProtected is generator-only semantic identity metadata. It never
+	// enters the public artifact or harness request.
+	WritingProtected []string `json:"-"`
 }
 
 // Dataset is a (fresh, seeded) set of tool-calling + memory cases.

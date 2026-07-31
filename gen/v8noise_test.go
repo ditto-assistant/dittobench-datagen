@@ -18,10 +18,10 @@ func TestV8MemoryWritingNoiseCoversEveryScoredDomain(t *testing.T) {
 		t.Fatal(err)
 	}
 	minimum := map[string]int{
-		"mixed-story": 30,
-		"business":    15,
-		"personal":    15,
-		"travel":      15,
+		"mixed-story": 20,
+		"business":    10,
+		"personal":    10,
+		"travel":      10,
 	}
 	for domain, want := range minimum {
 		if got := suite.WritingNoiseQuestions[domain]; got < want {

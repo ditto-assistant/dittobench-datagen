@@ -119,6 +119,24 @@ type World struct {
 	Integrity      IntegrityFacts
 }
 
+// ProtectedTerms returns semantic identity and join-key surfaces that writing
+// noise must never alter. Typos still exercise ordinary prose, but a person,
+// organization, project, route, or place stays consistently identifiable.
+func (w World) ProtectedTerms() []string {
+	out := []string{"Ditto", "Ditto Code", w.UserName, w.UserCompany, w.Accent}
+	for _, p := range w.People {
+		out = append(out, p.Name, p.Nickname, p.Relation, p.Employer, p.PreviousEmployer, p.Role, p.City, p.Context, p.Email, p.PreviousEmail)
+	}
+	for _, p := range w.Projects {
+		out = append(out, p.Name, p.Alias, p.RecordID, p.Purpose, p.Client, p.Vendor)
+	}
+	for _, trip := range w.Trips {
+		out = append(out, trip.Alias, trip.Purpose, trip.When)
+		out = append(out, trip.Countries[:]...)
+	}
+	return out
+}
+
 var coinedStarts = []string{"Bel", "Cor", "Dra", "Eli", "Fen", "Har", "Ivo", "Kes", "Lor", "Mey", "Nor", "Ori", "Pera", "Qua", "Ryn", "Sel", "Tal", "Vae", "Wen", "Zor"}
 var coinedEnds = []string{"adin", "ara", "elis", "enne", "ian", "ira", "orin", "essa", "ovan", "urel", "yra", "eth"}
 var familyStarts = []string{"Ash", "Bram", "Cinder", "Dun", "Ever", "Fair", "Glen", "Holl", "Kest", "Mar", "Norr", "Pen", "Quill", "Raven", "Stone", "Tal", "Vale", "West"}
@@ -166,8 +184,8 @@ func Generate(seed int64, scale int) World {
 		given := strings.Fields(name)[0]
 		nick := humandata.DistinctPreferredNameExcluding(given, r, i, seenNicknames)
 		seenNicknames[strings.ToLower(nick)] = true
-		previousEmployer := uniqueString(r, seenCompanies, coinedCompany)
-		employer := uniqueString(r, seenCompanies, coinedCompany)
+		previousEmployer := uniqueCompany(r, seenCompanies)
+		employer := uniqueCompany(r, seenCompanies)
 		previous := uniqueEmail(name, previousEmployer, 2*i, true, seenEmails)
 		current := uniqueEmail(name, employer, 2*i+1, true, seenEmails)
 		if previous == current {
@@ -193,16 +211,17 @@ func Generate(seed int64, scale int) World {
 	for i := 0; i < projectN; i++ {
 		projectName, projectAlias := uniqueProjectIdentity(r, seenProjects, seenProjectAliases)
 		original := 180000 + r.Intn(2600000)
-		deltas := []int{-4, -3, -2, -1, 1, 2, 3, 4}
-		corrected := original + deltas[r.Intn(len(deltas))]*12500
+		deltas := []int{-48_725, -31_342, -17_899, 12_675, 23_980, 45_125, 68_342, 92_750}
+		corrected := original + deltas[r.Intn(len(deltas))]
 		if corrected < 50000 {
 			corrected = 50000
 		}
-		paid := corrected * (2 + r.Intn(5)) / 10
+		paidPercent := 20 + r.Intn(41)
+		paid := ((original * paidPercent / 100) + 50) / 100 * 100
 		p := Project{
 			Name: projectName, Alias: projectAlias,
 			RecordID: "AP-" + strings.ToUpper(protocol.OpaqueCaseID(seed, "world-project-record", i)[:8]), Purpose: projectPurpose(r),
-			Client: uniqueString(r, seenCompanies, coinedCompany), Vendor: uniqueString(r, seenCompanies, coinedCompany), Lead: i % len(w.People),
+			Client: uniqueCompany(r, seenCompanies), Vendor: uniqueCompany(r, seenCompanies), Lead: i % len(w.People),
 			OriginalCents: original, CorrectedCents: corrected, PaidCents: paid,
 			OutstandingCents: corrected - paid,
 			ContextPairID:    protocol.OpaqueCaseID(seed, "world-project-context", i),
@@ -213,10 +232,11 @@ func Generate(seed int64, scale int) World {
 		w.Projects = append(w.Projects, p)
 	}
 
-	permCountries := r.Perm(len(countryPool))
 	seenTripAliases := map[string]bool{}
+	seenTripRoutes := map[string]bool{}
 	for i := 0; i < tripN; i++ {
-		countries := [3]string{countryPool[permCountries[(i*3)%len(permCountries)]], countryPool[permCountries[(i*3+1)%len(permCountries)]], countryPool[permCountries[(i*3+2)%len(permCountries)]]}
+		purpose := tripPurpose(r)
+		countries := tripCountries(r, purpose, seenTripRoutes)
 		oldLegs := [3]int{4 + r.Intn(9), 4 + r.Intn(9), 3 + r.Intn(8)}
 		legs := oldLegs
 		changed := r.Intn(3)
@@ -227,7 +247,7 @@ func Generate(seed int64, scale int) World {
 		t := Trip{
 			Alias:     uniqueString(r, seenTripAliases, tripAlias),
 			Companion: (i*2 + 1) % len(w.People),
-			Purpose:   tripPurpose(r), When: tripWhen(r), Countries: countries,
+			Purpose:   purpose, When: tripWhen(r), Countries: countries,
 			OldLegDays: oldLegs, LegDays: legs, PreviousDays: sum3(oldLegs), CurrentDays: sum3(legs),
 			ContextPairID:    protocol.OpaqueCaseID(seed, "world-trip-context", i),
 			PlanPairID:       protocol.OpaqueCaseID(seed, "world-trip-plan", i),
@@ -262,9 +282,9 @@ func (w World) renderPairs(r *rand.Rand) []protocol.MemoryPair {
 		// Contact values deliberately do not repeat the person's name, nickname,
 		// relationship, or event context. Resolving one requires the identity ->
 		// work -> address -> correction chain instead of one lexical lookup.
-		add(p.EmailPairID, fmt.Sprintf("people-%02d-c", i), fmt.Sprintf("Back when they were at %s, the work address I had saved was %s.", p.PreviousEmployer, p.PreviousEmail), warmResponse(w.Seed, p.EmailPairID,
-			"I’ll keep this as their first address.",
-			"I’ll remember this as the original address, not necessarily the current one.",
+		add(p.EmailPairID, fmt.Sprintf("people-%02d-c", i), fmt.Sprintf("Back when they were at %s, the work email I had saved was %s.", p.PreviousEmployer, p.PreviousEmail), warmResponse(w.Seed, p.EmailPairID,
+			"I’ll keep this as their first email.",
+			"I’ll remember this as the original email, not necessarily the current one.",
 			"I’ve got the earlier contact point."))
 		add(p.CorrectionPairID, fmt.Sprintf("people-%02d-d", i), fmt.Sprintf("After %s moved to %s, the new work email is %s.", p.Nickname, p.Employer, p.Email), warmResponse(w.Seed, p.CorrectionPairID,
 			"Good catch — I’ll use the new address.",
@@ -591,7 +611,24 @@ func uniqueEmail(name, employer string, index int, business bool, seen map[strin
 }
 
 func coinedCompany(r *rand.Rand) string {
-	return familyStarts[r.Intn(len(familyStarts))] + familyEnds[r.Intn(len(familyEnds))] + " " + []string{"Studio", "Works", "Partners", "Labs", "Collective", "Group"}[r.Intn(6)]
+	stem := familyStarts[r.Intn(len(familyStarts))] + familyEnds[r.Intn(len(familyEnds))]
+	suffixes := []string{"Studio", "Works", "Partners", "Labs", "Collective", "Group", "& Co.", "Company", "Guild", ""}
+	return strings.TrimSpace(stem + " " + suffixes[r.Intn(len(suffixes))])
+}
+
+func uniqueCompany(r *rand.Rand, seen map[string]bool) string {
+	for {
+		candidate := coinedCompany(r)
+		first := strings.Fields(candidate)[0]
+		collision := false
+		for prior := range seen {
+			collision = collision || strings.EqualFold(strings.Fields(prior)[0], first)
+		}
+		if !seen[candidate] && !collision {
+			seen[candidate] = true
+			return candidate
+		}
+	}
 }
 
 func uniqueString(r *rand.Rand, seen map[string]bool, generate func(*rand.Rand) string) string {
@@ -662,12 +699,35 @@ func projectPurpose(r *rand.Rand) string {
 	return []string{"retail launch", "annual report", "museum installation", "client migration", "brand research", "regional workshop", "fundraising campaign", "supplier transition"}[r.Intn(8)]
 }
 func tripAlias(r *rand.Rand) string {
-	first := []string{"museum", "food", "field", "festival", "archive", "research", "family", "studio"}[r.Intn(8)]
-	second := []string{"loop", "trip", "week", "run", "visit", "circuit", "route", "tour"}[r.Intn(8)]
+	first := []string{"harbor", "lantern", "north", "blue", "cedar", "silver", "quiet", "copper", "juniper", "willow"}[r.Intn(10)]
+	second := []string{"loop", "route", "circuit", "run", "trail", "path", "line", "crossing"}[r.Intn(8)]
 	return strings.ToLower(first + " " + second)
 }
 func tripPurpose(r *rand.Rand) string {
 	return []string{"food research", "museum research", "wildlife fieldwork", "family reunion", "music festival", "supplier meetings", "architecture tour", "archive project"}[r.Intn(8)]
+}
+
+func tripCountries(r *rand.Rand, purpose string, seen map[string]bool) [3]string {
+	pools := map[string][]string{
+		"food research":      {"Italy", "Japan", "Spain", "France", "Portugal"},
+		"museum research":    {"France", "Italy", "the Netherlands", "Japan", "Spain"},
+		"wildlife fieldwork": {"Kenya", "Tanzania", "Ecuador", "Costa Rica", "South Africa"},
+		"family reunion":     {"Canada", "Ireland", "Australia", "Portugal", "South Korea"},
+		"music festival":     {"the Netherlands", "Belgium", "Portugal", "Spain", "Japan"},
+		"supplier meetings":  {"Germany", "Vietnam", "South Korea", "Japan", "Poland"},
+		"architecture tour":  {"Italy", "Spain", "Japan", "France", "Belgium"},
+		"archive project":    {"United Kingdom", "Portugal", "France", "Italy", "Sweden"},
+	}
+	pool := append([]string(nil), pools[purpose]...)
+	for {
+		r.Shuffle(len(pool), func(i, j int) { pool[i], pool[j] = pool[j], pool[i] })
+		countries := [3]string{pool[0], pool[1], pool[2]}
+		key := strings.Join(countries[:], "|")
+		if !seen[key] {
+			seen[key] = true
+			return countries
+		}
+	}
 }
 func tripWhen(r *rand.Rand) string {
 	return []string{"last spring", "last autumn", "the year before the move", "summer 2025", "the winter after the launch", "our 2024 break"}[r.Intn(6)]

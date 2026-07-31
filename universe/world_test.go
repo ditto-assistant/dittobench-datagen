@@ -30,6 +30,15 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 
 		var names, nicknames, emails, projectNames, projectAliases, projectRecords, tripAliases []string
 		givenCounts := map[string]int{}
+		companyHeads := map[string]bool{}
+		checkCompany := func(company string) {
+			head := strings.ToLower(strings.Fields(company)[0])
+			if companyHeads[head] {
+				t.Fatalf("seed %d repeats organization head %q", seed, head)
+			}
+			companyHeads[head] = true
+		}
+		checkCompany(w.UserCompany)
 		for _, p := range w.People {
 			names = append(names, p.Name)
 			nicknames = append(nicknames, p.Nickname)
@@ -47,11 +56,15 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 			if p.Employer == p.PreviousEmployer {
 				t.Fatalf("seed %d person %q has no employer transition", seed, p.Name)
 			}
+			checkCompany(p.Employer)
+			checkCompany(p.PreviousEmployer)
 			if strings.EqualFold(strings.Fields(p.Name)[0], p.Nickname) {
 				t.Fatalf("seed %d person %q repeats their given name as nickname", seed, p.Name)
 			}
 		}
 		for _, p := range w.Projects {
+			checkCompany(p.Client)
+			checkCompany(p.Vendor)
 			projectNames = append(projectNames, p.Name)
 			projectAliases = append(projectAliases, p.Alias)
 			projectRecords = append(projectRecords, p.RecordID)
@@ -60,6 +73,12 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 			}
 			if p.OutstandingCents != p.CorrectedCents-p.PaidCents {
 				t.Fatalf("seed %d project %q has inconsistent ledger math", seed, p.Alias)
+			}
+			if p.PaidCents%100 != 0 {
+				t.Fatalf("seed %d project %q payment %d is not rounded to whole dollars", seed, p.Alias, p.PaidCents)
+			}
+			if (p.CorrectedCents-p.OriginalCents)%12_500 == 0 {
+				t.Fatalf("seed %d project %q retained the artificial $125 correction grid", seed, p.Alias)
 			}
 			if !projectNamesAreRelated(p.Name, p.Alias) {
 				t.Fatalf("seed %d project alias %q is unrelated to formal name %q", seed, p.Alias, p.Name)
@@ -72,6 +91,11 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 			}
 			if trip.PreviousDays == trip.CurrentDays {
 				t.Fatalf("seed %d trip %q has a no-op itinerary correction", seed, trip.Alias)
+			}
+			for _, forbidden := range []string{"trip", "tour", "museum", "food", "family", "festival", "archive", "research"} {
+				if strings.Contains(" "+trip.Alias+" ", " "+forbidden+" ") {
+					t.Fatalf("seed %d trip alias %q conflicts with a purpose-shaped word", seed, trip.Alias)
+				}
 			}
 		}
 		assertUnique(t, seed, "person name", names)

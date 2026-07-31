@@ -23,7 +23,7 @@ func applyV8MemoryWritingNoise(seed int64, cases []StagedCase, waves []protocol.
 	}
 	selectedQuestions := map[string]bool{}
 	for domain, ids := range questionIDs {
-		for id := range textnoise.Select(seed, "memory-question:"+domain, ids, 6_500) {
+		for id := range textnoise.Select(seed, "memory-question:"+domain, ids, 2_500) {
 			selectedQuestions[id] = true
 		}
 	}
@@ -32,7 +32,7 @@ func applyV8MemoryWritingNoise(seed int64, cases []StagedCase, waves []protocol.
 			continue
 		}
 		projected, stats := textnoise.Project(cases[i].Case.Question, seed, "memory-question:"+cases[i].Case.ID, textnoise.Options{
-			Grammar: true, Protected: memoryCaseProtected(cases[i].Case),
+			Grammar: true, MaxEdits: 1, Protected: memoryCaseProtected(cases[i].Case),
 		})
 		if stats.Total() > 0 {
 			cases[i].Case.Question = projected
@@ -53,7 +53,7 @@ func applyV8MemoryWritingNoise(seed int64, cases []StagedCase, waves []protocol.
 	}
 	selectedPairs := map[string]bool{}
 	for domain, ids := range pairIDs {
-		for id := range textnoise.Select(seed, "memory-pair:"+domain, ids, 4_500) {
+		for id := range textnoise.Select(seed, "memory-pair:"+domain, ids, 2_500) {
 			selectedPairs[id] = true
 		}
 	}
@@ -64,7 +64,7 @@ func applyV8MemoryWritingNoise(seed int64, cases []StagedCase, waves []protocol.
 				continue
 			}
 			projected, stats := textnoise.Project(pair.Prompt, seed, "memory-pair:"+pair.PairID, textnoise.Options{
-				Grammar: true, Protected: protected,
+				Grammar: true, MaxEdits: 1, Protected: protected,
 			})
 			if stats.Total() > 0 {
 				pair.Prompt = projected
@@ -81,6 +81,7 @@ func memoryCaseProtected(c protocol.MemoryCase) []string {
 	out = append(out, c.AnswerItems...)
 	out = append(out, c.DistractorAnswers...)
 	out = append(out, c.DumpGuard...)
+	out = append(out, c.WritingProtected...)
 	return out
 }
 

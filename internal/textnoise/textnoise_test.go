@@ -1,9 +1,20 @@
 package textnoise
 
 import (
+	"math/rand"
 	"strings"
 	"testing"
 )
+
+func TestTokenNoiseNeverChangesWordEdges(t *testing.T) {
+	const word = "remembered"
+	for seed := int64(1); seed <= 1_000; seed++ {
+		got, _ := mutateWord(word, rand.New(rand.NewSource(seed)))
+		if got[0] != word[0] || got[len(got)-1] != word[len(word)-1] {
+			t.Fatalf("seed %d changed semantic word edge: %q -> %q", seed, word, got)
+		}
+	}
+}
 
 func TestProjectIsDeterministicSeedVariedAndBounded(t *testing.T) {
 	text := "I should have remembered the corrected business address before the project meeting, but apparently the current schedule changed again."
