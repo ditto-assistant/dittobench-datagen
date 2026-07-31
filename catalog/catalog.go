@@ -269,6 +269,7 @@ func CatalogForVersion(benchVersion int) []protocol.ToolDefinition {
 	}
 	retired := map[string]bool{
 		"execute_agent_workflow": true,
+		"get_agent_job_status":   true,
 		"create_automation":      true,
 		"list_automations":       true,
 		"create_recipe":          true,

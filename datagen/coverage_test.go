@@ -113,7 +113,7 @@ func TestV8CatalogUsesCurrentWorkflowSurface(t *testing.T) {
 			t.Errorf("v8 catalog tool %q is never a correct answer", tool.Name)
 		}
 	}
-	for _, retired := range []string{"execute_agent_workflow", "create_automation", "list_automations", "create_recipe", "apply_recipe"} {
+	for _, retired := range []string{"execute_agent_workflow", "get_agent_job_status", "create_automation", "list_automations", "create_recipe", "apply_recipe"} {
 		if reachable[retired] {
 			t.Errorf("v8 still generates retired tool %q", retired)
 		}

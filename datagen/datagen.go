@@ -1206,9 +1206,8 @@ func applyV8WorldActions(seed int64, cases []protocol.ToolCase) {
 			tc = fuzzyWorldTool(caseID, "world_business_workflow", fmt.Sprintf("Check whether I already have a workflow for %q, the project for %s. If not, create one under the project's formal name and put the current contact address for internal reviewer %s in its review step.", p.Alias, p.Client, lead.Nickname), []protocol.ToolSpec{{Name: "list_workflows"}, {Name: "create_workflow", RequiredArgs: map[string]string{"name": p.Name, "steps": lead.Email}}}, "resolve the project, its formal name, and current reviewer contact; then check existing workflows and create the requested reusable workflow")
 		case 6: // outcome proves a search -> dynamic-link -> read chain
 			tc = v8WorldLinkRead(seed, caseID)
-		case 7: // dependent execution outcome, order enforced by data not rubric
-			needle := toolexec.NeedleFor(seed, caseID)
-			tc = fuzzyWorldTool(caseID, "world_job_chain_result_usage", fmt.Sprintf("Have Ditto Code work out %s in the background, check the resulting job until it finishes, and give me the exact figure it produced.", needle.Subject), []protocol.ToolSpec{{Name: "execute_agent_job"}, {Name: "get_agent_job_status"}}, "run the job, resolve its returned id, and report the completed result")
+		case 7: // Ditto App presents approval and owns the async job lifecycle
+			tc = v8WorldAgentJob(caseID, world, converted+i)
 		}
 		if !attachedWorld {
 			tc.PrerequisitePairs = append([]protocol.MemoryPair(nil), world.Pairs...)
@@ -1235,6 +1234,11 @@ func applyV8WorldActions(seed int64, cases []protocol.ToolCase) {
 			updateTarget++
 		case "link_read":
 			cases[i] = v8WorldLinkRead(seed, caseID)
+		case "multi_job_status", "job_chain_result_usage", "job_chain_recovery_result_usage":
+			// Production stops the agent turn at execute_agent_job: Ditto App
+			// presents the approval and owns subsequent progress/result display.
+			// Do not reward benchmark-only polling behavior in the v8 tail.
+			cases[i] = v8WorldAgentJob(caseID, world, i)
 		}
 	}
 }
@@ -1258,6 +1262,12 @@ func v8WorldMemoryUpdate(caseID string, world universe.World, index int) protoco
 func v8WorldLinkRead(seed int64, caseID string) protocol.ToolCase {
 	needle := toolexec.NeedleFor(seed, caseID)
 	return fuzzyWorldTool(caseID, "world_link_chain_result_usage", fmt.Sprintf("Search X or Twitter for %s, follow whichever result actually contains the current figure, and tell me the exact value. I did not save the complete URL, so use the live result rather than guessing a link.", needle.Subject), []protocol.ToolSpec{{Name: "search_web"}, {Name: "read_links"}}, "find and read the live source, then report the served value")
+}
+
+func v8WorldAgentJob(caseID string, world universe.World, index int) protocol.ToolCase {
+	project := world.Projects[index%len(world.Projects)]
+	prompt := fmt.Sprintf("Have Ditto Code inspect the %s project for %s and prepare a concise dependency-risk report. Go ahead and start it; I'll approve the job when Ditto asks.", project.Name, project.Client)
+	return fuzzyWorldTool(caseID, "world_agent_job_dispatch", prompt, []protocol.ToolSpec{{Name: "execute_agent_job"}}, "submit the requested Ditto Code job for user approval; the app owns approval, progress, and result display")
 }
 
 func fuzzyWorldTool(id, category, prompt string, expected []protocol.ToolSpec, behavior string) protocol.ToolCase {

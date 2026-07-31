@@ -36,7 +36,9 @@ func TestV8ToolMixVariesAndCoversEveryFamily(t *testing.T) {
 	if !varied {
 		t.Fatal("v8 tool histogram was identical across 40 seeds")
 	}
-	if len(seen) < 56 {
+	// Four benchmark-only job polling variants collapse into the single
+	// production-faithful approval-boundary dispatch family in v8.
+	if len(seen) < 53 {
 		t.Fatalf("v8 full covered only %d tool families across 40 seeds", len(seen))
 	}
 }
@@ -234,7 +236,7 @@ func TestV8WorldToolCasesAreFuzzyComposedAndStateBound(t *testing.T) {
 	if fuzzy < want {
 		t.Fatalf("full v8 fuzzy world cases = %d, want at least %d", fuzzy, want)
 	}
-	if 3*multi < 2*fuzzy {
+	if 5*multi < 3*fuzzy {
 		t.Fatalf("only %d/%d fuzzy cases require multiple observable operations", multi, fuzzy)
 	}
 	if attachedWorld != 1 || len(pairIDs) < 50 {
@@ -249,6 +251,37 @@ func TestV8WorldToolCasesAreFuzzyComposedAndStateBound(t *testing.T) {
 		if len(tc.PrerequisitePairs) != 0 || tc.FuzzyTrajectory || strings.HasPrefix(tc.Category, "world_") {
 			t.Fatalf("v7 case %s changed wire shape", tc.ID)
 		}
+	}
+}
+
+func TestV8AgentJobsStopAtApprovalBoundary(t *testing.T) {
+	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
+	seen := 0
+	for seed := int64(1); seed <= 40; seed++ {
+		artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV8)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range artifact.ToolCases {
+			for _, spec := range tc.ExpectedTools {
+				if spec.Name == "get_agent_job_status" {
+					t.Fatalf("v8 case %s still requires app-owned status polling: %+v", tc.ID, tc)
+				}
+			}
+			if tc.Category != "world_agent_job_dispatch" {
+				continue
+			}
+			seen++
+			if len(tc.ExpectedTools) != 1 || tc.ExpectedTools[0].Name != "execute_agent_job" {
+				t.Fatalf("approval-boundary job trajectory = %+v", tc.ExpectedTools)
+			}
+			if !strings.Contains(strings.ToLower(tc.Prompt), "job") || !strings.Contains(strings.ToLower(tc.ExpectedBehavior), "app owns") {
+				t.Fatalf("job case does not explain the product approval boundary: %+v", tc)
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("v8 did not generate any approval-boundary agent job cases")
 	}
 }
 
