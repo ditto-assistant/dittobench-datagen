@@ -53,6 +53,19 @@ func TestDistinctPreferredNamesNeverRepeatTheGivenName(t *testing.T) {
 	}
 }
 
+func TestDistinctPreferredNamesCanExcludeWorldCollisions(t *testing.T) {
+	r := rand.New(rand.NewSource(23))
+	seen := map[string]bool{}
+	for i := 0; i < len(socialNicknames); i++ {
+		got := DistinctPreferredNameExcluding("Leah", r, i, seen)
+		key := lower(got)
+		if key == lower("Leah") || seen[key] {
+			t.Fatalf("preferred name %d is not distinct: %q", i, got)
+		}
+		seen[key] = true
+	}
+}
+
 func TestInformalShortFormsAreExplicitAndBelievable(t *testing.T) {
 	for name, want := range map[string]string{
 		"Savanna": "Sav",

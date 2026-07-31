@@ -22,16 +22,14 @@ func TestV8MemoryWritingNoiseCoversEveryScoredDomain(t *testing.T) {
 		"business":    15,
 		"personal":    15,
 		"travel":      15,
-		"integrity":   3,
-		"general":     3,
 	}
 	for domain, want := range minimum {
 		if got := suite.WritingNoiseQuestions[domain]; got < want {
 			t.Errorf("V8 noisy %s questions=%d, want at least %d; all=%v", domain, got, want, suite.WritingNoiseQuestions)
 		}
 	}
-	if suite.WritingNoisePairs["general"] < 10 {
-		t.Fatalf("V8 noisy transcript pairs=%v, want a substantial general-history floor", suite.WritingNoisePairs)
+	if len(suite.WritingNoisePairs) != 0 {
+		t.Fatalf("V8 primary suite unexpectedly seeded duplicate transcript pairs: %v", suite.WritingNoisePairs)
 	}
 }
 

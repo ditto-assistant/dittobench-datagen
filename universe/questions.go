@@ -126,13 +126,7 @@ func isStoryOracle(kind string) bool { return strings.HasPrefix(kind, "story-") 
 func (w World) questionCandidates() []QuestionPlan {
 	out := make([]QuestionPlan, 0, 2*len(w.People)+3*len(w.Projects)+4*len(w.Trips))
 	for i, p := range w.People {
-		givenName := strings.Fields(p.Name)[0]
-		current := []string{
-			fmt.Sprintf("What address should I actually use now for %s, my %s in %s from the %s?", givenName, p.Relation, p.City, p.Context),
-			fmt.Sprintf("I need to reach %s, my %s in %s from the %s. Which email is current?", givenName, p.Relation, p.City, p.Context),
-			fmt.Sprintf("Which up-to-date email belongs to %s, my %s in %s who handled the %s?", givenName, p.Relation, p.City, p.Context),
-			fmt.Sprintf("For the %s follow-up, what is the corrected address for %s, my %s in %s?", p.Context, givenName, p.Relation, p.City),
-		}[i%4]
+		current := contactCurrentQuestion(p, i)
 		out = append(out, w.personPlan(oracleContactCurrent, i, current, p.Email, p.PreviousEmail))
 
 		previous := []string{
@@ -222,6 +216,32 @@ func (w World) questionCandidates() []QuestionPlan {
 	}
 	out = append(out, w.storyQuestionCandidates()...)
 	return out
+}
+
+func contactCurrentQuestion(p Person, index int) string {
+	givenName := strings.Fields(p.Name)[0]
+	return []string{
+		fmt.Sprintf("What address should I actually use now for %s, my %s in %s from the %s?", givenName, p.Relation, p.City, p.Context),
+		fmt.Sprintf("I need to reach %s, my %s in %s from the %s. Which email is current?", givenName, p.Relation, p.City, p.Context),
+		fmt.Sprintf("Which up-to-date email belongs to %s, my %s in %s who handled the %s?", givenName, p.Relation, p.City, p.Context),
+		fmt.Sprintf("For the %s follow-up, what is the corrected address for %s, my %s in %s?", p.Context, givenName, p.Relation, p.City),
+	}[index%4]
+}
+
+// ContactCurrentPlan exposes one fully validated person-contact program for
+// graph-isolation composition. Callers may change only case identity, scope, and
+// the forbidden cross-graph answer; the planted evidence and oracle remain the
+// same world contract used by ordinary V8 questions.
+func (w World) ContactCurrentPlan(index int) (QuestionPlan, error) {
+	if index < 0 || index >= len(w.People) {
+		return QuestionPlan{}, fmt.Errorf("contact index %d out of range", index)
+	}
+	p := w.People[index]
+	plan := w.personPlan(oracleContactCurrent, index, contactCurrentQuestion(p, index), p.Email, p.PreviousEmail)
+	if err := w.validatePlan(plan); err != nil {
+		return QuestionPlan{}, err
+	}
+	return plan, nil
 }
 
 func (w World) personPlan(kind string, index int, question, answer, extraDistractor string) QuestionPlan {

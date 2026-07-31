@@ -149,9 +149,9 @@ func storyArcCount(scale int) int {
 	case 1:
 		return 1
 	case 2:
-		return 3
+		return 6
 	default:
-		return 8
+		return 13
 	}
 }
 
@@ -510,11 +510,11 @@ func (s Story) renderDraft(seed int64) (string, string) {
 	renderSection("middle", s.Middle)
 	renderSection("end", s.End)
 
-	response := []string{
+	response := warmResponse(seed, s.PairID,
 		"Thanks for the whole story. I’ll remember what connects.",
 		"I can feel its shape now — what changed and why.",
 		"I’m with you. I’ll remember where it landed.",
-	}[r.Intn(3)]
+	)
 	return b.String(), response
 }
 

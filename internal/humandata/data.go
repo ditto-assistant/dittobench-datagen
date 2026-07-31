@@ -83,26 +83,35 @@ func PreferredName(given string, r *rand.Rand) string {
 // This helper is V8-only through its universe caller. PreferredName remains
 // unchanged for every frozen pre-V8 generation path.
 func DistinctPreferredName(given string, r *rand.Rand, ordinal int) string {
+	return DistinctPreferredNameExcluding(given, r, ordinal, nil)
+}
+
+// DistinctPreferredNameExcluding preserves the same human-name policy while
+// avoiding preferred names already assigned elsewhere in one generated world.
+// A documented diminutive or familiar contraction still wins when available;
+// the reviewed social-name pool provides the fallback needed to keep vague
+// interpersonal references unambiguous at full scale.
+func DistinctPreferredNameExcluding(given string, r *rand.Rand, ordinal int, excluded map[string]bool) string {
 	var distinct []string
 	for _, option := range nicknames[strings.ToLower(given)] {
-		if !strings.EqualFold(option, given) {
+		if !strings.EqualFold(option, given) && !excluded[strings.ToLower(option)] {
 			distinct = append(distinct, option)
 		}
 	}
 	if len(distinct) > 0 {
 		return distinct[r.Intn(len(distinct))]
 	}
-	if short := informalShortForms[strings.ToLower(given)]; short != "" {
+	if short := informalShortForms[strings.ToLower(given)]; short != "" && !excluded[strings.ToLower(short)] {
 		return short
 	}
 	start := (ordinal + r.Intn(len(socialNicknames))) % len(socialNicknames)
 	for offset := range socialNicknames {
 		candidate := socialNicknames[(start+offset)%len(socialNicknames)]
-		if !strings.EqualFold(candidate, given) {
+		if !strings.EqualFold(candidate, given) && !excluded[strings.ToLower(candidate)] {
 			return candidate
 		}
 	}
-	panic("humandata: social nickname corpus contains no distinct value")
+	panic("humandata: social nickname corpus contains no available distinct value")
 }
 
 // These reviewed spoken contractions cover names where the frozen source lacks

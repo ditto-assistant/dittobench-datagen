@@ -329,11 +329,12 @@ func TestV7KnownVector(t *testing.T) {
 // cases, including multi-leg trip totals. The public bytes also pin natural
 // companion-linked travel memories, warm conversational acknowledgements, and
 // linear human stories with minimally anchored multi-record questions. V8 uses
-// seeded world facts rather than synthetic memory-write instruction chains.
+// seeded world facts throughout its memory surface rather than any legacy
+// sess-* question or transcript family.
 func TestV8KnownVector(t *testing.T) {
 	const (
 		seed = int64(123456789)
-		want = "3a6eaff666430417899523ffda04ab4588a84278ac9bf23ff0ca76ef17547ad4"
+		want = "aa113346d99a3026372cac0c47bb05d180e61276eed8bb4a3d6ce41e929eccbc"
 	)
 	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
 	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV8)
