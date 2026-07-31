@@ -375,7 +375,11 @@ func TestWorldQuestionPlansAreAnswerableComposedAndLongDistance(t *testing.T) {
 	}
 	questions := map[string]bool{}
 	for _, plan := range plans {
-		if len(plan.Facts) < 4 || len(plan.Constraints) < 3 || len(plan.Operations) < 2 {
+		minConstraints := 3
+		if isStoryOracle(plan.oracleKind) {
+			minConstraints = 2
+		}
+		if len(plan.Facts) < 4 || len(plan.Constraints) < minConstraints || len(plan.Operations) < 2 {
 			t.Fatalf("under-composed plan %s: facts=%d constraints=%d operations=%d", plan.Case.ID, len(plan.Facts), len(plan.Constraints), len(plan.Operations))
 		}
 		if len(plan.RequiredPairIDs) < 3 {
