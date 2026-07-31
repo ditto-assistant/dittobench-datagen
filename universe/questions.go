@@ -146,13 +146,13 @@ func (w World) questionCandidates() []QuestionPlan {
 	for i, p := range w.Projects {
 		lead := w.People[p.Lead]
 		outstanding := []string{
-			fmt.Sprintf("For %q, the %s work for %s, what is still owed to %s once the approved correction and the payment already sent are reconciled? Give cents.", p.Alias, p.Purpose, p.Client, p.Vendor),
-			fmt.Sprintf("AP needs the remaining balance in cents for %s's invoice on %q for %s. Use the corrected total, not the draft, and account for our payment.", p.Vendor, p.Alias, p.Client),
-			fmt.Sprintf("How many cents remain on the corrected %s bill tied to %q, the %s project for %s, after what we already paid?", p.Vendor, p.Alias, p.Purpose, p.Client),
-			fmt.Sprintf("Reconcile %q for %s: after replacing the original %s invoice figure with the approved one and subtracting the partial payment, what balance remains in cents?", p.Alias, p.Client, p.Vendor),
+			fmt.Sprintf("For %q, the %s work for %s, what is still owed to %s once the approved correction and the payment already sent are reconciled?", p.Alias, p.Purpose, p.Client, p.Vendor),
+			fmt.Sprintf("AP needs the remaining balance for %s's invoice on %q for %s. Use the corrected total, not the draft, and account for our payment.", p.Vendor, p.Alias, p.Client),
+			fmt.Sprintf("What remains on the corrected %s bill tied to %q, the %s project for %s, after what we already paid?", p.Vendor, p.Alias, p.Purpose, p.Client),
+			fmt.Sprintf("Reconcile %q for %s: after replacing the original %s invoice figure with the approved one and subtracting the partial payment, what balance remains?", p.Alias, p.Client, p.Vendor),
 		}[i%4]
 		out = append(out, QuestionPlan{
-			Case:            memoryCase(w.Seed, oracleProjectOutstanding, i, outstanding, fmt.Sprintf("%d", p.OutstandingCents), protocol.AnswerNumber, w.moneyDistractors(i, p.OutstandingCents)),
+			Case:            memoryCase(w.Seed, oracleProjectOutstanding, i, outstanding, fmt.Sprintf("%d", p.OutstandingCents), protocol.AnswerMoney, w.moneyDistractors(i, p.OutstandingCents)),
 			RequiredPairIDs: []string{p.ContextPairID, p.LedgerPairID, p.CorrectionPairID},
 			Facts:           []string{"project alias", "client and purpose", "draft invoice and payment", "approved correction", "vendor identity"},
 			Constraints:     []string{p.Alias, p.Client, p.Vendor, p.Purpose}, Operations: []string{"resolve project alias", "replace draft with correction", "subtract payment"},
@@ -281,36 +281,36 @@ func (w World) storyQuestionCandidates() []QuestionPlan {
 		anchor, constraints := storyAnchor(r, person, trip)
 
 		balanceTask := []string{
-			"Reconcile the starting envelope, its later change, the payment already made, the separate new cost, and the credit. What remains available in cents?",
-			"Follow the resulting work through every financial change and tell me the current uncommitted amount in cents.",
-			"Work forward from what we first approved instead of using one isolated number. After every payment, correction, cost, and credit, how many cents remain?",
-			"I need the present balance, in cents, after reconstructing the original approval and applying all of the subsequent changes in their proper roles.",
+			"Reconcile the starting envelope, its later change, the payment already made, the separate new cost, and the credit. What remains available?",
+			"Follow the resulting work through every financial change and tell me the current uncommitted amount.",
+			"Work forward from what we first approved instead of using one isolated number. After every payment, correction, cost, and credit, what remains?",
+			"I need the present balance after reconstructing the original approval and applying all of the subsequent changes in their proper roles.",
 		}[r.Intn(4)]
 		balancePlan := w.storyPlan(oracleStoryBalanceCurrent, i, composeStoryQuestion(r, anchor, balanceTask), constraints,
-			fmt.Sprintf("%d", arc.CurrentBalanceCents), protocol.AnswerNumber, w.storyBalanceDistractors(i), nil,
+			fmt.Sprintf("%d", arc.CurrentBalanceCents), protocol.AnswerMoney, w.storyBalanceDistractors(i), nil,
 			[]string{"personal relationship and event", "personal-to-work bridge", "decision identity", "original budget", "budget correction", "prior payment", "later cost", "credit"},
 			storyBalanceOperations(arc))
 
 		deltaTask := []string{
-			"Finance later changed the original envelope before the separate cost and credit were applied. By how many cents did that budget correction itself move?",
-			"Ignore the payment, extra cost, and credit for this one. What was the magnitude of the later budget change in cents?",
-			"How many cents did the approval correction add to or remove from the starting budget, considered on its own?",
-			"I am trying to separate the budget revision from every other ledger movement. What was that revision's size in cents?",
+			"Finance later changed the original envelope before the separate cost and credit were applied. By how much did that budget correction itself move?",
+			"Ignore the payment, extra cost, and credit for this one. What was the size of the later budget change?",
+			"How much did the approval correction add to or remove from the starting budget, considered on its own?",
+			"I am trying to separate the budget revision from every other ledger movement. What was that revision's amount?",
 		}[r.Intn(4)]
 		deltaPlan := w.storyPlan(oracleStoryBudgetDelta, i, composeStoryQuestion(r, anchor, deltaTask), constraints,
-			fmt.Sprintf("%d", absInt(arc.BudgetDeltaCents)), protocol.AnswerNumber, w.storyDeltaDistractors(i), nil,
+			fmt.Sprintf("%d", absInt(arc.BudgetDeltaCents)), protocol.AnswerMoney, w.storyDeltaDistractors(i), nil,
 			[]string{"personal relationship and event", "personal-to-work bridge", "decision identity", "original budget", "budget correction", "separate payment", "separate later cost and credit"},
 			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "isolate the budget correction", "convert the correction magnitude to cents"})
 
 		postTask := []string{
-			"After applying the budget correction and the payment already made—but before the later cost and credit—what balance did we have in cents?",
-			"Reconstruct the intermediate financial state: corrected envelope minus the original payment, excluding the subsequent expense and credit. How many cents remained?",
-			"What was available immediately after the revised approval and prior payment were reconciled, before the final follow-up movements? Give cents.",
-			"I need the middle state, not the starting or final one. In cents, what remained after the approval change and payment but before the extra cost and return credit?",
+			"After applying the budget correction and the payment already made—but before the later cost and credit—what balance did we have?",
+			"Reconstruct the intermediate financial state: corrected envelope minus the original payment, excluding the subsequent expense and credit. What remained?",
+			"What was available immediately after the revised approval and prior payment were reconciled, before the final follow-up movements?",
+			"I need the middle state, not the starting or final one. What remained after the approval change and payment but before the extra cost and return credit?",
 		}[r.Intn(4)]
 		postAnswer := arc.BaseBudgetCents + arc.BudgetDeltaCents - arc.PaidCents
 		postPlan := w.storyPlan(oracleStoryPostApproval, i, composeStoryQuestion(r, anchor, postTask), constraints,
-			fmt.Sprintf("%d", postAnswer), protocol.AnswerNumber, w.storyPostApprovalDistractors(i), nil,
+			fmt.Sprintf("%d", postAnswer), protocol.AnswerMoney, w.storyPostApprovalDistractors(i), nil,
 			[]string{"personal relationship and event", "personal-to-work bridge", "decision identity", "original budget", "budget correction", "prior payment", "later cost boundary", "later credit boundary"},
 			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "apply the budget correction", "subtract the prior payment", "exclude later cost and credit", "convert the intermediate result to cents"})
 
@@ -321,10 +321,10 @@ func (w World) storyQuestionCandidates() []QuestionPlan {
 			direction, wrongDirection = wrongDirection, direction
 		}
 		netTask := []string{
-			"Considering only the later budget revision, new cost, and credit, did those follow-up changes increase or decrease availability, and by how many cents?",
-			"Ignore the starting envelope and payment. Net the later correction, expense, and credit: give the direction and magnitude in cents.",
-			"What was the net effect of the final three financial movements alone? Answer increase or decrease plus the number of cents.",
-			"Separate the follow-up from the earlier state. Did the revision, later cost, and credit raise or lower availability overall, and by how many cents?",
+			"Considering only the later budget revision, new cost, and credit, did those follow-up changes increase or decrease availability, and by how much?",
+			"Ignore the starting envelope and payment. Net the later correction, expense, and credit: give the direction and amount.",
+			"What was the net effect of the final three financial movements alone? Give the direction and amount.",
+			"Separate the follow-up from the earlier state. Did the revision, later cost, and credit raise or lower availability overall, and by how much?",
 		}[r.Intn(4)]
 		netItems := []string{direction, fmt.Sprintf("%d", absInt(net))}
 		netPlan := w.storyPlan(oracleStoryLaterNetChange, i, composeStoryQuestion(r, anchor, netTask), constraints,
@@ -332,6 +332,7 @@ func (w World) storyQuestionCandidates() []QuestionPlan {
 			[]string{"personal relationship and event", "personal-to-work bridge", "decision identity", "budget correction", "later cost", "credit"},
 			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "combine the later budget change cost and credit", "classify the net direction", "convert the net magnitude to cents"})
 		netPlan.Case.AnswerItems = netItems
+		netPlan.Case.AnswerItemKinds = []string{protocol.AnswerDirection, protocol.AnswerMoney}
 
 		financialPlans := []QuestionPlan{balancePlan, deltaPlan, postPlan, netPlan}
 		financialOrder := r.Perm(len(financialPlans))
@@ -362,10 +363,10 @@ func (w World) storyQuestionCandidates() []QuestionPlan {
 			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "select the outcome lesson"}))
 
 		summaryTask := []string{
-			"Give me the final work-only reviewer email, the current available balance in cents, and the lesson I wrote down after the correction.",
-			"Summarize the outcome with exactly the three useful pieces: corrected reviewer route, reconciled balance in cents, and final lesson.",
-			"What did this ultimately leave me with? I need the current email, the remaining cents, and the principle I carried forward.",
-			"Pull together the corrected contact, the fully reconciled amount in cents, and the recorded lesson from the end of the experience.",
+			"Give me the final work-only reviewer email, the current available balance, and the lesson I wrote down after the correction.",
+			"Summarize the outcome with exactly the three useful pieces: corrected reviewer route, reconciled balance, and final lesson.",
+			"What did this ultimately leave me with? I need the current email, the remaining amount, and the principle I carried forward.",
+			"Pull together the corrected contact, the fully reconciled amount, and the recorded lesson from the end of the experience.",
 		}[r.Intn(4)]
 		summaryItems := []string{arc.CurrentContact, fmt.Sprintf("%d", arc.CurrentBalanceCents), arc.Lesson}
 		summaryAnswer := strings.Join(summaryItems, "; ")
@@ -374,6 +375,8 @@ func (w World) storyQuestionCandidates() []QuestionPlan {
 			[]string{"personal relationship and event", "personal-to-work bridge", "decision identity", "original budget and payment", "budget correction", "later cost and credit", "contact correction", "explicit lesson"},
 			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "reconcile the current balance", "replace the stale work-only contact", "select the outcome lesson"})
 		summary.Case.AnswerItems = summaryItems
+		summary.Case.AnswerItemKinds = []string{protocol.AnswerValue, protocol.AnswerMoney, protocol.AnswerValue}
+		summary.Case.AnswerItemAcceptAny = [][]string{nil, nil, append([]string(nil), arc.LessonAcceptAny...)}
 		out = append(out, summary)
 	}
 	return out
