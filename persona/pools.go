@@ -227,6 +227,28 @@ var noiseTemplates = []struct{ user, asst string }{
 	{"Small thing, but %s has been a bit of a saga.", "Ha — %s does sound like a saga."},
 }
 
+// v8NoiseSurfaces are complete human thoughts, not noun phrases inserted into
+// a generic benchmark wrapper. Each row corresponds to noiseTopics and offers
+// two deterministic surfaces so ordinary transcript padding still varies.
+var v8NoiseSurfaces = [][2]struct{ user, asst string }{
+	{{"The weather has been all over the place this week.", "It really has — I hope it settles down soon."}, {"I can’t figure out what the weather is doing this week.", "Same here. It’s been impossible to plan around."}},
+	{{"I watched a film last night and I’m still thinking about it.", "Oh, I love when a film lingers like that."}, {"That film I watched last night was better than I expected.", "A surprise good watch is such a treat."}},
+	{{"I’m still figuring out what I want to do this weekend.", "I hope you land on something that feels good."}, {"My weekend plans are a little up in the air right now.", "Honestly, a loose weekend can be nice too."}},
+	{{"I’ve been completely absorbed in a book lately.", "That’s the best feeling — tell me about it anytime."}, {"The book I’m reading has finally gotten really good.", "Okay, now I’m curious where it goes."}},
+	{{"My commute was a mess again this morning.", "Ugh, that’s such a draining start to the day."}, {"Traffic made my commute take forever today.", "I’m sorry — hopefully the rest of the day is kinder."}},
+	{{"I tried the new coffee place downtown today.", "Ooh, was it worth going back?"}, {"That new coffee place downtown is actually pretty cozy.", "That sounds like a lovely little find."}},
+	{{"I heard a podcast episode today that I really liked.", "Send me the topic if you feel like talking about it."}, {"A podcast episode caught me off guard in a good way today.", "I love when that happens."}},
+	{{"The football scores were wild this weekend.", "Sounds like it was a good weekend to be watching."}, {"I’m still surprised by the football results this week.", "There were definitely a few twists."}},
+	{{"Before I forget, my houseplant keeps wilting. I need to water it more often.", "Poor thing — a little reminder might save it."}, {"My houseplant is drooping again; I really need a better watering routine.", "We can absolutely help that little plant recover."}},
+	{{"I tried a new recipe and it did not turn out the way I hoped.", "Ah no — cooking experiments can be so humbling."}, {"Dinner was a bit of a disaster tonight. That recipe needs work.", "At least now you know what you’d change next time."}},
+	{{"Groceries felt especially expensive this week.", "I know — the total can be such a shock lately."}, {"I swear my grocery bill jumped again this week.", "It really adds up painfully fast."}},
+	{{"I watched a documentary about the ocean and couldn’t look away.", "The ocean is endlessly fascinating."}, {"That ocean documentary I mentioned was gorgeous and a little terrifying.", "That sounds exactly like the ocean — beautiful and enormous."}},
+	{{"The neighbours’ renovation was so loud today.", "Oof, I hope they wrap up the noisy part soon."}, {"I could barely hear myself think over the renovation next door.", "That would wear me down too."}},
+	{{"I got completely stuck on a crossword clue this morning.", "Those stubborn clues have a way of following you around."}, {"One crossword clue has been bothering me all day.", "I bet the answer arrives the second you stop thinking about it."}},
+	{{"The queue at the post office took forever today.", "That is such a frustrating way to lose an afternoon."}, {"I spent what felt like half my day waiting at the post office.", "You deserved a medal for making it through that line."}},
+	{{"I started a jigsaw puzzle and it has already taken over the table.", "Honestly, that’s how you know it’s a proper puzzle."}, {"My new jigsaw puzzle is much harder than the box made it look.", "The sneaky difficult ones are the most satisfying in the end."}},
+}
+
 // --- Professional-domain pools (domain register) ---
 //
 // Every persona is assigned ONE professional domain (software / medical / legal)
