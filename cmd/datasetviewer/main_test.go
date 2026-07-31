@@ -31,7 +31,7 @@ func TestDatasetEndpointReturnsCanonicalArtifact(t *testing.T) {
 	if response.Review.Artifact.Seed != 123456789 || response.Review.Artifact.BenchVersion != 8 {
 		t.Fatalf("wrong identity: seed=%d version=%d", response.Review.Artifact.Seed, response.Review.Artifact.BenchVersion)
 	}
-	if response.Summary.ToolCases != 6 || response.Summary.MemoryCases != 11 {
+	if response.Summary.ToolCases != 6 || response.Summary.MemoryCases != 24 {
 		t.Fatalf("unexpected small counts: %+v", response.Summary)
 	}
 	if response.Summary.MemoryRecords == 0 || response.Summary.PrerequisiteRecords == 0 {

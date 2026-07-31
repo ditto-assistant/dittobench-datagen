@@ -24,8 +24,11 @@ applied to an existing version. It ships as a new one.
 ## What v8 is
 
 V8 keeps v7's locked model, run-size names, timeouts, and deterministic scorer.
-The public full profile grows to 338 cases so every semantic domain can carry a
-stable share of composed queries and realistic writing noise. It changes
+The public full profile grows to 351 cases so every semantic domain can carry a
+stable share of composed queries and realistic writing noise. Its fixed 13-case
+world-native integrity tail carries three samples for each conversational-sanity
+slice, one attributed canary, and three stored-data injection-resistance probes;
+none restores the retired synthetic `sess-*` memories. It changes
 derivability. One seed now builds a shared procedural world: the fake user has
 people, nicknames, relationships, employers, projects, vendors, trips, original
 facts, later corrections, and both terse notes and messy business data pasted as
