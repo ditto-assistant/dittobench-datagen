@@ -56,6 +56,10 @@ so a v7 harness can run v8; v8 changes what competence is required, not the
 transport contract. Free-form tasks remain free-form, and no LLM judge is added.
 Every change is gated on `bench_version >= 8`; the v7 known vector stays frozen.
 
+Agent-job cases follow the production approval boundary: the harness dispatches
+`execute_agent_job`, then Ditto App presents approval and owns progress/result
+display. V8 never requires `get_agent_job_status` as part of the agent turn.
+
 The release gate includes a public model-free 1-nearest-neighbor prompt prober:
 
 ```sh
