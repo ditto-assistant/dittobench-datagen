@@ -33,6 +33,7 @@ type Person struct {
 	WorkPairID       string
 	EmailPairID      string
 	CorrectionPairID string
+	ToolNotePairID   string
 }
 
 // Project is a messy business thread: the user uses an informal alias, while
@@ -41,6 +42,7 @@ type Person struct {
 type Project struct {
 	Name             string
 	Alias            string
+	RecordID         string
 	Purpose          string
 	Client           string
 	Vendor           string
@@ -52,12 +54,14 @@ type Project struct {
 	ContextPairID    string
 	LedgerPairID     string
 	CorrectionPairID string
+	ToolNotePairID   string
 }
 
 // Trip is a multi-leg event with a later correction. CurrentDays and
 // PreviousDays are computed from the legs and are never written as totals.
 type Trip struct {
 	Alias            string
+	RecordID         string
 	Purpose          string
 	When             string
 	Countries        [3]string
@@ -72,13 +76,14 @@ type Trip struct {
 
 // World is the shared state used throughout one v8 dataset.
 type World struct {
-	Seed        int64
-	UserCompany string
-	People      []Person
-	Projects    []Project
-	Trips       []Trip
-	Pairs       []protocol.MemoryPair
-	Accent      string
+	Seed           int64
+	UserCompany    string
+	People         []Person
+	Projects       []Project
+	Trips          []Trip
+	Pairs          []protocol.MemoryPair
+	BusinessPairID string
+	Accent         string
 }
 
 var ordinaryFirst = []string{
@@ -108,19 +113,25 @@ func Generate(seed int64, scale int) World {
 	}
 	r := rand.New(rand.NewSource(worldSeed(seed)))
 	w := World{Seed: seed, UserCompany: coinedCompany(r), Accent: colors[r.Intn(len(colors))]}
-	peopleN := []int{5, 9, 14}[scale-1]
-	projectN := []int{2, 4, 7}[scale-1]
-	tripN := []int{1, 3, 5}[scale-1]
+	// V8's scored memory surface is a world, not a pile of independent cards.
+	// The full profile deliberately exceeds the context a harness can solve by
+	// dumping every memory into one prompt; successful agents must retrieve and
+	// join the right records. Small remains a cheap compatibility smoke path.
+	peopleN := []int{6, 14, 28}[scale-1]
+	projectN := []int{3, 8, 18}[scale-1]
+	tripN := []int{2, 5, 12}[scale-1]
+	w.BusinessPairID = protocol.OpaqueCaseID(seed, "world-business-wall", 0)
 
 	seenNames := map[string]bool{}
 	seenNicknames := map[string]bool{}
 	seenCompanies := map[string]bool{w.UserCompany: true}
+	seenEmails := map[string]bool{}
 	for i := 0; i < peopleN; i++ {
 		name := uniquePersonName(r, seenNames, i)
 		nick := uniqueNickname(name, r, seenNicknames)
 		employer := uniqueString(r, seenCompanies, coinedCompany)
-		previous := emailFor(name, employer, i, false)
-		current := emailFor(name, employer, i, i%3 == 0)
+		previous := uniqueEmail(name, employer, 2*i, false, seenEmails)
+		current := uniqueEmail(name, employer, 2*i+1, i%3 == 0, seenEmails)
 		if previous == current {
 			previous = "old." + previous
 		}
@@ -133,6 +144,7 @@ func Generate(seed int64, scale int) World {
 			WorkPairID:       protocol.OpaqueCaseID(seed, "world-person-work", i),
 			EmailPairID:      protocol.OpaqueCaseID(seed, "world-person-email", i),
 			CorrectionPairID: protocol.OpaqueCaseID(seed, "world-person-email-correction", i),
+			ToolNotePairID:   protocol.OpaqueCaseID(seed, "world-person-tool-note", i),
 		}
 		w.People = append(w.People, p)
 	}
@@ -148,13 +160,15 @@ func Generate(seed int64, scale int) World {
 		}
 		paid := corrected * (2 + r.Intn(5)) / 10
 		p := Project{
-			Name: uniqueString(r, seenProjects, coinedProject), Alias: uniqueString(r, seenProjectAliases, projectAlias), Purpose: projectPurpose(r),
+			Name: uniqueString(r, seenProjects, coinedProject), Alias: uniqueString(r, seenProjectAliases, projectAlias),
+			RecordID: "AP-" + strings.ToUpper(protocol.OpaqueCaseID(seed, "world-project-record", i)[:8]), Purpose: projectPurpose(r),
 			Client: uniqueString(r, seenCompanies, coinedCompany), Vendor: uniqueString(r, seenCompanies, coinedCompany), Lead: i % len(w.People),
 			OriginalCents: original, CorrectedCents: corrected, PaidCents: paid,
 			OutstandingCents: corrected - paid,
 			ContextPairID:    protocol.OpaqueCaseID(seed, "world-project-context", i),
 			LedgerPairID:     protocol.OpaqueCaseID(seed, "world-project-ledger", i),
 			CorrectionPairID: protocol.OpaqueCaseID(seed, "world-project-correction", i),
+			ToolNotePairID:   protocol.OpaqueCaseID(seed, "world-project-tool-note", i),
 		}
 		w.Projects = append(w.Projects, p)
 	}
@@ -171,7 +185,9 @@ func Generate(seed int64, scale int) World {
 			legs[changed] = 2
 		}
 		t := Trip{
-			Alias: uniqueString(r, seenTripAliases, tripAlias), Purpose: tripPurpose(r), When: tripWhen(r), Countries: countries,
+			Alias:    uniqueString(r, seenTripAliases, tripAlias),
+			RecordID: "IT-" + strings.ToUpper(protocol.OpaqueCaseID(seed, "world-trip-record", i)[:8]),
+			Purpose:  tripPurpose(r), When: tripWhen(r), Countries: countries,
 			OldLegDays: oldLegs, LegDays: legs, PreviousDays: sum3(oldLegs), CurrentDays: sum3(legs),
 			ContextPairID:    protocol.OpaqueCaseID(seed, "world-trip-context", i),
 			PlanPairID:       protocol.OpaqueCaseID(seed, "world-trip-plan", i),
@@ -193,8 +209,15 @@ func (w World) renderPairs(r *rand.Rand) []protocol.MemoryPair {
 	for i, p := range w.People {
 		add(p.IdentityPairID, fmt.Sprintf("people-%02d-a", i), shortLead(r)+p.Name+" is my "+p.Relation+". Everyone around "+p.Context+" calls "+p.Name+" “"+p.Nickname+".”", "Got it.")
 		add(p.WorkPairID, fmt.Sprintf("people-%02d-b", i), fmt.Sprintf("For context, %s works as the %s at %s in %s and handled the %s.", p.Name, p.Role, p.Employer, p.City, p.Context), "I’ll keep that context connected.")
-		add(p.EmailPairID, fmt.Sprintf("people-%02d-c", i), fmt.Sprintf("The address I first saved for %s was %s.", p.Nickname, p.PreviousEmail), "Saved.")
-		add(p.CorrectionPairID, fmt.Sprintf("people-%02d-d", i), fmt.Sprintf("Small correction after the %s: %s no longer uses that address. Their current email is %s.", p.Context, p.Name, p.Email), "Updated — I’ll use the current address unless you ask about the old one.")
+		// Contact values deliberately do not repeat the person's name, nickname,
+		// relationship, or event context. Resolving one requires the identity ->
+		// work -> address -> correction chain instead of one lexical lookup.
+		add(p.EmailPairID, fmt.Sprintf("people-%02d-c", i), fmt.Sprintf("For the %s at %s, the address I first had on file was %s.", p.Role, p.Employer, p.PreviousEmail), "Saved.")
+		add(p.CorrectionPairID, fmt.Sprintf("people-%02d-d", i), fmt.Sprintf("Quick contact cleanup: %s is stale now. Replace it with %s.", p.PreviousEmail, p.Email), "Updated the contact record.")
+		// Destructive tool cases target this disposable note, never a fact row
+		// required by later memory scoring. Tool execution and memory evaluation
+		// therefore share one universe without mutating its canonical evidence.
+		add(p.ToolNotePairID, fmt.Sprintf("people-%02d-tool", i), fmt.Sprintf("Contact-maintenance receipt for %s after the %s: I finished reconciling the stale address. This receipt can be deleted once reviewed.", p.Nickname, p.Context), "Marked as a disposable maintenance note.")
 	}
 
 	// One deliberately long, messy paste mixes prose, headings, shorthand, and
@@ -203,20 +226,20 @@ func (w World) renderPairs(r *rand.Rand) []protocol.MemoryPair {
 	var wall strings.Builder
 	fmt.Fprintf(&wall, "Dumping my %s ops notes here because they are scattered across email and a spreadsheet. Please reconcile names, project nicknames, vendor bills, and payments rather than treating every line as a separate company.\n\n", w.UserCompany)
 	for i, p := range w.Projects {
-		lead := w.People[p.Lead]
-		fmt.Fprintf(&wall, "PROJECT %d — %s (we usually call it %q)\nClient: %s. Purpose: %s. Internal lead: %s / %q, the %s at %s. Vendor line: %s. Initial invoice: %s. Partial payment already sent: %s.\n\n", i+1, p.Name, p.Alias, p.Client, p.Purpose, lead.Name, lead.Nickname, lead.Role, lead.Employer, p.Vendor, money(p.OriginalCents), money(p.PaidCents))
+		fmt.Fprintf(&wall, "PROJECT %d — %s (we usually call it %q)\nClient: %s. Purpose: %s. Vendor line: %s. Ownership and figures live in their separate project/AP records, not this pasted summary.\n\n", i+1, p.Name, p.Alias, p.Client, p.Purpose, p.Vendor)
 	}
-	add(protocol.OpaqueCaseID(w.Seed, "world-business-wall", 0), "business-import", "Here is the raw operations paste:\n\n"+wall.String(), "Imported. I’ll treat the aliases, people, clients, vendors, and payments as linked context.")
+	add(w.BusinessPairID, "business-import", "Here is the raw operations paste:\n\n"+wall.String(), "Imported. I’ll treat the aliases, people, clients, vendors, and payments as linked context.")
 	for i, p := range w.Projects {
 		lead := w.People[p.Lead]
-		add(p.ContextPairID, fmt.Sprintf("project-%02d-context", i), fmt.Sprintf("When I say “%s” I mean %s for %s, not the similarly named client work. %s (%s) owns it internally.", p.Alias, p.Name, p.Client, lead.Nickname, lead.Name), "Understood.")
-		add(p.LedgerPairID, fmt.Sprintf("project-%02d-ledger", i), fmt.Sprintf("Accounts payable note: %s invoiced %s for %s; we have already paid %s against it.", p.Vendor, w.UserCompany, money(p.OriginalCents), money(p.PaidCents)), "Recorded.")
-		add(p.CorrectionPairID, fmt.Sprintf("project-%02d-correction", i), fmt.Sprintf("Correction for %s / %s: the approved invoice total is %s, replacing the earlier %s figure. The partial payment is unchanged.", p.Alias, p.Vendor, money(p.CorrectedCents), money(p.OriginalCents)), "Corrected the total while retaining the payment.")
+		add(p.ContextPairID, fmt.Sprintf("project-%02d-context", i), fmt.Sprintf("When I say “%s” I mean %s for %s, not the similarly named client work. %q owns it internally; %s is the vendor, and the AP record is %s.", p.Alias, p.Name, p.Client, lead.Nickname, p.Vendor, p.RecordID), "Understood.")
+		add(p.LedgerPairID, fmt.Sprintf("project-%02d-ledger", i), fmt.Sprintf("Accounts payable record %s: the original invoice was %s; we have already paid %s against it.", p.RecordID, money(p.OriginalCents), money(p.PaidCents)), "Recorded.")
+		add(p.CorrectionPairID, fmt.Sprintf("project-%02d-correction", i), fmt.Sprintf("Approval correction for AP record %s: the approved invoice total is %s, replacing the earlier %s figure. The partial payment is unchanged.", p.RecordID, money(p.CorrectedCents), money(p.OriginalCents)), "Corrected the total while retaining the payment.")
+		add(p.ToolNotePairID, fmt.Sprintf("project-%02d-tool", i), fmt.Sprintf("Handoff scratchpad for %q at %s: add scheduling details here rather than editing the project identity or ownership record.", p.Alias, p.Client), "Opened a separate mutable handoff note.")
 	}
 
 	for i, t := range w.Trips {
-		add(t.ContextPairID, fmt.Sprintf("trip-%02d-context", i), fmt.Sprintf("Our %s was the %s trip in %s — the one through %s, %s, and %s.", t.Alias, t.Purpose, t.When, t.Countries[0], t.Countries[1], t.Countries[2]), "I know which trip you mean.")
-		add(t.PlanPairID, fmt.Sprintf("trip-%02d-plan", i), fmt.Sprintf("Original itinerary: %d days in %s, %d in %s, then %d in %s.", t.OldLegDays[0], t.Countries[0], t.OldLegDays[1], t.Countries[1], t.OldLegDays[2], t.Countries[2]), "Saved the original legs.")
+		add(t.ContextPairID, fmt.Sprintf("trip-%02d-context", i), fmt.Sprintf("Our %s was the %s trip in %s — the one through %s, %s, and %s. Its itinerary record is %s.", t.Alias, t.Purpose, t.When, t.Countries[0], t.Countries[1], t.Countries[2], t.RecordID), "I know which trip you mean.")
+		add(t.PlanPairID, fmt.Sprintf("trip-%02d-plan", i), fmt.Sprintf("Original itinerary %s: %d days in %s, %d in %s, then %d in %s.", t.RecordID, t.OldLegDays[0], t.Countries[0], t.OldLegDays[1], t.Countries[1], t.OldLegDays[2], t.Countries[2]), "Saved the original legs.")
 		changed := 0
 		for j := range t.LegDays {
 			if t.LegDays[j] != t.OldLegDays[j] {
@@ -224,43 +247,45 @@ func (w World) renderPairs(r *rand.Rand) []protocol.MemoryPair {
 				break
 			}
 		}
-		add(t.CorrectionPairID, fmt.Sprintf("trip-%02d-correction", i), fmt.Sprintf("We changed the %s leg of %s from %d days to %d. The other country stays are unchanged.", t.Countries[changed], t.Alias, t.OldLegDays[changed], t.LegDays[changed]), "Updated that leg only.")
+		delta := t.LegDays[changed] - t.OldLegDays[changed]
+		direction := "extended"
+		if delta < 0 {
+			direction = "shortened"
+			delta = -delta
+		}
+		add(t.CorrectionPairID, fmt.Sprintf("trip-%02d-correction", i), fmt.Sprintf("Itinerary correction %s: the %s leg was %s by %d days. The other country stays are unchanged.", t.RecordID, t.Countries[changed], direction, delta), "Updated that leg only.")
 	}
 	add(protocol.OpaqueCaseID(w.Seed, "world-preference", 0), "preferences", fmt.Sprintf("For Ditto itself I like a %s accent, but client brand colors should never override my app preference.", w.Accent), "I’ll keep your personal app preference separate from client branding.")
-	return pairs
+	return spreadPairs(pairs)
 }
 
-// MemoryCases returns deterministic outcome questions derived from the world.
-// Each question joins at least four facts and carries three plausible near-miss
-// answers. The caller chooses how many replace simpler cases in the fixed budget.
+// MemoryCases is the protocol-only view retained for generator callers. The
+// construction and validation contract lives in QuestionPlans: generate the
+// world, seed its facts, derive a latent plan, then validate the rendered
+// question before exposing the case.
 func (w World) MemoryCases(count int) []protocol.MemoryCase {
-	if count <= 0 {
-		return nil
+	plans, err := w.QuestionPlans(count)
+	if err != nil {
+		panic(err)
 	}
-	out := make([]protocol.MemoryCase, 0, count)
-	for i := 0; i < count; i++ {
-		id := protocol.OpaqueCaseID(w.Seed, "world-memory", i)
-		switch i % 6 {
-		case 0:
-			p := w.People[i%len(w.People)]
-			out = append(out, protocol.MemoryCase{BenchVersion: protocol.BenchVersionV8, ID: id, QuestionID: id, QuestionType: "world-contact-current", Question: fmt.Sprintf("What is the current email for %s — my %s in %s who handled the %s?", p.Nickname, p.Relation, p.City, p.Context), ExpectedAnswer: p.Email, AnswerKind: protocol.AnswerValue, DistractorAnswers: w.emailDistractors(i, p.PreviousEmail)})
-		case 1:
-			p := w.People[(i+2)%len(w.People)]
-			out = append(out, protocol.MemoryCase{BenchVersion: protocol.BenchVersionV8, ID: id, QuestionID: id, QuestionType: "world-contact-previous", Question: fmt.Sprintf("Before the correction after the %s, which email did I have for %s, the %s at %s?", p.Context, p.Nickname, p.Role, p.Employer), ExpectedAnswer: p.PreviousEmail, AnswerKind: protocol.AnswerValue, DistractorAnswers: w.emailDistractors(i+2, p.Email)})
-		case 2:
-			p := w.Projects[i%len(w.Projects)]
-			out = append(out, protocol.MemoryCase{BenchVersion: protocol.BenchVersionV8, ID: id, QuestionID: id, QuestionType: "world-business-reconciliation", Question: fmt.Sprintf("After the corrected invoice and the payment already sent, how many cents do we still owe %s for %q, the %s work for %s?", p.Vendor, p.Alias, p.Purpose, p.Client), ExpectedAnswer: fmt.Sprintf("%d", p.OutstandingCents), AnswerKind: protocol.AnswerNumber, DistractorAnswers: w.moneyDistractors(i, p.OutstandingCents)})
-		case 3:
-			p := w.Projects[(i+1)%len(w.Projects)]
-			lead := w.People[p.Lead]
-			out = append(out, protocol.MemoryCase{BenchVersion: protocol.BenchVersionV8, ID: id, QuestionID: id, QuestionType: "world-business-contact", Question: fmt.Sprintf("Which current email should I use for the person who owns %q internally — the %s project for %s, not the client contact?", p.Alias, p.Purpose, p.Client), ExpectedAnswer: lead.Email, AnswerKind: protocol.AnswerValue, DistractorAnswers: w.emailDistractors(p.Lead, lead.PreviousEmail)})
-		case 4:
-			t := w.Trips[i%len(w.Trips)]
-			out = append(out, protocol.MemoryCase{BenchVersion: protocol.BenchVersionV8, ID: id, QuestionID: id, QuestionType: "world-trip-current", Question: fmt.Sprintf("After the itinerary correction, how many days is %s — our %s trip in %s across all three countries?", t.Alias, t.Purpose, t.When), ExpectedAnswer: fmt.Sprintf("%d days", t.CurrentDays), AnswerKind: protocol.AnswerDuration, DistractorAnswers: w.tripDistractors(i, t.CurrentDays)})
-		default:
-			t := w.Trips[(i+1)%len(w.Trips)]
-			out = append(out, protocol.MemoryCase{BenchVersion: protocol.BenchVersionV8, ID: id, QuestionID: id, QuestionType: "world-trip-previous-state", Question: fmt.Sprintf("What was the total planned length of %s before we changed the %s itinerary?", t.Alias, t.Purpose), ExpectedAnswer: fmt.Sprintf("%d days", t.PreviousDays), AnswerKind: protocol.AnswerDuration, DistractorAnswers: w.tripDistractors(i+1, t.PreviousDays)})
-		}
+	out := make([]protocol.MemoryCase, 0, len(plans))
+	for _, plan := range plans {
+		out = append(out, plan.Case)
+	}
+	return out
+}
+
+// DumpGuardValues returns real, seeded world values used by integrity cases to
+// detect broad memory dumping. V8 replaces the discarded legacy-persona guard
+// values with these so the guard remains causally grounded without retaining an
+// orphaned v7 haystack solely for negative scoring.
+func (w World) DumpGuardValues() []string {
+	out := make([]string, 0, 12)
+	for i := 0; i < len(w.People) && len(out) < 8; i++ {
+		out = append(out, w.People[i].Email)
+	}
+	for i := 0; i < len(w.Projects) && len(out) < 12; i++ {
+		out = append(out, w.Projects[i].Alias)
 	}
 	return out
 }
@@ -308,7 +333,7 @@ func (w World) tripDistractors(index, correct int) []string {
 	for j := 0; len(out) < 3 && j < len(w.Trips)*6; j++ {
 		t := w.Trips[(index+j)%len(w.Trips)]
 		for _, v := range []int{t.PreviousDays, t.CurrentDays, t.LegDays[j%3]} {
-			s := fmt.Sprintf("%d days", v)
+			s := fmt.Sprintf("%d", v)
 			if v != correct && !contains(out, s) {
 				out = append(out, s)
 				if len(out) == 3 {
@@ -322,7 +347,7 @@ func (w World) tripDistractors(index, correct int) []string {
 		if delta%2 == 0 && correct > delta {
 			candidate = correct - delta
 		}
-		s := fmt.Sprintf("%d days", candidate)
+		s := fmt.Sprintf("%d", candidate)
 		if candidate > 0 && !contains(out, s) {
 			out = append(out, s)
 		}
@@ -384,13 +409,31 @@ func uniqueNickname(name string, r *rand.Rand, seen map[string]bool) string {
 }
 
 func emailFor(name, employer string, index int, business bool) string {
-	parts := strings.Fields(strings.ToLower(name))
-	local := slug(parts[0]) + "." + slug(parts[len(parts)-1])
-	domain := []string{"gmail.com", "outlook.com", "proton.me"}[index%3]
+	// The address itself must not encode the person's name or employer: doing so
+	// turns an intended identity join into substring matching. Opaque but
+	// plausible mailbox handles mirror real users whose contact address bears no
+	// resemblance to the name saved in an address book.
+	h := fnv.New64a()
+	_, _ = fmt.Fprintf(h, "%s|%s|%d|%t", name, employer, index, business)
+	sum := h.Sum64()
+	left := []string{"quiet", "silver", "maple", "moss", "copper", "lunar", "cedar", "paper", "amber", "violet", "river", "north"}
+	right := []string{"orchard", "lantern", "window", "harbor", "sparrow", "studio", "meadow", "signal", "bridge", "thimble", "garden", "atlas"}
+	local := fmt.Sprintf("%s.%s%d", left[sum%uint64(len(left))], right[(sum/17)%uint64(len(right))], 10+(sum/257)%90)
+	domain := []string{"gmail.com", "outlook.com", "proton.me", "fastmail.com", "hey.com"}[(sum/4099)%5]
 	if business {
-		domain = slug(employer) + ".co"
+		domain = []string{"post.team", "contact.work", "mail.studio"}[(sum/8191)%3]
 	}
 	return local + "@" + domain
+}
+
+func uniqueEmail(name, employer string, index int, business bool, seen map[string]bool) string {
+	for attempt := 0; ; attempt++ {
+		candidate := emailFor(name, employer, index+attempt*1009, business)
+		if !seen[candidate] {
+			seen[candidate] = true
+			return candidate
+		}
+	}
 }
 
 func coinedCompany(r *rand.Rand) string {
@@ -411,13 +454,17 @@ func coinedProject(r *rand.Rand) string {
 	return []string{"Project", "Program", "Initiative", "Campaign"}[r.Intn(4)] + " " + familyStarts[r.Intn(len(familyStarts))] + coinedEnds[r.Intn(len(coinedEnds))]
 }
 func projectAlias(r *rand.Rand) string {
-	return strings.ToLower([]string{"Northpoint", "Lantern", "Bluebird", "Foundry", "Harborlight", "Orchard", "Kestrel", "Juniper"}[r.Intn(8)])
+	first := []string{"Northpoint", "Lantern", "Bluebird", "Foundry", "Harborlight", "Orchard", "Kestrel", "Juniper"}[r.Intn(8)]
+	second := []string{"ledger", "room", "line", "file", "track", "brief", "cycle", "desk"}[r.Intn(8)]
+	return strings.ToLower(first + " " + second)
 }
 func projectPurpose(r *rand.Rand) string {
 	return []string{"retail launch", "annual report", "museum installation", "client migration", "brand research", "regional workshop", "fundraising campaign", "supplier transition"}[r.Intn(8)]
 }
 func tripAlias(r *rand.Rand) string {
-	return strings.ToLower([]string{"museum loop", "food trip", "field week", "festival run", "archive visit", "research circuit", "family trip", "studio tour"}[r.Intn(8)])
+	first := []string{"museum", "food", "field", "festival", "archive", "research", "family", "studio"}[r.Intn(8)]
+	second := []string{"loop", "trip", "week", "run", "visit", "circuit", "route", "tour"}[r.Intn(8)]
+	return strings.ToLower(first + " " + second)
 }
 func tripPurpose(r *rand.Rand) string {
 	return []string{"food research", "museum research", "wildlife fieldwork", "family reunion", "music festival", "supplier meetings", "architecture tour", "archive project"}[r.Intn(8)]
@@ -454,6 +501,32 @@ func slug(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// spreadPairs keeps semantic time in each pair's timestamp while separating
+// records that were generated together in the seed payload. A benchmark-aware
+// harness should not receive a person's identity, job, old address, and
+// correction as four neighboring rows it can solve with a fixed local window.
+func spreadPairs(in []protocol.MemoryPair) []protocol.MemoryPair {
+	if len(in) < 3 {
+		return in
+	}
+	stride := len(in)/2 + 1
+	for gcd(stride, len(in)) != 1 {
+		stride++
+	}
+	out := make([]protocol.MemoryPair, len(in))
+	for i, pair := range in {
+		out[(i*stride)%len(in)] = pair
+	}
+	return out
+}
+
+func gcd(a, b int) int {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return a
 }
 
 // SortedPairIDs is a test/debug helper proving the world never emits duplicate

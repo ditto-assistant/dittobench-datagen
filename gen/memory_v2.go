@@ -277,18 +277,17 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	// V8's shared world adds realistic personal/business joins, corrections,
 	// aliases, variable-length messages, and computed outcomes. Generate it from
 	// an independent seed stream so adding it cannot perturb the frozen v7 RNG.
-	var worldCases []protocol.MemoryCase
-	var worldReserve []protocol.MemoryCase
-	var worldPairs []protocol.MemoryPair
+	var worldPlans []universe.QuestionPlan
+	var world universe.World
 	if benchVersion >= protocol.BenchVersionV8 {
 		scale, count := v8WorldProfile(n)
-		world := universe.Generate(seed, scale)
-		worldCases = world.MemoryCases(count)
-		allWorldCases := world.MemoryCases(count + 64)
-		worldReserve = allWorldCases[len(worldCases):]
-		worldPairs = world.Pairs
+		world = universe.Generate(seed, scale)
+		worldPlans, err = world.QuestionPlans(count)
+		if err != nil {
+			return MemorySuite{}, fmt.Errorf("v8 world questions: %w", err)
+		}
 	}
-	suite.WorldCases = len(worldCases)
+	suite.WorldCases = len(worldPlans)
 	// v7 retains only a small representative floor of the saturated recall
 	// categories (empty for pre-v7, where recallFloorPool is empty and every
 	// recall case is already in mainPool). Selected before mainQuota so its slots
@@ -296,7 +295,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	recallFloor := stratifyByType(r, recallFloorPool, v7RecallFloorFor(benchVersion), benchVersion)
 	// Reserve room for the always-included canary, twin, lifecycle, and
 	// conversational cases so the total case count stays at n.
-	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(recallFloor) - len(worldCases) - len(lc.Cases) - len(conv.Cases) - len(mh.Cases) - len(td.Cases) - len(si.Cases) - len(mq.Cases) - len(nv.Cases) - len(cons.Cases) -
+	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(recallFloor) - len(worldPlans) - len(lc.Cases) - len(conv.Cases) - len(mh.Cases) - len(td.Cases) - len(si.Cases) - len(mq.Cases) - len(nv.Cases) - len(cons.Cases) -
 		len(dc.Cases) - len(dj.Cases) - len(nm.Cases) - len(tcalc.Cases) - len(ci.Cases) - len(sub.Cases)
 	if mainQuota < 0 {
 		mainQuota = 0
@@ -362,6 +361,10 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		for i := 0; i < nAbs; i++ {
 			selected = append(selected, absPool[perm[i]])
 		}
+	}
+	selectedEvidence := make(map[string][]string, len(selected))
+	for _, q := range selected {
+		selectedEvidence[q.ID] = append([]string(nil), q.Evidence...)
 	}
 
 	// Tier-B selection: a rawPairsFrac slice of the non-abstention
@@ -486,8 +489,12 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	staged = append(staged, tcalc.Cases...)
 	staged = append(staged, ci.Cases...)
 	staged = append(staged, sub.Cases...)
-	for _, c := range worldCases {
-		staged = append(staged, StagedCase{Case: c, RunAfterWave: 0})
+	for _, plan := range worldPlans {
+		// V8's shared world is seeded exactly once through the tool-prerequisite
+		// boundary before any scored case. The same harness store survives into
+		// the memory phase, so re-seeding these pairs in waves would duplicate
+		// ingestion without adding evidence or temporal state.
+		staged = append(staged, StagedCase{Case: plan.Case, RunAfterWave: 0})
 	}
 	if benchVersion >= protocol.BenchVersionV8 {
 		for i := range staged {
@@ -496,23 +503,39 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		budget := v8PrimaryCaseBudget(n)
 		if len(staged) < budget {
 			need := budget - len(staged)
-			if need > len(worldReserve) {
-				return MemorySuite{}, fmt.Errorf("v8 memory budget is short by %d case(s)", need-len(worldReserve))
+			reserve, reserveErr := world.QuestionPlans(len(worldPlans) + need)
+			if reserveErr != nil {
+				return MemorySuite{}, fmt.Errorf("v8 memory budget is short by %d case(s): %w", need, reserveErr)
 			}
-			for _, c := range worldReserve[:need] {
-				staged = append(staged, StagedCase{Case: c, RunAfterWave: 0})
+			for _, plan := range reserve[len(worldPlans):] {
+				staged = append(staged, StagedCase{Case: plan.Case, RunAfterWave: 0})
 			}
+			suite.WorldCases += need
 		}
 		staged, err = trimV8ToExistingBudget(staged, budget)
 		if err != nil {
 			return MemorySuite{}, err
 		}
+		worldDumpGuard := world.DumpGuardValues()
+		for i := range staged {
+			if len(staged[i].Case.DumpGuard) > 0 {
+				staged[i].Case.DumpGuard = append([]string(nil), worldDumpGuard...)
+			}
+		}
 	}
 	r.Shuffle(len(staged), func(i, j int) { staged[i], staged[j] = staged[j], staged[i] })
 	suite.Cases = staged
 
+	var retainedPersonaPairs map[string]bool
+	if benchVersion >= protocol.BenchVersionV8 {
+		pairs, retainedPersonaPairs = pruneV8PersonaPairs(pairs, evidence, selectedEvidence, staged)
+	}
+
 	// Subjects: synthesize for every self fact EXCEPT the raw-pairs slice.
 	subjects, links := synthesizeSubjects(plan, evidence, rawFacts)
+	if benchVersion >= protocol.BenchVersionV8 {
+		subjects, links = pruneV8Subjects(subjects, links, retainedPersonaPairs)
+	}
 	suite.Waves = partitionWaves(plan, pairs, subjects, links, evidence, fw, nWaves)
 	// Lifecycle seeded facts (update/delete chains) join wave 0 as raw pairs:
 	// no prepared subject, so the harness indexes them itself (Tier-B style).
@@ -565,16 +588,103 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	if len(dc.Pairs) > 0 {
 		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, dc.Pairs...)
 	}
-	if len(worldPairs) > 0 {
-		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, worldPairs...)
+	if benchVersion >= protocol.BenchVersionV8 {
+		if err := dedupeV8WavePairs(suite.Waves); err != nil {
+			return MemorySuite{}, err
+		}
 	}
 	return suite, nil
 }
 
-// v8PrimaryCaseBudget preserves the effective v7 primary-graph runtime. Those
+// dedupeV8WavePairs guarantees one ingestion per pair identity. Historical
+// suites may reuse an identical pair across coverage families, so this is
+// version-gated: v7 bytes remain frozen while v8 keeps the first chronological
+// occurrence and rejects any same-ID/different-content ambiguity.
+func dedupeV8WavePairs(waves []protocol.SeedRequest) error {
+	seen := map[string]protocol.MemoryPair{}
+	for i := range waves {
+		kept := waves[i].Pairs[:0]
+		for _, pair := range waves[i].Pairs {
+			if previous, ok := seen[pair.PairID]; ok {
+				if previous != pair {
+					return fmt.Errorf("v8 pair id %s has conflicting payloads", pair.PairID)
+				}
+				continue
+			}
+			seen[pair.PairID] = pair
+			kept = append(kept, pair)
+		}
+		waves[i].Pairs = kept
+	}
+	return nil
+}
+
+// pruneV8PersonaPairs removes the legacy persona rows whose scored questions
+// were replaced by the shared universe. It keeps every direct evidence pair for
+// a retained persona case plus every pair containing a retained negative guard
+// or accepted answer. The universe itself supplies v8's large realistic
+// haystack, so carrying hundreds of orphaned v7 rows would add ingestion cost
+// without making any retained case more answerable or more discriminating.
+func pruneV8PersonaPairs(
+	pairs []protocol.MemoryPair,
+	evidence map[string]string,
+	selectedEvidence map[string][]string,
+	staged []StagedCase,
+) ([]protocol.MemoryPair, map[string]bool) {
+	keep := map[string]bool{}
+	var values []string
+	for _, sc := range staged {
+		for _, factID := range selectedEvidence[sc.Case.QuestionID] {
+			if pairID := evidence[factID]; pairID != "" {
+				keep[pairID] = true
+			}
+		}
+		values = append(values, sc.Case.ExpectedAnswer, sc.Case.ForbiddenAnswer)
+		values = append(values, sc.Case.AcceptAny...)
+		values = append(values, sc.Case.AnswerItems...)
+		values = append(values, sc.Case.DistractorAnswers...)
+		values = append(values, sc.Case.DumpGuard...)
+	}
+	for _, pair := range pairs {
+		body := pair.Prompt + " " + pair.Response
+		for _, value := range values {
+			if value != "" && grade.Hit(value, body) {
+				keep[pair.PairID] = true
+				break
+			}
+		}
+	}
+	out := make([]protocol.MemoryPair, 0, len(keep))
+	for _, pair := range pairs {
+		if keep[pair.PairID] {
+			out = append(out, pair)
+		}
+	}
+	return out, keep
+}
+
+func pruneV8Subjects(subjects []protocol.Subject, links []protocol.SubjectLink, keepPairs map[string]bool) ([]protocol.Subject, []protocol.SubjectLink) {
+	keepSubjects := map[string]bool{}
+	keptLinks := make([]protocol.SubjectLink, 0, len(links))
+	for _, link := range links {
+		if keepPairs[link.PairID] {
+			keptLinks = append(keptLinks, link)
+			keepSubjects[link.SubjectID] = true
+		}
+	}
+	keptSubjects := make([]protocol.Subject, 0, len(keepSubjects))
+	for _, subject := range subjects {
+		if keepSubjects[subject.ID] {
+			keptSubjects = append(keptSubjects, subject)
+		}
+	}
+	return keptSubjects, keptLinks
+}
+
+// v8PrimaryCaseBudget preserves the effective v7 scored-case envelope. Those
 // totals are slightly above Profile.Mem because integrity families are always
-// included; v8 replaces easy coverage inside that real envelope instead of
-// pretending the profile knob is the observed case count.
+// included; v8 replaces easy coverage inside that real case budget. Separate
+// tests bound the larger universe's actual one-time ingestion payload.
 func v8PrimaryCaseBudget(n int) int {
 	switch {
 	case n == 185:
@@ -595,36 +705,56 @@ func v8PrimaryCaseBudget(n int) int {
 	}
 }
 
-// trimV8ToExistingBudget removes only saturated, single-fact persona questions
-// when fixed integrity and composed suites overfill v7's effective envelope.
-// It never breaks a twin family or removes a shared-world/integrity case.
+// trimV8ToExistingBudget makes the shared universe the dominant v8 memory
+// surface while retaining a bounded integrity tail. Cases sharing TwinGroup are
+// atomic: the selector keeps or drops the whole metamorphic family. The final
+// order is unchanged, so the existing seed-keyed shuffle remains authoritative.
 func trimV8ToExistingBudget(cases []StagedCase, budget int) ([]StagedCase, error) {
 	if budget <= 0 || len(cases) <= budget {
 		return cases, nil
 	}
-	drop := len(cases) - budget
-	trimmable := map[string]bool{
-		persona.QTAssistantRecall: true,
-		persona.QTPreference:      true,
-		persona.QTSingleSession:   true,
-		persona.QTComputed:        true,
+	type atom struct {
+		indices  []int
+		priority int
+		first    int
 	}
-	keep := make([]bool, len(cases))
-	for i := range keep {
-		keep[i] = true
-	}
-	for i := len(cases) - 1; i >= 0 && drop > 0; i-- {
-		c := cases[i].Case
-		if c.TwinGroup == "" && trimmable[c.QuestionType] {
-			keep[i] = false
-			drop--
+	byKey := map[string]*atom{}
+	var atoms []*atom
+	for i, staged := range cases {
+		key := staged.Case.TwinGroup
+		if key == "" {
+			key = fmt.Sprintf("case:%d", i)
+		}
+		a := byKey[key]
+		if a == nil {
+			a = &atom{priority: v8RetainPriority(staged.Case.QuestionType), first: i}
+			byKey[key] = a
+			atoms = append(atoms, a)
+		}
+		a.indices = append(a.indices, i)
+		if p := v8RetainPriority(staged.Case.QuestionType); p < a.priority {
+			a.priority = p
 		}
 	}
-	if drop != 0 {
-		// All current profiles have enough saturated cases. Failing closed here
-		// makes a future suite expansion visible instead of silently deleting an
-		// integrity or composed case.
-		return nil, fmt.Errorf("v8 memory budget overfilled by %d non-trimmable case(s)", drop)
+	sort.SliceStable(atoms, func(i, j int) bool {
+		if atoms[i].priority != atoms[j].priority {
+			return atoms[i].priority < atoms[j].priority
+		}
+		return atoms[i].first < atoms[j].first
+	})
+	keep := make([]bool, len(cases))
+	remaining := budget
+	for _, a := range atoms {
+		if len(a.indices) > remaining {
+			continue
+		}
+		for _, index := range a.indices {
+			keep[index] = true
+		}
+		remaining -= len(a.indices)
+	}
+	if remaining != 0 {
+		return nil, fmt.Errorf("v8 atomic case families leave %d unfilled slot(s)", remaining)
 	}
 	out := make([]StagedCase, 0, budget)
 	for i, c := range cases {
@@ -635,14 +765,45 @@ func trimV8ToExistingBudget(cases []StagedCase, budget int) ([]StagedCase, error
 	return out, nil
 }
 
+// Lower numbers survive first. Shared-world cases are always retained; the
+// rest preserve integrity, mutation, adversarial-instruction, and a small
+// composed-reasoning floor instead of carrying forward the saturated v7 mix.
+func v8RetainPriority(questionType string) int {
+	if strings.HasPrefix(questionType, "world-") {
+		return 0
+	}
+	switch {
+	case questionType == persona.QTCanary,
+		strings.HasPrefix(questionType, "conversational-"),
+		strings.HasPrefix(questionType, "lifecycle-deep-"):
+		return 1
+	case strings.Contains(questionType, "injection"),
+		strings.Contains(questionType, "stored-instruction"),
+		questionType == QTNonVerbatim:
+		return 2
+	case questionType == QTDeepJoin,
+		questionType == QTMultiHop,
+		questionType == QTTempCalc,
+		questionType == QTTemporalDepth,
+		strings.HasPrefix(questionType, "subscription-"):
+		return 3
+	case questionType == QTNearMiss,
+		questionType == QTMultiQuery,
+		questionType == QTConsolidation:
+		return 4
+	default:
+		return 5
+	}
+}
+
 func v8WorldProfile(n int) (scale, cases int) {
 	switch {
 	case n >= 100:
-		return 3, 24
+		// 150/198 scored memory cases come from one answerability-validated
+		// universe. The remaining 48 preserve bounded integrity coverage.
+		return 3, 150
 	case n >= 40:
-		// One representative shared-world question plus the world-backed tool
-		// slice preserves medium's existing 110-case runtime exactly.
-		return 2, 1
+		return 2, 45
 	default:
 		// Small is the compatibility smoke path. Its six memory slots are
 		// already oversubscribed by integrity cases; the tool slice still uses

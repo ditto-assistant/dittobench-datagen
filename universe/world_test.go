@@ -2,8 +2,12 @@ package universe
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/ditto-assistant/dittobench-datagen/grade"
+	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
 func TestWorldIsDeterministicAndSeedVarying(t *testing.T) {
@@ -23,7 +27,7 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 		w := Generate(seed, 3)
 		assertUnique(t, seed, "pair id", w.SortedPairIDs())
 
-		var names, nicknames, emails, projectNames, projectAliases, tripAliases []string
+		var names, nicknames, emails, projectNames, projectAliases, projectRecords, tripAliases, tripRecords []string
 		for _, p := range w.People {
 			names = append(names, p.Name)
 			nicknames = append(nicknames, p.Nickname)
@@ -35,6 +39,7 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 		for _, p := range w.Projects {
 			projectNames = append(projectNames, p.Name)
 			projectAliases = append(projectAliases, p.Alias)
+			projectRecords = append(projectRecords, p.RecordID)
 			if p.OriginalCents == p.CorrectedCents {
 				t.Fatalf("seed %d project %q has a no-op invoice correction", seed, p.Alias)
 			}
@@ -44,6 +49,7 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 		}
 		for _, trip := range w.Trips {
 			tripAliases = append(tripAliases, trip.Alias)
+			tripRecords = append(tripRecords, trip.RecordID)
 			if trip.PreviousDays != sum3(trip.OldLegDays) || trip.CurrentDays != sum3(trip.LegDays) {
 				t.Fatalf("seed %d trip %q has inconsistent leg totals", seed, trip.Alias)
 			}
@@ -56,7 +62,9 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 		assertUnique(t, seed, "email", emails)
 		assertUnique(t, seed, "project name", projectNames)
 		assertUnique(t, seed, "project alias", projectAliases)
+		assertUnique(t, seed, "project record", projectRecords)
 		assertUnique(t, seed, "trip alias", tripAliases)
+		assertUnique(t, seed, "trip record", tripRecords)
 	}
 }
 
@@ -93,8 +101,269 @@ func TestWorldQuestionsHaveThreeNearMissesAndDoNotLeakAnswers(t *testing.T) {
 					t.Fatalf("case %s includes its answer as a distractor", c.ID)
 				}
 			}
-			if strings.Contains(strings.ToLower(c.Question), strings.ToLower(c.ExpectedAnswer)) {
+			if grade.Hit(c.ExpectedAnswer, c.Question) {
 				t.Fatalf("case %s leaks its answer in the question", c.ID)
+			}
+		}
+	}
+}
+
+func TestWorldOpaqueRecordsForceMultiRowJoins(t *testing.T) {
+	w := Generate(123456789, 3)
+	pairBody := map[string]string{}
+	for _, pair := range w.Pairs {
+		pairBody[pair.PairID] = pair.Prompt + " " + pair.Response
+	}
+	for _, project := range w.Projects {
+		if !strings.Contains(pairBody[project.ContextPairID], project.RecordID) {
+			t.Fatalf("project %s context does not seed record join", project.Alias)
+		}
+		for _, pairID := range []string{project.LedgerPairID, project.CorrectionPairID} {
+			body := pairBody[pairID]
+			if strings.Contains(body, project.Alias) || strings.Contains(body, project.Client) || strings.Contains(body, project.Vendor) {
+				t.Fatalf("project record %s leaks a query-facing identifier", pairID)
+			}
+		}
+	}
+	for _, trip := range w.Trips {
+		if !strings.Contains(pairBody[trip.ContextPairID], trip.RecordID) {
+			t.Fatalf("trip %s context does not seed record join", trip.Alias)
+		}
+		for _, pairID := range []string{trip.PlanPairID, trip.CorrectionPairID} {
+			body := pairBody[pairID]
+			if strings.Contains(body, trip.Alias) || strings.Contains(body, trip.Purpose) || strings.Contains(body, trip.When) {
+				t.Fatalf("trip record %s leaks a query-facing identifier", pairID)
+			}
+		}
+	}
+}
+
+func TestWorldTripQuestionsUseExactNumberGrading(t *testing.T) {
+	w := Generate(123456789, 3)
+	plans, err := w.QuestionPlans(150)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, plan := range plans {
+		if !strings.HasPrefix(plan.Case.QuestionType, "world-trip-") {
+			continue
+		}
+		if plan.Case.AnswerKind != protocol.AnswerNumber {
+			t.Fatalf("trip case %s uses tolerant kind %q", plan.Case.ID, plan.Case.AnswerKind)
+		}
+		if strings.Contains(plan.Case.ExpectedAnswer, " ") {
+			t.Fatalf("trip case %s expected answer is not one exact number token: %q", plan.Case.ID, plan.Case.ExpectedAnswer)
+		}
+		answer, err := strconv.Atoi(plan.Case.ExpectedAnswer)
+		if err != nil {
+			t.Fatalf("trip case %s expected answer is not numeric: %q", plan.Case.ID, plan.Case.ExpectedAnswer)
+		}
+		wrong := protocol.RunResponse{Answer: strconv.Itoa(answer + 1)}
+		if verdict := grade.Memory(plan.Case, wrong); verdict.Score != 0 {
+			t.Fatalf("trip case %s accepted adjacent wrong number %q: %+v", plan.Case.ID, wrong.Answer, verdict)
+		}
+	}
+}
+
+func TestWorldTripFixedGuessCeiling(t *testing.T) {
+	counts := map[string]int{}
+	total := 0
+	for seed := int64(1); seed <= 200; seed++ {
+		plans, err := Generate(seed, 3).QuestionPlans(150)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, plan := range plans {
+			if strings.HasPrefix(plan.Case.QuestionType, "world-trip-") {
+				counts[plan.Case.ExpectedAnswer]++
+				total++
+			}
+		}
+	}
+	best := 0
+	for _, count := range counts {
+		if count > best {
+			best = count
+		}
+	}
+	if best*100 >= total*15 {
+		t.Fatalf("one fixed number passes %.2f%% of trip cases, want less than 15%%", 100*float64(best)/float64(total))
+	}
+}
+
+func TestWorldEvidenceDeclarationsMatchOracleDependencies(t *testing.T) {
+	w := Generate(123456789, 3)
+	plans, err := w.QuestionPlans(150)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, plan := range plans {
+		available := map[string]bool{}
+		for _, pairID := range plan.RequiredPairIDs {
+			available[pairID] = true
+		}
+		for _, omitted := range plan.RequiredPairIDs {
+			delete(available, omitted)
+			if got, ok := w.resolveWithEvidence(plan, available); ok && got == plan.Case.ExpectedAnswer {
+				t.Fatalf("case %s still resolves after omitting %s", plan.Case.ID, omitted)
+			}
+			available[omitted] = true
+		}
+
+		broken := plan
+		broken.RequiredPairIDs = append([]string(nil), plan.RequiredPairIDs[:len(plan.RequiredPairIDs)-1]...)
+		if err := w.validatePlan(broken); err == nil {
+			t.Fatalf("case %s accepted incomplete evidence declaration: %v", plan.Case.ID, err)
+		}
+
+		switch plan.oracleKind {
+		case oracleContactPrevious:
+			if available[w.People[plan.oracleIndex].CorrectionPairID] {
+				t.Fatalf("previous contact case %s decoratively requires its correction row", plan.Case.ID)
+			}
+		case oracleProjectLeadPrevious:
+			lead := w.People[w.Projects[plan.oracleIndex].Lead]
+			if available[lead.CorrectionPairID] {
+				t.Fatalf("previous project-lead case %s decoratively requires its correction row", plan.Case.ID)
+			}
+		case oracleTripChangedLegPrevious:
+			trip := w.Trips[plan.oracleIndex]
+			if strings.Contains(plan.Case.Question, trip.Countries[changedLeg(trip)]) {
+				t.Fatalf("previous trip case %s reveals the corrected leg and bypasses correction evidence", plan.Case.ID)
+			}
+		}
+	}
+}
+
+func TestWorldProjectLeadQuestionsRequireTheProjectOwnershipEdge(t *testing.T) {
+	w := Generate(123456789, 3)
+	plans, err := w.QuestionPlans(150)
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalize := func(value string) string {
+		words := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
+			return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+		})
+		return " " + strings.Join(words, " ") + " "
+	}
+	var businessWall string
+	for _, pair := range w.Pairs {
+		if pair.PairID == w.BusinessPairID {
+			businessWall = normalize(pair.Prompt + " " + pair.Response)
+			break
+		}
+	}
+	if businessWall == "" {
+		t.Fatal("missing seeded business wall")
+	}
+	for _, plan := range plans {
+		if plan.oracleKind != oracleProjectLeadCurrent && plan.oracleKind != oracleProjectLeadPrevious {
+			continue
+		}
+		lead := w.People[w.Projects[plan.oracleIndex].Lead]
+		question := normalize(plan.Case.Question)
+		for label, value := range map[string]string{
+			"name": lead.Name, "nickname": lead.Nickname, "relation": lead.Relation,
+			"employer": lead.Employer, "role": lead.Role,
+		} {
+			if strings.Contains(question, normalize(value)) {
+				t.Fatalf("case %s leaks owner %s %q and bypasses the project context row", plan.Case.ID, label, value)
+			}
+		}
+		for label, value := range map[string]string{"name": lead.Name, "nickname": lead.Nickname} {
+			if strings.Contains(businessWall, normalize(value)) {
+				t.Fatalf("business wall leaks owner %s %q and duplicates the project context edge", label, value)
+			}
+		}
+	}
+}
+
+func TestWorldProjectContextIsTheOnlySeededOwnershipEdge(t *testing.T) {
+	normalize := func(value string) string {
+		words := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
+			return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+		})
+		return " " + strings.Join(words, " ") + " "
+	}
+	for seed := int64(1); seed <= 100; seed++ {
+		w := Generate(seed, 3)
+		for _, project := range w.Projects {
+			lead := w.People[project.Lead]
+			for _, pair := range w.Pairs {
+				if pair.PairID == project.ContextPairID {
+					continue
+				}
+				body := normalize(pair.Prompt + " " + pair.Response)
+				mentionsProject := strings.Contains(body, normalize(project.Alias)) ||
+					(strings.Contains(body, normalize(project.Client)) && strings.Contains(body, normalize(project.Purpose)))
+				mentionsOwner := strings.Contains(body, normalize(lead.Name)) || strings.Contains(body, normalize(lead.Nickname))
+				if mentionsProject && mentionsOwner {
+					t.Fatalf("seed %d pair %s duplicates ownership edge for %s -> %s", seed, pair.PairID, project.Alias, lead.Nickname)
+				}
+			}
+		}
+	}
+}
+
+func TestWorldShortcutFilteringKeepsKnownValidSeedsGeneratable(t *testing.T) {
+	for _, tc := range []struct {
+		seed  int64
+		scale int
+		count int
+	}{{356, 3, 150}, {611, 3, 150}, {682, 2, 45}} {
+		plans, err := Generate(tc.seed, tc.scale).QuestionPlans(tc.count)
+		if err != nil {
+			t.Fatalf("seed %d scale %d: %v", tc.seed, tc.scale, err)
+		}
+		if len(plans) != tc.count {
+			t.Fatalf("seed %d scale %d plans=%d, want %d", tc.seed, tc.scale, len(plans), tc.count)
+		}
+	}
+}
+
+func TestWorldQuestionPlansAreAnswerableComposedAndLongDistance(t *testing.T) {
+	w := Generate(123456789, 3)
+	plans, err := w.QuestionPlans(150)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) != 150 {
+		t.Fatalf("plans=%d, want 150", len(plans))
+	}
+	questions := map[string]bool{}
+	for _, plan := range plans {
+		if len(plan.Facts) < 4 || len(plan.Constraints) < 3 || len(plan.Operations) < 2 {
+			t.Fatalf("under-composed plan %s: facts=%d constraints=%d operations=%d", plan.Case.ID, len(plan.Facts), len(plan.Constraints), len(plan.Operations))
+		}
+		if len(plan.RequiredPairIDs) < 3 {
+			t.Fatalf("plan %s has only %d planted needles", plan.Case.ID, len(plan.RequiredPairIDs))
+		}
+		if questions[plan.Case.Question] {
+			t.Fatalf("duplicate question %q", plan.Case.Question)
+		}
+		questions[plan.Case.Question] = true
+	}
+}
+
+func TestWorldQuestionUnlocksAfterEveryNeedleIsSeeded(t *testing.T) {
+	w := Generate(8128, 3)
+	plans, err := w.QuestionPlans(150)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waves := w.PairWaves(5)
+	waveOf := map[string]int{}
+	for wave, pairs := range waves {
+		for _, pair := range pairs {
+			waveOf[pair.PairID] = wave
+		}
+	}
+	for _, plan := range plans {
+		unlock := w.UnlockWave(plan, 5)
+		for _, id := range plan.RequiredPairIDs {
+			if waveOf[id] > unlock {
+				t.Fatalf("plan %s unlocks at %d before evidence %s in wave %d", plan.Case.ID, unlock, id, waveOf[id])
 			}
 		}
 	}

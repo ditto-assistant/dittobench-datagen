@@ -39,6 +39,39 @@ func TestV8ToolMixVariesAndCoversEveryFamily(t *testing.T) {
 	}
 }
 
+func TestV8MemoryIsDominatedByValidatedWorldQuestions(t *testing.T) {
+	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
+	artifact, err := GenerateDataset(123456789, prof, protocol.BenchVersionV8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	world, total := 0, len(artifact.MemoryCases)
+	questions := map[string]bool{}
+	for _, c := range artifact.MemoryCases {
+		if !strings.HasPrefix(c.QuestionType, "world-") {
+			continue
+		}
+		world++
+		if questions[c.Question] {
+			t.Fatalf("duplicate world question %q", c.Question)
+		}
+		questions[c.Question] = true
+	}
+	if world != 150 || total != 198 {
+		t.Fatalf("full v8 memory mix world/total=%d/%d, want 150/198", world, total)
+	}
+
+	v7, err := GenerateDataset(123456789, prof, protocol.BenchVersionV7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range v7.MemoryCases {
+		if strings.HasPrefix(c.QuestionType, "world-") {
+			t.Fatalf("v7 leaked v8 world case %s", c.ID)
+		}
+	}
+}
+
 func TestV8WorldToolCasesAreFuzzyComposedAndStateBound(t *testing.T) {
 	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
 	artifact, err := GenerateDataset(77, prof, protocol.BenchVersionV8)
@@ -63,8 +96,9 @@ func TestV8WorldToolCasesAreFuzzyComposedAndStateBound(t *testing.T) {
 				t.Fatalf("visible prompt leaked wire tool %q: %q", spec.Name, tc.Prompt)
 			}
 			for key, required := range spec.RequiredArgs {
-				if (key == "pair_id" || key == "to" || key == "body" || key == "color") && strings.Contains(tc.Prompt, required) {
-					t.Fatalf("world case %s leaked required outcome %q in its prompt", tc.ID, required)
+				hiddenOutcome := tc.Category == "world_business_workflow" || key == "pair_id" || key == "to" || key == "body" || key == "color"
+				if hiddenOutcome && required != "" && strings.Contains(strings.ToLower(tc.Prompt), strings.ToLower(required)) {
+					t.Fatalf("world case %s leaked required %s outcome %q in its prompt", tc.ID, key, required)
 				}
 			}
 		}
@@ -274,7 +308,7 @@ func TestV8RepeatedConversionsHaveUniqueContext(t *testing.T) {
 	}
 }
 
-func TestV8ReferenceRunPreservesTheV7RuntimeEnvelope(t *testing.T) {
+func TestV8ReferenceRunHasFixedCaseAndBoundedIngestionEnvelope(t *testing.T) {
 	seeds := []int64{1, 2, 3, 7, 11, 42, 123456789, 3058240546919425205}
 	for _, seed := range seeds {
 		for _, runSize := range []string{"small", "medium", "full"} {
@@ -290,6 +324,58 @@ func TestV8ReferenceRunPreservesTheV7RuntimeEnvelope(t *testing.T) {
 			}
 		}
 	}
+
+	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
+	v7, err := GenerateDataset(123456789, prof, protocol.BenchVersionV7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v8, err := GenerateDataset(123456789, prof, protocol.BenchVersionV8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v7Pairs, v7Bytes, v7Dup := ingestionEnvelope(v7)
+	v8Pairs, v8Bytes, v8Dup := ingestionEnvelope(v8)
+	if v8Dup != 0 {
+		t.Fatalf("v8 repeats %d pair identities inside one user graph", v8Dup)
+	}
+	if v8Pairs*2 > v7Pairs*3 {
+		t.Fatalf("v8 pair ingestions grew beyond 1.5x: v7=%d v8=%d", v7Pairs, v8Pairs)
+	}
+	if v8Bytes > 2*v7Bytes {
+		t.Fatalf("v8 pair payload grew beyond 2x: v7=%d bytes v8=%d", v7Bytes, v8Bytes)
+	}
+	// V7 is frozen and may retain historical same-user duplicate rows; report it
+	// only to make the comparison explicit rather than changing its bytes.
+	_ = v7Dup
+}
+
+func ingestionEnvelope(artifact DatasetArtifact) (pairs, bytes, sameUserDuplicates int) {
+	seen := map[string]bool{}
+	add := func(user string, pair protocol.MemoryPair) {
+		if user == "" {
+			user = "miner"
+		}
+		key := user + "\x00" + pair.PairID
+		if seen[key] {
+			sameUserDuplicates++
+		} else {
+			seen[key] = true
+		}
+		pairs++
+		bytes += len(pair.Prompt) + len(pair.Response)
+	}
+	for _, tc := range artifact.ToolCases {
+		for _, pair := range tc.PrerequisitePairs {
+			add("miner", pair)
+		}
+	}
+	for _, wave := range artifact.MemoryWaves {
+		for _, pair := range wave.Pairs {
+			add(wave.UserID, pair)
+		}
+	}
+	return pairs, bytes, sameUserDuplicates
 }
 
 func TestV8TripAnswersSumEveryCountryLeg(t *testing.T) {
