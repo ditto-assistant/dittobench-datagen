@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v0.13.1 (2026-07-31)
+
+### Bug Fixes
+
+- **v8**: Stop agent jobs at approval boundary
+  ([#56](https://github.com/ditto-assistant/dittobench-datagen/pull/56),
+  [`d1caadf`](https://github.com/ditto-assistant/dittobench-datagen/commit/d1caadff0106c301ba96625f5cc6a2d95a9e592f))
+
+
 ## v0.13.0 (2026-07-31)
 
 ### Bug Fixes
