@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v0.13.2 (2026-07-31)
+
+### Bug Fixes
+
+- **v8**: Harden stateful world answerability
+  ([#57](https://github.com/ditto-assistant/dittobench-datagen/pull/57),
+  [`d859ee4`](https://github.com/ditto-assistant/dittobench-datagen/commit/d859ee410aa48f7be644a3dd0deec7ac92855379))
+
+
 ## v0.13.1 (2026-07-31)
 
 ### Bug Fixes
