@@ -197,7 +197,7 @@ func GenerateIsolationForVersion(seed int64, primaryN, nWaves, isoCases, benchVe
 	// Gated on the version because v2 is a frozen contract: adding cases would
 	// change its bytes and break the reproducibility of every run already scored
 	// under it.
-	if benchVersion >= protocol.BenchVersionV3 {
+	if benchVersion >= protocol.BenchVersionV3 && benchVersion < protocol.BenchVersionV8 {
 		xPairs, xCases := crossUserLifecycle(seed, nWaves, benchVersion)
 		secondary.Pairs = append(secondary.Pairs, xPairs...)
 		cases = append(cases, xCases...)
@@ -215,18 +215,10 @@ func GenerateIsolationForVersion(seed int64, primaryN, nWaves, isoCases, benchVe
 }
 
 func v8ScalarIsolationBudget(primaryN, requested int) int {
-	// The fixed V8 full-profile total is more valuable than inheriting v7's
-	// seed-variable scalar slice. Medium spends its isolation budget on the five
-	// stronger write/delete/read cross-user cases; full retains four scalar
-	// conflicts in addition to those five.
-	switch primaryN {
-	case 185, 225:
-		return 4
-	case 52, 64:
-		return 0
-	default:
-		return requested
-	}
+	// V8 retires synthetic cross-user write/delete turns. The full requested
+	// quota is therefore spent on seeded read-only conflicts, which exercise the
+	// same user-graph boundary without asking the harness to manufacture state.
+	return requested
 }
 
 // Cross-user lifecycle nouns. Distinct from the single-user lifecycle nouns

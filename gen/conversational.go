@@ -424,6 +424,9 @@ func buildConversational(r *rand.Rand, seed int64, plan *persona.Plan, n, nWaves
 	// not a distractor. On-model precheck evidence: the honest reference reader
 	// routinely says "X, avoiding Y", which the rejected-as-distractor rule zeroed.
 	nChains := declarativeChainsFor(n, nWaves)
+	if benchVersion >= protocol.BenchVersionV8 {
+		nChains = 0
+	}
 	// Draw DISTINCT random preference domains per seed (not chain%len, which would
 	// only ever use the first few domains and make the write family enumerable).
 	domPerm := r.Perm(len(declPrefDomains))

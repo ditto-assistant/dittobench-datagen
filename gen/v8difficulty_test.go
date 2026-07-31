@@ -57,8 +57,8 @@ func TestV8MemoryIsDominatedByValidatedWorldQuestions(t *testing.T) {
 		}
 		questions[c.Question] = true
 	}
-	if world != 190 || total != 238 {
-		t.Fatalf("full v8 memory mix world/total=%d/%d, want 190/238", world, total)
+	if world != 199 || total != 238 {
+		t.Fatalf("full v8 memory mix world/total=%d/%d, want 199/238", world, total)
 	}
 
 	v7, err := GenerateDataset(123456789, prof, protocol.BenchVersionV7)
@@ -253,6 +253,47 @@ func TestV8ComposedMemoryFloor(t *testing.T) {
 	}
 }
 
+func TestV8HasNoSyntheticMemoryWriteQuestions(t *testing.T) {
+	legacy := map[string]bool{
+		QTLifecycleWrite: true, QTLifecycleRead: true,
+		QTDeclarativeWrite: true, QTDeclarativeRead: true, QTDeclarativeBehavior: true,
+		QTDeepChainWrite: true, QTDeepChainRead: true, QTDeepChainCrossref: true,
+	}
+	for _, runSize := range []string{"small", "medium", "full"} {
+		prof, _ := ProfileForVersion(runSize, protocol.BenchVersionV8)
+		for seed := int64(1); seed <= 20; seed++ {
+			artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV8)
+			if err != nil {
+				t.Fatalf("%s seed %d: %v", runSize, seed, err)
+			}
+			for _, memoryCase := range artifact.MemoryCases {
+				if legacy[memoryCase.QuestionType] {
+					t.Fatalf("%s seed %d retained legacy write-dependent case %s (%s)", runSize, seed, memoryCase.ID, memoryCase.QuestionType)
+				}
+				lower := strings.ToLower(memoryCase.Question)
+				if strings.Contains(lower, "please remember that my safe combination") || strings.Contains(lower, "please remember that my") {
+					t.Fatalf("%s seed %d retained synthetic memory instruction %q", runSize, seed, memoryCase.Question)
+				}
+			}
+		}
+	}
+
+	// V7 remains the frozen compatibility contract and deliberately retains its
+	// historical lifecycle coverage.
+	prof, _ := ProfileForVersion("full", protocol.BenchVersionV7)
+	v7, err := GenerateDataset(123456789, prof, protocol.BenchVersionV7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, memoryCase := range v7.MemoryCases {
+		found = found || legacy[memoryCase.QuestionType]
+	}
+	if !found {
+		t.Fatal("frozen V7 unexpectedly lost legacy lifecycle cases")
+	}
+}
+
 func v8ComposedMemoryType(questionType string) bool {
 	if strings.HasPrefix(questionType, "world-") || strings.HasPrefix(questionType, "multi-") ||
 		strings.HasPrefix(questionType, "temporal-") || strings.HasPrefix(questionType, "lifecycle-") ||
@@ -262,7 +303,7 @@ func v8ComposedMemoryType(questionType string) bool {
 	}
 	switch questionType {
 	case persona.QTComputed, persona.QTAggregation, "nonverbatim-computed", "composed-note-benign",
-		"memory-write-read", "passive-consolidation", "near-miss-abstention",
+		"passive-consolidation", "near-miss-abstention",
 		"stored-instruction-benign", "isolation":
 		return true
 	default:

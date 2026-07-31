@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
@@ -57,11 +58,33 @@ func TestGenerateDatasetReviewKeepsAnnotationsOutOfCanonicalBytes(t *testing.T) 
 		if len(annotation.RequiredPairIDs) < 3 {
 			t.Errorf("case %s has only %d declared evidence records", annotation.CaseID, len(annotation.RequiredPairIDs))
 		}
+		if len(annotation.Citations) != len(annotation.RequiredPairIDs) {
+			t.Errorf("case %s citations=%d evidence=%d", annotation.CaseID, len(annotation.Citations), len(annotation.RequiredPairIDs))
+		}
+		for i, citation := range annotation.Citations {
+			if citation.PairID != annotation.RequiredPairIDs[i] || citation.SessionID == "" || citation.Timestamp == "" {
+				t.Errorf("case %s has incomplete citation %+v", annotation.CaseID, citation)
+			}
+			if citation.Story != nil {
+				if len(citation.Story.Characters) < 2 || len(citation.Story.Problems) < 2 || len(citation.Story.Problems) != len(citation.Story.Resolutions) || len(citation.Story.FactPlacements) < 2 {
+					t.Errorf("case %s has incomplete story citation %+v", annotation.CaseID, citation.Story)
+				}
+			}
+		}
 		for _, pairID := range annotation.RequiredPairIDs {
 			if !pairs[pairID] {
 				t.Errorf("case %s evidence %s is absent from artifact", annotation.CaseID, pairID)
 			}
 		}
+	}
+	worldCases := 0
+	for _, c := range review.Artifact.MemoryCases {
+		if strings.HasPrefix(c.QuestionType, "world-") {
+			worldCases++
+		}
+	}
+	if len(review.MemoryAnnotations) != worldCases {
+		t.Fatalf("review annotations=%d world cases=%d", len(review.MemoryAnnotations), worldCases)
 	}
 }
 
