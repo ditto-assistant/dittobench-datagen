@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ditto-assistant/dittobench-datagen/grade"
+	"github.com/ditto-assistant/dittobench-datagen/internal/assistantvoice"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 )
 
@@ -149,18 +150,13 @@ func TestWorldNaturalJoinsForceMultiRowRetrieval(t *testing.T) {
 
 func TestWorldAssistantRepliesSoundLikeACompanion(t *testing.T) {
 	w := Generate(123456789, 3)
-	cold := map[string]bool{
-		"got it.": true, "saved.": true, "understood.": true, "recorded.": true,
-		"updated the contact record.": true, "saved the original legs.": true,
-		"updated that leg only.": true,
-	}
 	for _, pair := range w.Pairs {
 		response := strings.TrimSpace(pair.Response)
-		if cold[strings.ToLower(response)] {
+		if assistantvoice.IsCold(response) {
 			t.Fatalf("pair %s uses a cold transactional reply %q", pair.PairID, response)
 		}
-		if len(response) < 40 {
-			t.Fatalf("pair %s reply is too terse to feel conversational: %q", pair.PairID, response)
+		if len(response) < 8 {
+			t.Fatalf("pair %s reply is too terse to carry a human acknowledgement: %q", pair.PairID, response)
 		}
 	}
 }

@@ -598,6 +598,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 			return MemorySuite{}, err
 		}
 		suite.WritingNoiseQuestions, suite.WritingNoisePairs = applyV8MemoryWritingNoise(seed, suite.Cases, suite.Waves)
+		applyV8AssistantVoice(seed, plan.Name, suite.Waves)
 	}
 	return suite, nil
 }

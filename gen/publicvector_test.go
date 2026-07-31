@@ -331,7 +331,7 @@ func TestV7KnownVector(t *testing.T) {
 func TestV8KnownVector(t *testing.T) {
 	const (
 		seed = int64(123456789)
-		want = "43a3717cc9095e05730b24c11fdd8cad10708203c6b112cad10c69e221626531"
+		want = "d551e84945fbc94ad6d0af879352defcf78738b1c46226775eb84ba9a659d25b"
 	)
 	prof, _ := ProfileForVersion("full", protocol.BenchVersionV8)
 	artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV8)

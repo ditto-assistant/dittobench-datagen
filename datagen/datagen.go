@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ditto-assistant/dittobench-datagen/internal/assistantvoice"
 	"github.com/ditto-assistant/dittobench-datagen/internal/textnoise"
 	"github.com/ditto-assistant/dittobench-datagen/persona"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
@@ -1634,8 +1635,18 @@ func GenerateCasesWithFillersForVersion(r *rand.Rand, seed int64, n, benchVersio
 	if benchVersion >= protocol.BenchVersionV8 {
 		applyV8WorldActions(seed, cases)
 		applyV8WritingNoise(seed, cases)
+		applyV8AssistantVoice(seed, cases)
 	}
 	return cases, fillers
+}
+
+func applyV8AssistantVoice(seed int64, cases []protocol.ToolCase) {
+	for i := range cases {
+		for j := range cases[i].PrerequisitePairs {
+			pair := &cases[i].PrerequisitePairs[j]
+			pair.Response = assistantvoice.Render(seed, pair.PairID, pair.SessionID, "", pair.Prompt, pair.Response)
+		}
+	}
 }
 
 // applyV8CapabilityResolution makes closed product choices behave like smart

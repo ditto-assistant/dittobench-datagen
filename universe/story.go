@@ -442,9 +442,9 @@ func (s Story) render(seed int64) (string, string) {
 		MaxEdits: 6, Grammar: true, Protected: protected,
 	})
 	response := []string{
-		"Thank you for telling me the whole story. I’ll remember how the personal part, work decision, and later change connect.",
-		"Okay, I can feel the shape of it now. I’ll remember what led here, what changed, and why the people matter.",
-		"I’m with you. I’ll hold onto the before, the turning point, and where things landed.",
+		"Thanks for the whole story. I’ll remember what connects.",
+		"I can feel its shape now — what changed and why.",
+		"I’m with you. I’ll remember where it landed.",
 	}[r.Intn(3)]
 	return prompt, response
 }
