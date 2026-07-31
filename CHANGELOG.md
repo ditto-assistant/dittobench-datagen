@@ -2,6 +2,121 @@
 
 <!-- version list -->
 
+## v0.13.0 (2026-07-31)
+
+### Bug Fixes
+
+- Remove duplicate v8 transcript records
+  ([#54](https://github.com/ditto-assistant/dittobench-datagen/pull/54),
+  [`880ab45`](https://github.com/ditto-assistant/dittobench-datagen/commit/880ab45875f088cff5ec9c039abd8097fe573e82))
+
+- **v8**: Address users by name naturally
+  ([#42](https://github.com/ditto-assistant/dittobench-datagen/pull/42),
+  [`cbe718b`](https://github.com/ditto-assistant/dittobench-datagen/commit/cbe718b65aef4cd59e0202dcb754e048c0c297c9))
+
+- **v8**: Compile believable linear stories
+  ([#47](https://github.com/ditto-assistant/dittobench-datagen/pull/47),
+  [`01ff12f`](https://github.com/ditto-assistant/dittobench-datagen/commit/01ff12f1785b060c719072a19f39513b92ff8df1))
+
+- **v8**: Disambiguate computed memory cases
+  ([#36](https://github.com/ditto-assistant/dittobench-datagen/pull/36),
+  [`cd9142e`](https://github.com/ditto-assistant/dittobench-datagen/commit/cd9142e6365313e88b29633968d0f5c0eccbc4bf))
+
+- **v8**: Enforce warm human benchmark transcripts
+  ([#42](https://github.com/ditto-assistant/dittobench-datagen/pull/42),
+  [`cbe718b`](https://github.com/ditto-assistant/dittobench-datagen/commit/cbe718b65aef4cd59e0202dcb754e048c0c297c9))
+
+- **v8**: Freeze the public case envelope
+  ([#36](https://github.com/ditto-assistant/dittobench-datagen/pull/36),
+  [`cd9142e`](https://github.com/ditto-assistant/dittobench-datagen/commit/cd9142e6365313e88b29633968d0f5c0eccbc4bf))
+
+- **v8**: Generate coherent project identities
+  ([#46](https://github.com/ditto-assistant/dittobench-datagen/pull/46),
+  [`fe47294`](https://github.com/ditto-assistant/dittobench-datagen/commit/fe47294887fc9249ac6034bd5b022be22087c2e0))
+
+- **v8**: Grade human currency and direction answers
+  ([#45](https://github.com/ditto-assistant/dittobench-datagen/pull/45),
+  [`766ac6a`](https://github.com/ditto-assistant/dittobench-datagen/commit/766ac6a5ae91493fa1b92dbe99ef3f3a2471d98f))
+
+- **v8**: Ground reviewed tool intents in the world
+  ([#36](https://github.com/ditto-assistant/dittobench-datagen/pull/36),
+  [`cd9142e`](https://github.com/ditto-assistant/dittobench-datagen/commit/cd9142e6365313e88b29633968d0f5c0eccbc4bf))
+
+- **v8**: Ground structured story state
+  ([#50](https://github.com/ditto-assistant/dittobench-datagen/pull/50),
+  [`b5cc71c`](https://github.com/ditto-assistant/dittobench-datagen/commit/b5cc71cf179d02f598dbaf4771bec654d881207e))
+
+- **v8**: Make contact memories sound human
+  ([#49](https://github.com/ditto-assistant/dittobench-datagen/pull/49),
+  [`c99f2a4`](https://github.com/ditto-assistant/dittobench-datagen/commit/c99f2a4cc78f0beab13f3881403a6394e6bccb28))
+
+- **v8**: Make generated conversations feel human
+  ([#41](https://github.com/ditto-assistant/dittobench-datagen/pull/41),
+  [`af0e233`](https://github.com/ditto-assistant/dittobench-datagen/commit/af0e2330495a8471642558b4e2bf3b5241b6ead5))
+
+- **v8**: Make ordinary transcripts believable
+  ([#44](https://github.com/ditto-assistant/dittobench-datagen/pull/44),
+  [`41dc6b3`](https://github.com/ditto-assistant/dittobench-datagen/commit/41dc6b32926e60fcceb395a65c39f5247c59bc6b))
+
+- **v8**: Replace contrived prompts with grounded intent
+  ([#36](https://github.com/ditto-assistant/dittobench-datagen/pull/36),
+  [`cd9142e`](https://github.com/ditto-assistant/dittobench-datagen/commit/cd9142e6365313e88b29633968d0f5c0eccbc4bf))
+
+- **v8**: Replace memory writes with world cases
+  ([#51](https://github.com/ditto-assistant/dittobench-datagen/pull/51),
+  [`1d76934`](https://github.com/ditto-assistant/dittobench-datagen/commit/1d76934fdb75dc507e2cb681a9c98034723fbaf3))
+
+- **v8**: Retire legacy session memories
+  ([#52](https://github.com/ditto-assistant/dittobench-datagen/pull/52),
+  [`5f4190f`](https://github.com/ditto-assistant/dittobench-datagen/commit/5f4190fc71f9014b2e8e4752837ebdec5f58ba96))
+
+- **v8**: Scope runtime budget to scored profiles
+  ([#36](https://github.com/ditto-assistant/dittobench-datagen/pull/36),
+  [`cd9142e`](https://github.com/ditto-assistant/dittobench-datagen/commit/cd9142e6365313e88b29633968d0f5c0eccbc4bf))
+
+### Features
+
+- Add local benchmark dataset viewer
+  ([#40](https://github.com/ditto-assistant/dittobench-datagen/pull/40),
+  [`b02feda`](https://github.com/ditto-assistant/dittobench-datagen/commit/b02feda9a3d40340749b4cdac5995548a3f467c9))
+
+- Sort dataset memories for review
+  ([#53](https://github.com/ditto-assistant/dittobench-datagen/pull/53),
+  [`552ae62`](https://github.com/ditto-assistant/dittobench-datagen/commit/552ae62aec3e970c5d619174c8fda7392042a58e))
+
+- **v8**: Generate a shared outcome-driven benchmark universe
+  ([#36](https://github.com/ditto-assistant/dittobench-datagen/pull/36),
+  [`cd9142e`](https://github.com/ditto-assistant/dittobench-datagen/commit/cd9142e6365313e88b29633968d0f5c0eccbc4bf))
+
+- **v8**: Generate a shared outcome-driven universe
+  ([#36](https://github.com/ditto-assistant/dittobench-datagen/pull/36),
+  [`cd9142e`](https://github.com/ditto-assistant/dittobench-datagen/commit/cd9142e6365313e88b29633968d0f5c0eccbc4bf))
+
+- **v8**: Generate believable human identities
+  ([#43](https://github.com/ditto-assistant/dittobench-datagen/pull/43),
+  [`e4dd279`](https://github.com/ditto-assistant/dittobench-datagen/commit/e4dd2790770ac70773dd21c27682aaf7371288c2))
+
+- **v8**: Harden memory with validated universes
+  ([#37](https://github.com/ditto-assistant/dittobench-datagen/pull/37),
+  [`f49ff0d`](https://github.com/ditto-assistant/dittobench-datagen/commit/f49ff0def7e1df082064a63196ef9950ecbdaa7c))
+
+- **v8**: Make benchmark routes state-dependent
+  ([#36](https://github.com/ditto-assistant/dittobench-datagen/pull/36),
+  [`cd9142e`](https://github.com/ditto-assistant/dittobench-datagen/commit/cd9142e6365313e88b29633968d0f5c0eccbc4bf))
+
+- **v8**: Project realistic writing noise
+  ([#39](https://github.com/ditto-assistant/dittobench-datagen/pull/39),
+  [`667ced5`](https://github.com/ditto-assistant/dittobench-datagen/commit/667ced551a19b1ee63b3bc23c2c7dc34e0d7d2e9))
+
+- **v8**: Require retrieval across long story memories
+  ([#39](https://github.com/ditto-assistant/dittobench-datagen/pull/39),
+  [`667ced5`](https://github.com/ditto-assistant/dittobench-datagen/commit/667ced551a19b1ee63b3bc23c2c7dc34e0d7d2e9))
+
+- **v8**: Restore world-native integrity coverage
+  ([#55](https://github.com/ditto-assistant/dittobench-datagen/pull/55),
+  [`0244f00`](https://github.com/ditto-assistant/dittobench-datagen/commit/0244f00b6845db7f4457a609654ee417dcf000fc))
+
+
 ## v0.12.0 (2026-07-24)
 
 ### Chores
