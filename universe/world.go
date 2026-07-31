@@ -81,6 +81,8 @@ type World struct {
 	People         []Person
 	Projects       []Project
 	Trips          []Trip
+	StoryArcs      []StoryArc
+	Stories        []Story
 	Pairs          []protocol.MemoryPair
 	BusinessPairID string
 	Accent         string
@@ -196,6 +198,10 @@ func Generate(seed int64, scale int) World {
 		w.Trips = append(w.Trips, t)
 	}
 
+	// Story generation owns an independent seed stream: adding surface variety
+	// cannot perturb the people/projects/trips already established above. Each
+	// arc contributes three long memories and story-only join/state facts.
+	w.StoryArcs, w.Stories = buildStories(seed, scale, w)
 	w.Pairs = w.renderPairs(r)
 	return w
 }
@@ -254,6 +260,10 @@ func (w World) renderPairs(r *rand.Rand) []protocol.MemoryPair {
 			delta = -delta
 		}
 		add(t.CorrectionPairID, fmt.Sprintf("trip-%02d-correction", i), fmt.Sprintf("Itinerary correction %s: the %s leg was %s by %d days. The other country stays are unchanged.", t.RecordID, t.Countries[changed], direction, delta), "Updated that leg only.")
+	}
+	for _, story := range w.Stories {
+		prompt, response := story.render(w.Seed)
+		add(story.PairID, story.SessionID, prompt, response)
 	}
 	add(protocol.OpaqueCaseID(w.Seed, "world-preference", 0), "preferences", fmt.Sprintf("For Ditto itself I like a %s accent, but client brand colors should never override my app preference.", w.Accent), "I’ll keep your personal app preference separate from client branding.")
 	return spreadPairs(pairs)

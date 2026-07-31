@@ -57,8 +57,8 @@ func TestV8MemoryIsDominatedByValidatedWorldQuestions(t *testing.T) {
 		}
 		questions[c.Question] = true
 	}
-	if world != 150 || total != 198 {
-		t.Fatalf("full v8 memory mix world/total=%d/%d, want 150/198", world, total)
+	if world != 190 || total != 238 {
+		t.Fatalf("full v8 memory mix world/total=%d/%d, want 190/238", world, total)
 	}
 
 	v7, err := GenerateDataset(123456789, prof, protocol.BenchVersionV7)
@@ -317,7 +317,7 @@ func TestV8ReferenceRunHasFixedCaseAndBoundedIngestionEnvelope(t *testing.T) {
 			if err != nil {
 				t.Fatalf("v8 seed %d %s generation failed: %v", seed, runSize, err)
 			}
-			want := map[string]int{"small": 17, "medium": 110, "full": 282}[runSize]
+			want := map[string]int{"small": 17, "medium": 130, "full": 338}[runSize]
 			got := len(artifact.ToolCases) + len(artifact.MemoryCases)
 			if got != want {
 				t.Fatalf("v8 seed %d %s run has %d cases, want fixed envelope %d", seed, runSize, got, want)
@@ -342,8 +342,13 @@ func TestV8ReferenceRunHasFixedCaseAndBoundedIngestionEnvelope(t *testing.T) {
 	if v8Pairs*2 > v7Pairs*3 {
 		t.Fatalf("v8 pair ingestions grew beyond 1.5x: v7=%d v8=%d", v7Pairs, v8Pairs)
 	}
-	if v8Bytes > 2*v7Bytes {
-		t.Fatalf("v8 pair payload grew beyond 2x: v7=%d bytes v8=%d", v7Bytes, v8Bytes)
+	// V8 intentionally adds a fixed set of long personal/business stories whose
+	// critical evidence must be retrieved from inside 1.8-4.6KB records. Keep a
+	// hard aggregate ceiling while allowing that difficulty-bearing payload; the
+	// universe tests independently pin story count, per-record length, and causal
+	// use so this allowance cannot become unbounded filler.
+	if v8Bytes > 4*v7Bytes {
+		t.Fatalf("v8 pair payload grew beyond 4x: v7=%d bytes v8=%d", v7Bytes, v8Bytes)
 	}
 	// V7 is frozen and may retain historical same-user duplicate rows; report it
 	// only to make the comparison explicit rather than changing its bytes.

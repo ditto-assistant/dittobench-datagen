@@ -74,6 +74,11 @@ type MemorySuite struct {
 	// content wording the emitted questions share with their evidence, before and
 	// after the low-overlap rewrite.
 	LexicalGap protocol.LexicalGapStats
+	// V8-only advisory coverage for deterministic user-writing noise. These maps
+	// are not serialized into the scored artifact; they let tests enforce domain
+	// coverage without leaking a per-case projection label to harnesses.
+	WritingNoiseQuestions map[string]int
+	WritingNoisePairs     map[string]int
 }
 
 // GenerateMemorySuite is the DittoBench v2 memory generator. It builds a
@@ -592,6 +597,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		if err := dedupeV8WavePairs(suite.Waves); err != nil {
 			return MemorySuite{}, err
 		}
+		suite.WritingNoiseQuestions, suite.WritingNoisePairs = applyV8MemoryWritingNoise(seed, suite.Cases, suite.Waves)
 	}
 	return suite, nil
 }
@@ -681,21 +687,21 @@ func pruneV8Subjects(subjects []protocol.Subject, links []protocol.SubjectLink, 
 	return keptSubjects, keptLinks
 }
 
-// v8PrimaryCaseBudget preserves the effective v7 scored-case envelope. Those
-// totals are slightly above Profile.Mem because integrity families are always
-// included; v8 replaces easy coverage inside that real case budget. Separate
-// tests bound the larger universe's actual one-time ingestion payload.
+// v8PrimaryCaseBudget pins the scored V8 envelope. Totals are slightly above
+// Profile.Mem because integrity families are always included; the deliberate
+// V8 expansion buys more composed/domain coverage without making count
+// seed-dependent. Separate tests bound the universe's one-time ingestion.
 func v8PrimaryCaseBudget(n int) int {
 	switch {
-	case n == 185:
-		// Full retains 198 memory cases total: 189 primary-world cases plus
+	case n == 225:
+		// Full carries 238 memory cases total: 229 primary-world cases plus
 		// four scalar-isolation and five cross-user lifecycle cases. The fixed
 		// isolation quota never evicts a composed or integrity case.
-		return 189
-	case n == 52:
-		// Medium retains 70 memory cases total: 65 primary-world cases plus
+		return 229
+	case n == 64:
+		// Medium carries 82 memory cases total: 77 primary-world cases plus
 		// the five cross-user lifecycle cases.
-		return 65
+		return 77
 	case n == 6:
 		return 11
 	default:
@@ -799,11 +805,11 @@ func v8RetainPriority(questionType string) int {
 func v8WorldProfile(n int) (scale, cases int) {
 	switch {
 	case n >= 100:
-		// 150/198 scored memory cases come from one answerability-validated
+		// 190/238 scored memory cases come from one answerability-validated
 		// universe. The remaining 48 preserve bounded integrity coverage.
-		return 3, 150
+		return 3, 190
 	case n >= 40:
-		return 2, 45
+		return 2, 57
 	default:
 		// Small is the compatibility smoke path. Its six memory slots are
 		// already oversubscribed by integrity cases; the tool slice still uses
