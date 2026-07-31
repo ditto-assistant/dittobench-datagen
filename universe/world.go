@@ -155,6 +155,7 @@ func Generate(seed int64, scale int) World {
 	seenProjects := map[string]bool{}
 	seenProjectAliases := map[string]bool{}
 	for i := 0; i < projectN; i++ {
+		projectName, projectAlias := uniqueProjectIdentity(r, seenProjects, seenProjectAliases)
 		original := 180000 + r.Intn(2600000)
 		deltas := []int{-4, -3, -2, -1, 1, 2, 3, 4}
 		corrected := original + deltas[r.Intn(len(deltas))]*12500
@@ -163,7 +164,7 @@ func Generate(seed int64, scale int) World {
 		}
 		paid := corrected * (2 + r.Intn(5)) / 10
 		p := Project{
-			Name: uniqueString(r, seenProjects, coinedProject), Alias: uniqueString(r, seenProjectAliases, projectAlias),
+			Name: projectName, Alias: projectAlias,
 			RecordID: "AP-" + strings.ToUpper(protocol.OpaqueCaseID(seed, "world-project-record", i)[:8]), Purpose: projectPurpose(r),
 			Client: uniqueString(r, seenCompanies, coinedCompany), Vendor: uniqueString(r, seenCompanies, coinedCompany), Lead: i % len(w.People),
 			OriginalCents: original, CorrectedCents: corrected, PaidCents: paid,
@@ -492,13 +493,59 @@ func uniqueString(r *rand.Rand, seen map[string]bool, generate func(*rand.Rand) 
 	}
 }
 
-func coinedProject(r *rand.Rand) string {
-	return []string{"Project", "Program", "Initiative", "Campaign"}[r.Intn(4)] + " " + familyStarts[r.Intn(len(familyStarts))] + coinedEnds[r.Intn(len(coinedEnds))]
+type projectNameFamily struct {
+	formal string
+	alias  string
 }
-func projectAlias(r *rand.Rand) string {
-	first := []string{"Northpoint", "Lantern", "Bluebird", "Foundry", "Harborlight", "Orchard", "Kestrel", "Juniper"}[r.Intn(8)]
-	second := []string{"ledger", "room", "line", "file", "track", "brief", "cycle", "desk"}[r.Intn(8)]
-	return strings.ToLower(first + " " + second)
+
+// These are close enough to be confused in real conversation while remaining
+// different words. A project identity draws both names from one family instead
+// of independently combining unrelated fantasy words.
+var projectNameFamilies = []projectNameFamily{
+	{"Bluehaven", "Bluebird"}, {"Bluelake", "Bluebell"}, {"Harborline", "Harborlight"},
+	{"Harborview", "Harborside"}, {"Northstar", "Northpoint"}, {"Northfield", "Northgate"},
+	{"Juniper Grove", "Juniper Lane"}, {"Juniper House", "Juniper Hill"},
+	{"Lantern House", "Lantern Room"}, {"Lantern Field", "Lantern Lane"},
+	{"Orchard Row", "Orchard Road"}, {"Orchard House", "Orchard Hall"},
+	{"Kestrel Field", "Kestrel Flight"}, {"Kestrel House", "Kestrel Hill"},
+	{"Foundry Lane", "Foundry Line"}, {"Foundry House", "Foundry Hall"},
+	{"Cedar Grove", "Cedar Gate"}, {"Cedar House", "Cedar Hill"},
+	{"Riverstone", "Riverside"}, {"Riverlight", "Riverline"},
+	{"Westbridge", "Westbrook"}, {"Westfield", "Westford"},
+	{"Greenhaven", "Greenhouse"}, {"Greenfield", "Greenlight"},
+}
+
+func uniqueProjectIdentity(r *rand.Rand, seenNames, seenAliases map[string]bool) (string, string) {
+	prefixes := []string{"Project", "Program", "Initiative", "Campaign"}
+	nouns := []string{"brief", "ledger", "workstream", "rollout", "plan", "review", "track", "file"}
+	for {
+		family := projectNameFamilies[r.Intn(len(projectNameFamilies))]
+		name := prefixes[r.Intn(len(prefixes))] + " " + family.formal
+		alias := strings.ToLower(family.alias + " " + nouns[r.Intn(len(nouns))])
+		if !seenNames[name] && !seenAliases[alias] {
+			seenNames[name] = true
+			seenAliases[alias] = true
+			return name, alias
+		}
+	}
+}
+
+func projectNamesAreRelated(name, alias string) bool {
+	formalWords := strings.Fields(name)
+	if len(formalWords) < 2 || len(strings.Fields(alias)) == 0 {
+		return false
+	}
+	formal := slug(strings.Join(formalWords[1:], ""))
+	aliasHead := slug(strings.Fields(alias)[0])
+	limit := len(formal)
+	if len(aliasHead) < limit {
+		limit = len(aliasHead)
+	}
+	shared := 0
+	for shared < limit && formal[shared] == aliasHead[shared] {
+		shared++
+	}
+	return shared >= 4
 }
 func projectPurpose(r *rand.Rand) string {
 	return []string{"retail launch", "annual report", "museum installation", "client migration", "brand research", "regional workshop", "fundraising campaign", "supplier transition"}[r.Intn(8)]

@@ -57,6 +57,9 @@ func TestWorldIdentitiesAreUnambiguous(t *testing.T) {
 			if p.OutstandingCents != p.CorrectedCents-p.PaidCents {
 				t.Fatalf("seed %d project %q has inconsistent ledger math", seed, p.Alias)
 			}
+			if !projectNamesAreRelated(p.Name, p.Alias) {
+				t.Fatalf("seed %d project alias %q is unrelated to formal name %q", seed, p.Alias, p.Name)
+			}
 		}
 		for _, trip := range w.Trips {
 			tripAliases = append(tripAliases, trip.Alias)
