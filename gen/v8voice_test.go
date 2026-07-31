@@ -17,8 +17,9 @@ func TestV8TranscriptUsesWarmVariedAssistantVoice(t *testing.T) {
 	}
 
 	counts := map[string]int{}
+	seenPairs := map[string]bool{}
 	total := 0
-	check := func(source string, pair protocol.MemoryPair) {
+	check := func(source, userID string, pair protocol.MemoryPair) {
 		t.Helper()
 		response := strings.TrimSpace(pair.Response)
 		if assistantvoice.IsCold(response) {
@@ -33,17 +34,26 @@ func TestV8TranscriptUsesWarmVariedAssistantVoice(t *testing.T) {
 				t.Fatalf("%s pair %s contains benchmark-like phrase %q: %q / %q", source, pair.PairID, banned, pair.Prompt, response)
 			}
 		}
+		key := userID + "\x00" + pair.PairID
+		if seenPairs[key] {
+			return
+		}
+		seenPairs[key] = true
 		counts[response]++
 		total++
 	}
 	for _, toolCase := range artifact.ToolCases {
 		for _, pair := range toolCase.PrerequisitePairs {
-			check("tool prerequisite", pair)
+			check("tool prerequisite", PrimaryUser, pair)
 		}
 	}
 	for _, wave := range artifact.MemoryWaves {
+		userID := wave.UserID
+		if userID == "" {
+			userID = PrimaryUser
+		}
 		for _, pair := range wave.Pairs {
-			check("memory wave", pair)
+			check("memory wave", userID, pair)
 		}
 	}
 	for _, memoryCase := range artifact.MemoryCases {
@@ -58,8 +68,49 @@ func TestV8TranscriptUsesWarmVariedAssistantVoice(t *testing.T) {
 		t.Fatalf("assistant response diversity=%d/%d, want at least one unique response per three rows", len(counts), total)
 	}
 	for response, count := range counts {
-		if count > 16 {
-			t.Fatalf("assistant response repeated %d times, want at most 16: %q", count, response)
+		if count > 2 {
+			t.Fatalf("assistant response repeated %d times, want at most 2: %q", count, response)
+		}
+	}
+}
+
+func TestV8TranscriptReplyCopyLimitAcrossSeeds(t *testing.T) {
+	for _, runSize := range []string{"small", "medium", "full"} {
+		prof, _ := ProfileForVersion(runSize, protocol.BenchVersionV8)
+		for _, seed := range []int64{1, 42, 123456789, 3473949159349387300} {
+			artifact, err := GenerateDataset(seed, prof, protocol.BenchVersionV8)
+			if err != nil {
+				t.Fatalf("%s seed %d: %v", runSize, seed, err)
+			}
+			seenPairs := map[string]bool{}
+			counts := map[string]int{}
+			check := func(userID string, pair protocol.MemoryPair) {
+				key := userID + "\x00" + pair.PairID
+				if seenPairs[key] {
+					return
+				}
+				seenPairs[key] = true
+				counts[pair.Response]++
+			}
+			for _, toolCase := range artifact.ToolCases {
+				for _, pair := range toolCase.PrerequisitePairs {
+					check(PrimaryUser, pair)
+				}
+			}
+			for _, wave := range artifact.MemoryWaves {
+				userID := wave.UserID
+				if userID == "" {
+					userID = PrimaryUser
+				}
+				for _, pair := range wave.Pairs {
+					check(userID, pair)
+				}
+			}
+			for response, count := range counts {
+				if count > 2 {
+					t.Fatalf("%s seed %d assistant response repeated %d times: %q", runSize, seed, count, response)
+				}
+			}
 		}
 	}
 }

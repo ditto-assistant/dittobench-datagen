@@ -1,11 +1,13 @@
 package gen
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/ditto-assistant/dittobench-datagen/persona"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/universe"
 )
 
 func TestGenerateIsolationStructure(t *testing.T) {
@@ -153,6 +155,102 @@ func TestV8IsolationUsesWorldMemoriesAndExactGraphConflicts(t *testing.T) {
 	}
 	if !sawPrimary || !sawSecondary {
 		t.Fatalf("v8 isolation directions primary=%v secondary=%v", sawPrimary, sawSecondary)
+	}
+}
+
+func TestV8IsolationUsesPlausibleSharedGivenNames(t *testing.T) {
+	seeds := []int64{123456789, 3473949159349387300}
+	for seed := int64(1); seed <= 128; seed++ {
+		seeds = append(seeds, seed)
+	}
+	for _, seed := range seeds {
+		const primaryN = 225
+		const isoCases = 9
+		scale, _ := v8WorldProfile(primaryN)
+		primary := universe.Generate(seed, scale)
+		secondarySource := universe.Generate(seed^isolationSalt, scale)
+		secondaryPeople := append([]universe.Person(nil), secondarySource.People...)
+		usedSecondaryPeople := make([]bool, len(secondaryPeople))
+		iso, err := GenerateIsolationForVersion(seed, primaryN, 5, isoCases, protocol.BenchVersionV8)
+		if err != nil {
+			t.Fatalf("seed %d: %v", seed, err)
+		}
+
+		pairsBySession := make(map[string]protocol.MemoryPair, len(iso.SecondaryWave.Pairs))
+		for _, pair := range iso.SecondaryWave.Pairs {
+			pairsBySession[pair.SessionID] = pair
+		}
+		projectedWorld := secondarySource
+		projectedWorld.People = append([]universe.Person(nil), secondarySource.People...)
+		projectedPeople := make([]universe.Person, isoCases)
+		for i := 0; i < isoCases; i++ {
+			primaryPerson := primary.People[i]
+			sourceIndex, ok := selectIsolationSource(secondaryPeople, usedSecondaryPeople, primaryPerson, i)
+			if !ok {
+				t.Fatalf("seed %d person %d has no distinct city/event source", seed, i)
+			}
+			usedSecondaryPeople[sourceIndex] = true
+			projectedPeople[i] = projectIsolationPerson(secondaryPeople[sourceIndex], primaryPerson)
+			projectedWorld.People[i] = projectedPeople[i]
+		}
+		for i := 0; i < isoCases; i++ {
+			primaryPlan, err := primary.ContactCurrentPlan(i)
+			if err != nil {
+				t.Fatalf("seed %d primary person %d: %v", seed, i, err)
+			}
+
+			primaryPerson := primary.People[i]
+			projected := projectedPeople[i]
+			if projected.Name == primaryPerson.Name || projected.Email == primaryPerson.Email {
+				t.Fatalf("seed %d person %d did not preserve a distinct secondary identity: primary=%+v secondary=%+v", seed, i, primaryPerson, projected)
+			}
+			if strings.Fields(projected.Name)[0] != strings.Fields(primaryPerson.Name)[0] {
+				t.Fatalf("seed %d person %d did not retain the shared given-name collision: primary=%q secondary=%q", seed, i, primaryPerson.Name, projected.Name)
+			}
+			if projected.Context == primaryPerson.Context || projected.City == primaryPerson.City {
+				t.Fatalf("seed %d person %d manufactured a shared scene: primary=%s/%s secondary=%s/%s", seed, i, primaryPerson.City, primaryPerson.Context, projected.City, projected.Context)
+			}
+
+			secondaryPlan, err := projectedWorld.ContactCurrentPlan(i)
+			if err != nil {
+				t.Fatalf("seed %d secondary person %d: %v", seed, i, err)
+			}
+			wantPlan := primaryPlan
+			if i%2 == 0 {
+				wantPlan = secondaryPlan
+			}
+			if got := iso.ReviewPlans[i].Case.Question; got != wantPlan.Case.Question {
+				t.Fatalf("seed %d person %d isolation question diverged:\n got %q\nwant %q", seed, i, got, wantPlan.Case.Question)
+			}
+
+			for _, session := range []string{"a", "b", "d"} {
+				pair, ok := pairsBySession[fmt.Sprintf("isolation-person-%02d-%s", i, session)]
+				if !ok {
+					t.Fatalf("seed %d person %d missing isolation session %s", seed, i, session)
+				}
+				if strings.Contains(pair.Prompt, primaryPerson.Name) || strings.Contains(pair.Prompt, primaryPerson.Email) {
+					t.Fatalf("seed %d person %d isolation pair %s copied primary identity: %q", seed, i, session, pair.Prompt)
+				}
+			}
+		}
+	}
+}
+
+func TestV8IsolationSourceMatchingAcrossScoredProfiles(t *testing.T) {
+	profiles := []struct {
+		primaryN int
+		waves    int
+		isoCases int
+	}{
+		{primaryN: 64, waves: 4, isoCases: 5},
+		{primaryN: 225, waves: 5, isoCases: 9},
+	}
+	for _, profile := range profiles {
+		for seed := int64(1); seed <= 128; seed++ {
+			if _, err := GenerateIsolationForVersion(seed, profile.primaryN, profile.waves, profile.isoCases, protocol.BenchVersionV8); err != nil {
+				t.Fatalf("seed %d profile %+v: %v", seed, profile, err)
+			}
+		}
 	}
 }
 
