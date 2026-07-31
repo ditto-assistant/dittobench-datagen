@@ -223,36 +223,43 @@ func GenerateIsolationForVersion(seed int64, primaryN, nWaves, isoCases, benchVe
 }
 
 // generateV8WorldIsolation keeps the cross-user boundary without retaining a
-// second legacy persona haystack. Both graphs describe the same believable
-// people and work context, but a bounded set of current addresses differs. The
-// same natural question is therefore answerable in either graph and a leaked
-// sibling value is an explicit forbidden answer.
+// second legacy persona haystack. Each graph owns a distinct deterministic
+// world. A bounded set of people shares only a common given name, the ordinary
+// ambiguity a cross-user search must scope correctly. Their relationships,
+// cities, events, full identities, work histories, nicknames, employers, and
+// addresses remain different, so the transcript does not manufacture two
+// near-clones merely to make the question text byte-identical.
 func generateV8WorldIsolation(seed int64, primaryN, isoCases int) (IsolationSuite, error) {
 	scale, _ := v8WorldProfile(primaryN)
 	primary := universe.Generate(seed, scale)
-	if isoCases > len(primary.People) {
+	secondary := universe.Generate(seed^isolationSalt, scale)
+	if isoCases > len(primary.People) || isoCases > len(secondary.People) {
 		return IsolationSuite{}, fmt.Errorf("v8 world isolation needs %d people, generated %d", isoCases, len(primary.People))
 	}
-	secondary := primary
-	secondary.People = append([]universe.Person(nil), primary.People...)
-	secondary.Pairs = nil
 
 	suite := IsolationSuite{
 		SecondaryWave: protocol.SeedRequest{UserID: SecondaryUser},
 		Cases:         make([]StagedCase, 0, isoCases),
 		ReviewPlans:   make([]universe.QuestionPlan, 0, isoCases),
 	}
-	pairByID := make(map[string]protocol.MemoryPair, len(primary.Pairs))
-	for _, pair := range primary.Pairs {
+	pairByID := make(map[string]protocol.MemoryPair, len(secondary.Pairs))
+	for _, pair := range secondary.Pairs {
 		pairByID[pair.PairID] = pair
 	}
+	secondary.Pairs = nil
+	secondaryPeople := append([]universe.Person(nil), secondary.People...)
+	usedSecondaryPeople := make([]bool, len(secondaryPeople))
 
 	pairGroups := make([][]protocol.MemoryPair, 3)
 	for i := 0; i < isoCases; i++ {
-		person := primary.People[i]
-		alternate := isolationEmail(person.Email)
-		projected := secondary.People[i]
-		projected.Email = alternate
+		anchor := primary.People[i]
+		sourceIndex, ok := selectIsolationSource(secondaryPeople, usedSecondaryPeople, anchor, i)
+		if !ok {
+			return IsolationSuite{}, fmt.Errorf("v8 world isolation person %d has no distinct city/event source", i)
+		}
+		usedSecondaryPeople[sourceIndex] = true
+		source := secondaryPeople[sourceIndex]
+		projected := projectIsolationPerson(source, anchor)
 
 		ids := []struct {
 			old     string
@@ -260,9 +267,9 @@ func generateV8WorldIsolation(seed int64, primaryN, isoCases int) (IsolationSuit
 			session string
 			set     func(string)
 		}{
-			{person.IdentityPairID, "identity", "a", func(id string) { projected.IdentityPairID = id }},
-			{person.WorkPairID, "work", "b", func(id string) { projected.WorkPairID = id }},
-			{person.CorrectionPairID, "correction", "d", func(id string) { projected.CorrectionPairID = id }},
+			{source.IdentityPairID, "identity", "a", func(id string) { projected.IdentityPairID = id }},
+			{source.WorkPairID, "work", "b", func(id string) { projected.WorkPairID = id }},
+			{source.CorrectionPairID, "correction", "d", func(id string) { projected.CorrectionPairID = id }},
 		}
 		for group, item := range ids {
 			pair, ok := pairByID[item.old]
@@ -271,9 +278,10 @@ func generateV8WorldIsolation(seed int64, primaryN, isoCases int) (IsolationSuit
 			}
 			pair.PairID = protocol.OpaqueCaseID(seed, "world-isolation-person-"+item.purpose, i)
 			pair.SessionID = fmt.Sprintf("isolation-person-%02d-%s", i, item.session)
-			pair.Prompt = strings.ReplaceAll(pair.Prompt, person.Email, alternate)
+			pair.Prompt = projectIsolationPrompt(pair.Prompt, source, projected)
 			item.set(pair.PairID)
 			pairGroups[group] = append(pairGroups[group], pair)
+			secondary.Pairs = append(secondary.Pairs, pair)
 		}
 		secondary.People[i] = projected
 	}
@@ -316,12 +324,87 @@ func generateV8WorldIsolation(seed int64, primaryN, isoCases int) (IsolationSuit
 	return suite, nil
 }
 
-func isolationEmail(email string) string {
-	local, domain, ok := strings.Cut(email, "@")
-	if !ok {
-		return "contact-ops@invalid.local"
+func projectIsolationPerson(source, anchor universe.Person) universe.Person {
+	projected := source
+	anchorFields := strings.Fields(anchor.Name)
+	sourceFields := strings.Fields(source.Name)
+	if len(anchorFields) > 0 && len(sourceFields) > 0 {
+		// ContactCurrentPlan renders only the given name. Sharing it keeps the
+		// question byte-identical while the surname preserves a distinct person.
+		sourceFields[0] = anchorFields[0]
+		projected.Name = strings.Join(sourceFields, " ")
+		if projected.Name == anchor.Name {
+			// Preserve the shared given-name query without manufacturing the exact
+			// same person when the two generated worlds happen to draw one surname.
+			projected.Name = strings.Join([]string{anchorFields[0], strings.Fields(source.Name)[0], sourceFields[len(sourceFields)-1]}, " ")
+		}
 	}
-	return local + ".ops@" + domain
+	projected.Email = projectIsolationEmail(projected.Name, source.Email)
+	if projected.Email == anchor.Email {
+		local, domain, _ := strings.Cut(projected.Email, "@")
+		projected.Email = local + ".work@" + domain
+	}
+	return projected
+}
+
+// selectIsolationSource pairs each primary-world contact with one unused
+// secondary-world person whose event and city are both different. Starting the
+// scan at the matching index keeps the mapping stable while the explicit
+// constraints prevent the generator from manufacturing implausible shared
+// scenes around a deliberately shared first name.
+func selectIsolationSource(people []universe.Person, used []bool, anchor universe.Person, start int) (int, bool) {
+	for offset := range people {
+		index := (start + offset) % len(people)
+		if used[index] || people[index].Context == anchor.Context || people[index].City == anchor.City {
+			continue
+		}
+		return index, true
+	}
+	return 0, false
+}
+
+func projectIsolationPrompt(prompt string, source, projected universe.Person) string {
+	replacements := [][2]string{
+		{source.Name, projected.Name},
+		{source.Relation, projected.Relation},
+		{source.City, projected.City},
+		{source.Context, projected.Context},
+		{source.Email, projected.Email},
+	}
+	for _, replacement := range replacements {
+		if replacement[0] != replacement[1] {
+			prompt = strings.ReplaceAll(prompt, replacement[0], replacement[1])
+		}
+	}
+	return prompt
+}
+
+func projectIsolationEmail(name, sourceEmail string) string {
+	_, domain, ok := strings.Cut(sourceEmail, "@")
+	if !ok || domain == "" {
+		domain = "invalid.local"
+	}
+	fields := strings.Fields(strings.ToLower(name))
+	if len(fields) == 0 {
+		return "contact@" + domain
+	}
+	clean := func(value string) string {
+		return strings.Map(func(r rune) rune {
+			if r >= 'a' && r <= 'z' {
+				return r
+			}
+			return -1
+		}, value)
+	}
+	first := clean(fields[0])
+	last := clean(fields[len(fields)-1])
+	if first == "" {
+		first = "contact"
+	}
+	if last == "" || last == first {
+		return first + "@" + domain
+	}
+	return first + "." + last + "@" + domain
 }
 
 func v8ScalarIsolationBudget(primaryN, requested int) int {

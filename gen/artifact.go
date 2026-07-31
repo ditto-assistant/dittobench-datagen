@@ -4,8 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"sort"
 
+	"github.com/ditto-assistant/dittobench-datagen/internal/assistantvoice"
 	v2gen "github.com/ditto-assistant/dittobench-datagen/internal/v2gen/gen"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 	"github.com/ditto-assistant/dittobench-datagen/toolexec"
@@ -135,7 +137,7 @@ func BuildArtifactForVersion(seed int64, benchVersion int, toolCases []protocol.
 		fixtures = append(fixtures, FixtureDigest{CaseID: c.ID, Needle: f.NeedleText()})
 	}
 	sort.Slice(fixtures, func(i, j int) bool { return fixtures[i].CaseID < fixtures[j].CaseID })
-	return DatasetArtifact{
+	artifact := DatasetArtifact{
 		Seed:         seed,
 		BenchVersion: benchVersion,
 		GeneratedAt:  epoch.UTC().Format("2006-01-02T15:04:05Z07:00"),
@@ -143,7 +145,100 @@ func BuildArtifactForVersion(seed int64, benchVersion int, toolCases []protocol.
 		MemoryWaves:  memWaves,
 		MemoryCases:  flat,
 		ToolFixtures: fixtures,
-	}, nil
+	}
+	if benchVersion >= protocol.BenchVersionV8 {
+		artifact.ToolCases, artifact.MemoryWaves = cloneV8TranscriptSurfaces(toolCases, memWaves)
+		if err := boundV8AssistantResponseCopies(seed, artifact.ToolCases, artifact.MemoryWaves, 2); err != nil {
+			return DatasetArtifact{}, err
+		}
+	}
+	return artifact, nil
+}
+
+func cloneV8TranscriptSurfaces(toolCases []protocol.ToolCase, memWaves []protocol.SeedRequest) ([]protocol.ToolCase, []protocol.SeedRequest) {
+	tools := append([]protocol.ToolCase(nil), toolCases...)
+	for i := range tools {
+		tools[i].PrerequisitePairs = append([]protocol.MemoryPair(nil), tools[i].PrerequisitePairs...)
+	}
+	waves := append([]protocol.SeedRequest(nil), memWaves...)
+	for i := range waves {
+		waves[i].Pairs = append([]protocol.MemoryPair(nil), waves[i].Pairs...)
+	}
+	return tools, waves
+}
+
+// boundV8AssistantResponseCopies keeps the transcript human without making its
+// voice an answer table. A repeated attachment of the same pair is one logical
+// record and remains byte-identical everywhere; distinct records may share one
+// response at most maxCopies times. The pass runs only after every V8 surface is
+// assembled, so tool prerequisites and both user graphs share one invariant.
+func boundV8AssistantResponseCopies(seed int64, toolCases []protocol.ToolCase, memWaves []protocol.SeedRequest, maxCopies int) error {
+	if maxCopies < 1 {
+		return fmt.Errorf("v8 assistant response copy limit must be positive")
+	}
+	type record struct {
+		key      string
+		response string
+		refs     []*protocol.MemoryPair
+	}
+	recordsByKey := map[string]*record{}
+	ordered := make([]*record, 0)
+	add := func(userID string, pair *protocol.MemoryPair) error {
+		key := userID + "\x00" + pair.PairID
+		if existing, ok := recordsByKey[key]; ok {
+			if existing.response != pair.Response {
+				return fmt.Errorf("v8 pair %s has conflicting assistant responses", pair.PairID)
+			}
+			existing.refs = append(existing.refs, pair)
+			return nil
+		}
+		rec := &record{key: key, response: pair.Response, refs: []*protocol.MemoryPair{pair}}
+		recordsByKey[key] = rec
+		ordered = append(ordered, rec)
+		return nil
+	}
+	for i := range toolCases {
+		for j := range toolCases[i].PrerequisitePairs {
+			if err := add(PrimaryUser, &toolCases[i].PrerequisitePairs[j]); err != nil {
+				return err
+			}
+		}
+	}
+	for i := range memWaves {
+		userID := memWaves[i].UserID
+		if userID == "" {
+			userID = PrimaryUser
+		}
+		for j := range memWaves[i].Pairs {
+			if err := add(userID, &memWaves[i].Pairs[j]); err != nil {
+				return err
+			}
+		}
+	}
+
+	counts := map[string]int{}
+	for _, rec := range ordered {
+		response := rec.response
+		if counts[response] >= maxCopies {
+			found := false
+			for attempt := 1; attempt <= 32; attempt++ {
+				candidate := assistantvoice.DiversifyDuplicate(seed, rec.key, rec.response, attempt)
+				if counts[candidate] < maxCopies {
+					response = candidate
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("v8 assistant response variation exhausted for pair %s", rec.key)
+			}
+		}
+		for _, ref := range rec.refs {
+			ref.Response = response
+		}
+		counts[response]++
+	}
+	return nil
 }
 
 // Marshal returns the canonical JSON bytes of the artifact.

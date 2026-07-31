@@ -137,6 +137,25 @@ var updateWarmReplies = []string{
 	"With you on the update.",
 }
 
+var duplicateCodas = []string{
+	"I’m keeping the context around it too.",
+	"That detail is staying with me.",
+	"I can see where it belongs now.",
+	"I’ll keep its place in the story clear.",
+	"I’m holding onto how it connects.",
+	"The surrounding thread is clear to me.",
+	"I’ll remember what sits around it too.",
+	"I can follow where this fits.",
+	"I’m keeping the wider picture with it.",
+	"That gives me another piece of your world.",
+	"I’ll keep the reason behind it close.",
+	"I’m following how this came together.",
+	"I can place it in the timeline now.",
+	"I’ll remember the path that led here.",
+	"The before and after make sense to me.",
+	"I’m keeping its connections intact.",
+}
+
 // Render returns a deterministic V8 assistant response. It replaces generic or
 // transactional acknowledgements and rewrites cold prefixes while retaining any
 // substantive fact already present in the response. When userName is available,
@@ -151,6 +170,21 @@ func Render(seed int64, pairID, sessionID, userName, prompt, response string) st
 		rendered = rewritten
 	}
 	return addressUserByName(seed, pairID, userName, rendered)
+}
+
+// DiversifyDuplicate adds a deterministic, natural coda when a complete V8
+// artifact would otherwise repeat the exact same acknowledgement more than
+// twice. attempt walks the coda ring rather than making a random promise, so an
+// artifact-level caller can fail closed if every available rendering is already
+// occupied. The substantive response is preserved verbatim.
+func DiversifyDuplicate(seed int64, pairID, response string, attempt int) string {
+	response = strings.TrimSpace(response)
+	if response == "" || attempt < 1 {
+		return response
+	}
+	start := hashIndex(seed, pairID, "duplicate-coda", len(duplicateCodas))
+	coda := duplicateCodas[(start+attempt-1)%len(duplicateCodas)]
+	return response + " " + coda
 }
 
 // IsCold identifies response surfaces that violate the V8 transcript standard.
