@@ -463,6 +463,46 @@ func TestV8HasNoLegacySessionQuestionsOrTranscripts(t *testing.T) {
 	}
 }
 
+func TestV8InitialWorldMakesEveryDeclaredMemoryCaseAnswerable(t *testing.T) {
+	for _, runSize := range []string{"small", "medium", "full"} {
+		prof, _ := ProfileForVersion(runSize, protocol.BenchVersionV8)
+		for _, seed := range []int64{1, 42, 123456789, 3058240546919425205} {
+			rng, err := NewRNGForVersion(seed, protocol.BenchVersionV8)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tools, _ := GenerateToolsForVersion(rng, seed, prof.Tools, protocol.BenchVersionV8)
+			suite, err := GenerateMemorySuiteForVersion(rng, seed, prof.Mem, prof.Waves, prof.RawPairsFrac, protocol.BenchVersionV8)
+			if err != nil {
+				t.Fatalf("%s seed %d: %v", runSize, seed, err)
+			}
+			available := map[string]bool{}
+			for _, tc := range tools {
+				for _, pair := range tc.PrerequisitePairs {
+					available[pair.PairID] = true
+				}
+			}
+			for _, wave := range suite.Waves {
+				for _, pair := range wave.Pairs {
+					available[pair.PairID] = true
+				}
+			}
+			declared := 0
+			for _, staged := range suite.Cases {
+				for _, pairID := range staged.RequiredPairIDs {
+					declared++
+					if !available[pairID] {
+						t.Fatalf("%s seed %d case %s requires unavailable pair %s", runSize, seed, staged.Case.ID, pairID)
+					}
+				}
+			}
+			if declared == 0 {
+				t.Fatalf("%s seed %d exposed no V8 evidence declarations", runSize, seed)
+			}
+		}
+	}
+}
+
 func v8ComposedMemoryType(questionType string) bool {
 	if strings.HasPrefix(questionType, "world-") || strings.HasPrefix(questionType, "multi-") ||
 		strings.HasPrefix(questionType, "temporal-") || strings.HasPrefix(questionType, "lifecycle-") ||

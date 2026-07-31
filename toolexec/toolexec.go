@@ -91,6 +91,19 @@ func NeedleFor(masterSeed int64, caseID string) Needle {
 	return synthNeedle(rand.New(rand.NewSource(caseSeed(masterSeed, caseID))))
 }
 
+// NeedleForV8World binds repeated subjects to one seed-local value and a
+// noun-compatible unit. It is used only by V8 world categories; frozen older
+// benchmark vectors continue through NeedleFor unchanged.
+func NeedleForV8World(masterSeed int64, caseID string) Needle {
+	r := rand.New(rand.NewSource(caseSeed(masterSeed, caseID)))
+	name := coinedNames[r.Intn(len(coinedNames))]
+	noun := coinedNouns[r.Intn(len(coinedNouns))]
+	subject := fmt.Sprintf("the %s %s", name, noun)
+	vr := rand.New(rand.NewSource(int64(fnv1a(fmt.Sprintf("%d|%s", masterSeed, subject))) & ((1 << 63) - 1)))
+	units := unitsForNoun[noun]
+	return Needle{Subject: subject, Value: commaNumber(100 + vr.Intn(99900)), Unit: units[vr.Intn(len(units))]}
+}
+
 // Fixture is the per-case mock tool environment. It is a pure function of the
 // master seed and the case, so the same run seed always serves the same content.
 // The needle is present only for cases whose expected tools return answer-bearing
@@ -150,6 +163,9 @@ func BuildFixture(masterSeed int64, c protocol.ToolCase) Fixture {
 	}
 	if caseCarriesNeedle(c) {
 		f.needle = NeedleFor(masterSeed, c.ID)
+		if strings.HasPrefix(c.Category, "world_") {
+			f.needle = NeedleForV8World(masterSeed, c.ID)
+		}
 		f.has = true
 		f.bearer = needleBearer(c)
 		f.decoy = decoyValue(f.seed, f.needle.Value)
@@ -330,6 +346,12 @@ func (f Fixture) Result(name string, args json.RawMessage) (string, bool) {
 		return fmt.Sprintf("Artifact created: %s", coinedURL(r)), true
 	case "file_feedback_for_team":
 		return fmt.Sprintf("Thanks — your feedback was filed (ticket %s).", jobID(r)), true
+	case "list_workflows":
+		return "Saved workflows: weekly standup digest; invoice review; launch checklist.", true
+	case "discover_capabilities":
+		return "Appearance options: accent colors teal, indigo, amber, emerald, crimson, violet, cobalt, coral; fonts Atkinson Hyperlegible, Inter, and system; light and dark modes.", true
+	case "search_tools":
+		return "Matching tools: run_code for calculations; artifacts for file conversion; search_web for live public information.", true
 	case "set_theme", "set_main_model", "set_reasoning_effort", "set_chat_tool_preferences":
 		return "Setting updated.", true
 	default:
@@ -497,9 +519,13 @@ var (
 		"index", "reservoir", "initiative", "alloy", "protocol", "corridor",
 		"ledger", "array", "expedition", "foundry", "syndicate", "lattice",
 	}
-	coinedUnits = []string{
-		"points", "acre-feet", "units", "basis points", "kilotonnes",
-		"megawatts", "parsecs", "hectares",
+	unitsForNoun = map[string][]string{
+		"index": {"points", "basis points"}, "ledger": {"points", "basis points"},
+		"syndicate": {"points", "basis points"}, "reservoir": {"acre-feet", "hectares"},
+		"lattice": {"acre-feet", "hectares"}, "alloy": {"kilotonnes"},
+		"foundry": {"kilotonnes"}, "corridor": {"megawatts"},
+		"array": {"megawatts"}, "protocol": {"megawatts"},
+		"initiative": {"units"}, "expedition": {"units"},
 	}
 	webSources = []string{
 		"the Ansible Gazette", "Torva Daily", "the Merridian Review",
@@ -514,7 +540,7 @@ func synthNeedle(r *rand.Rand) Needle {
 	name := coinedNames[r.Intn(len(coinedNames))]
 	noun := coinedNouns[r.Intn(len(coinedNouns))]
 	num := 100 + r.Intn(99900) // 100..99999
-	unit := coinedUnits[r.Intn(len(coinedUnits))]
+	unit := []string{"points", "acre-feet", "units", "basis points", "kilotonnes", "megawatts", "parsecs", "hectares"}[r.Intn(8)]
 	return Needle{Subject: fmt.Sprintf("the %s %s", name, noun), Value: commaNumber(num), Unit: unit}
 }
 

@@ -74,6 +74,28 @@ func TestBuildFixtureDeterministic(t *testing.T) {
 	}
 }
 
+func TestV8WorldNeedlesKeepOneSeedLocalFactPerSubject(t *testing.T) {
+	const seed int64 = 123456789
+	seen := map[string]Needle{}
+	for i := 0; i < 5_000; i++ {
+		needle := NeedleForV8World(seed, fmt.Sprintf("case-%d", i))
+		if prior, ok := seen[needle.Subject]; ok && (prior.Value != needle.Value || prior.Unit != needle.Unit) {
+			t.Fatalf("subject %q changed fact within one seed: %+v then %+v", needle.Subject, prior, needle)
+		}
+		seen[needle.Subject] = needle
+	}
+	for subject, needle := range seen {
+		noun := subject[strings.LastIndex(subject, " ")+1:]
+		compatible := false
+		for _, unit := range unitsForNoun[noun] {
+			compatible = compatible || unit == needle.Unit
+		}
+		if !compatible {
+			t.Fatalf("subject %q has incompatible unit %q", subject, needle.Unit)
+		}
+	}
+}
+
 func TestResultDeterministicAndTyped(t *testing.T) {
 	f := BuildFixture(7, webCase("web_search-7-0"))
 	r1, ok := f.Result("search_web", nil)

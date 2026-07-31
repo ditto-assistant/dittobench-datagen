@@ -311,9 +311,14 @@ func generateV8WorldIsolation(seed int64, primaryN, isoCases int) (IsolationSuit
 		plan.Case.ID = protocol.OpaqueCaseID(seed, "world-isolation-contact", i)
 		plan.Case.QuestionID = plan.Case.ID
 		plan.Case.QuestionType = "world-isolation-contact-current"
+		plan.Case.Question = "For this contact list: " + plan.Case.Question
 		plan.Case.ForbiddenAnswer = forbidden
 		plan.Case.BenchVersion = protocol.BenchVersionV8
-		suite.Cases = append(suite.Cases, StagedCase{Case: plan.Case, RunAfterWave: 0, UserID: userID})
+		plan.Case.WritingProtected = append([]string(nil), plan.Constraints...)
+		suite.Cases = append(suite.Cases, StagedCase{
+			Case: plan.Case, RunAfterWave: 0, UserID: userID,
+			RequiredPairIDs: append([]string(nil), plan.RequiredPairIDs...),
+		})
 		suite.ReviewPlans = append(suite.ReviewPlans, plan)
 	}
 

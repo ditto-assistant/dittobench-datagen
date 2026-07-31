@@ -1241,27 +1241,47 @@ func applyV8WorldActions(seed int64, cases []protocol.ToolCase) {
 			cases[i] = v8WorldAgentJob(caseID, world, i)
 		}
 	}
+	protected := world.ProtectedTerms()
+	for i := range cases {
+		if strings.HasPrefix(cases[i].Category, "world_") {
+			cases[i].WritingProtected = append(cases[i].WritingProtected, protected...)
+			cases[i].WritingProtected = append(cases[i].WritingProtected, toolexec.NeedleForV8World(seed, cases[i].ID).Subject)
+		} else {
+			cases[i].WritingProtected = append(cases[i].WritingProtected, toolexec.NeedleFor(seed, cases[i].ID).Subject)
+		}
+	}
 }
 
 func v8WorldContactEmail(seed int64, caseID string, world universe.World, index int) protocol.ToolCase {
 	p := world.People[index%len(world.People)]
-	needle := toolexec.NeedleFor(seed, caseID)
-	return fuzzyWorldTool(caseID, "world_contact_research_email_result_usage", fmt.Sprintf("Look up %s, then email the exact current figure to %s — my %s in %s who handled the %s. Mention the figure in the email and in your confirmation; use their corrected address, not the old one.", needle.Subject, misspellAlias(p.Nickname, index), p.Relation, p.City, p.Context), []protocol.ToolSpec{{Name: "search_web"}, {Name: "gmail_send", RequiredArgs: map[string]string{"to": p.Email, "body": needle.Value}}}, "resolve the person and corrected address, research the live value, and send that value to the right person")
+	needle := toolexec.NeedleForV8World(seed, caseID)
+	prompts := []string{
+		"What is %s at right now? Forward the figure to %s — the %s in %s from the %s.",
+		"Could you check the latest figure for %s and send it to %s? I mean my %s in %s, the one from the %s.",
+		"Please look up %s and pass the current number along to %s, my %s in %s from the %s.",
+		"I need the latest reading for %s sent to %s — my %s over in %s who handled the %s.",
+		"Can you look up %s and email what you find to %s? They're my %s in %s from the %s.",
+		"See where %s stands and send that number to %s, the %s in %s I know from the %s.",
+		"Find the live value for %s, then get it over to %s — my %s in %s from the %s.",
+		"What's the latest on %s? Email the number to %s, my %s in %s from the %s.",
+	}
+	prompt := fmt.Sprintf(prompts[index%len(prompts)], needle.Subject, p.Nickname, p.Relation, p.City, p.Context)
+	return fuzzyWorldTool(caseID, "world_contact_research_email_result_usage", prompt, []protocol.ToolSpec{{Name: "search_web"}, {Name: "gmail_send", RequiredArgs: map[string]string{"to": p.Email, "body": needle.Value}}}, "resolve the person and current email, research the live value, and send that value to the right person")
 }
 
 func v8WorldMemoryDelete(caseID string, world universe.World, index int) protocol.ToolCase {
 	p := world.People[index%len(world.People)]
-	return fuzzyWorldTool(caseID, "world_memory_delete", fmt.Sprintf("Delete the disposable contact-maintenance receipt for %s after the %s — they're my %s at %s. Keep the relationship, address, and correction records.", p.Nickname, p.Context, p.Relation, p.Employer), []protocol.ToolSpec{{Name: "delete_memory", RequiredArgs: map[string]string{"pair_id": p.ToolNotePairID}}}, "resolve the uniquely described disposable note and delete that pair without removing canonical contact facts")
+	return fuzzyWorldTool(caseID, "world_memory_delete", fmt.Sprintf("You can bin that temporary note about fixing %s's email after the %s — they're my %s at %s. Just don't lose their actual contact history.", p.Nickname, p.Context, p.Relation, p.Employer), []protocol.ToolSpec{{Name: "delete_memory", RequiredArgs: map[string]string{"pair_id": p.ToolNotePairID}}}, "resolve the uniquely described disposable note and delete that pair without removing canonical contact facts")
 }
 
 func v8WorldMemoryUpdate(caseID string, world universe.World, index int) protocol.ToolCase {
 	p := world.Projects[index%len(world.Projects)]
-	return fuzzyWorldTool(caseID, "world_memory_update", fmt.Sprintf("Update the separate handoff scratchpad for %q at %s — the %s project. Add that the handoff is Friday; leave the project identity, ownership, and invoice records alone.", p.Alias, p.Client, p.Purpose), []protocol.ToolSpec{{Name: "update_memory", RequiredArgs: map[string]string{"pair_id": p.ToolNotePairID, "content": "handoff is Friday"}}}, "resolve the project's mutable handoff note and update it without overwriting canonical project evidence")
+	return fuzzyWorldTool(caseID, "world_memory_update", fmt.Sprintf("Add to the handoff note for %q at %s that we're doing the handoff Friday. It's the %s project; update the scratchpad, not the project history.", p.Alias, p.Client, p.Purpose), []protocol.ToolSpec{{Name: "update_memory", RequiredArgs: map[string]string{"pair_id": p.ToolNotePairID, "content": "handoff is Friday"}}}, "resolve the project's mutable handoff note and update it without overwriting canonical project evidence")
 }
 
 func v8WorldLinkRead(seed int64, caseID string) protocol.ToolCase {
-	needle := toolexec.NeedleFor(seed, caseID)
-	return fuzzyWorldTool(caseID, "world_link_chain_result_usage", fmt.Sprintf("Search X or Twitter for %s, follow whichever result actually contains the current figure, and tell me the exact value. I did not save the complete URL, so use the live result rather than guessing a link.", needle.Subject), []protocol.ToolSpec{{Name: "search_web"}, {Name: "read_links"}}, "find and read the live source, then report the served value")
+	needle := toolexec.NeedleForV8World(seed, caseID)
+	return fuzzyWorldTool(caseID, "world_link_chain_result_usage", fmt.Sprintf("See what %s is at right now, and open the actual page rather than relying on the search blurb.", needle.Subject), []protocol.ToolSpec{{Name: "search_web"}, {Name: "read_links"}}, "find and read the live source, then report the served value")
 }
 
 func v8WorldAgentJob(caseID string, world universe.World, index int) protocol.ToolCase {
@@ -1297,7 +1317,7 @@ func applyV8WritingNoise(seed int64, cases []protocol.ToolCase) map[string]int {
 	}
 	selected := map[string]bool{}
 	for domain, ids := range byDomain {
-		for id := range textnoise.Select(seed, "tool:"+domain, ids, 6_500) {
+		for id := range textnoise.Select(seed, "tool:"+domain, ids, 2_500) {
 			selected[id] = true
 		}
 	}
@@ -1311,8 +1331,9 @@ func applyV8WritingNoise(seed int64, cases []protocol.ToolCase) map[string]int {
 				protected = append(protected, value)
 			}
 		}
+		protected = append(protected, cases[i].WritingProtected...)
 		projected, stats := textnoise.Project(cases[i].Prompt, seed, "tool:"+cases[i].ID, textnoise.Options{
-			Grammar: true, Protected: protected,
+			Grammar: true, MaxEdits: 1, Protected: protected,
 		})
 		if stats.Total() > 0 {
 			cases[i].Prompt = projected
@@ -1335,7 +1356,7 @@ func applyV8WritingNoise(seed int64, cases []protocol.ToolCase) map[string]int {
 	}
 	selectedPairs := map[string]bool{}
 	for domain, ids := range pairIDs {
-		for id := range textnoise.Select(seed, "pair:"+domain, ids, 4_500) {
+		for id := range textnoise.Select(seed, "pair:"+domain, ids, 2_500) {
 			selectedPairs[id] = true
 		}
 	}
@@ -1345,7 +1366,7 @@ func applyV8WritingNoise(seed int64, cases []protocol.ToolCase) map[string]int {
 			if !selectedPairs[pair.PairID] || strings.HasPrefix(pair.SessionID, "story-") {
 				continue
 			}
-			projected, stats := textnoise.Project(pair.Prompt, seed, "pair:"+pair.PairID, textnoise.Options{Grammar: true})
+			projected, stats := textnoise.Project(pair.Prompt, seed, "pair:"+pair.PairID, textnoise.Options{Grammar: true, MaxEdits: 1, Protected: cases[i].WritingProtected})
 			if stats.Total() > 0 {
 				pair.Prompt = projected
 				coverage["pair:"+pairWritingDomain(pair.SessionID)]++
@@ -1401,6 +1422,19 @@ func categoriesForVersion(benchVersion int) []category {
 		// grade the current product tools in v8.
 		for i := range out {
 			switch out[i].name {
+			case "code_compute":
+				// V8 keeps each grammar slot type-consistent. Earlier versions retain
+				// the frozen mixed pool byte-for-byte.
+				out[i].grammar = persona.Grammar{
+					"root": {
+						"#lead# take #a#, #b#, and #c#, then give me their sum, average, and the spread from lowest to highest.",
+						"#lead# my last three readings were #a#, #b#, and #c#. What is the mean, and how far apart are the high and low?",
+					},
+					"lead": {"Quick calculation:", "Can you crunch this for me?", "Help me work this out:"},
+					"a":    {"1240", "312", "48.5", "1024", "96"},
+					"b":    {"980", "277", "51.2", "18", "2048"},
+					"c":    {"1510", "298", "46.9", "512", "74"},
+				}
 			case "workflow_not_job":
 				out[i].tool = "create_workflow"
 				out[i].argKey = ""
@@ -1635,6 +1669,14 @@ func GenerateCasesWithFillersForVersion(r *rand.Rand, seed int64, n, benchVersio
 				Response:  "Morgan Lee's office number is " + phone + ".",
 			}}
 			usedFiller = ""
+		}
+		if benchVersion >= protocol.BenchVersionV8 && cat.name == "stale_context_web" {
+			pairID := protocol.OpaqueCaseID(seed, "tool-stale-context", i)
+			tc.PrerequisitePairs = []protocol.MemoryPair{{
+				PairID: pairID, SessionID: fmt.Sprintf("current-context-%d", i), Timestamp: "2025-02-11T10:00:00Z",
+				Prompt:   fmt.Sprintf("I was reading about %s last year and saved a few notes, but I know they may be out of date now.", filler),
+				Response: "I’ll remember that as background, and I’ll check current sources whenever you ask what changed.",
+			}}
 		}
 		if benchVersion >= protocol.BenchVersionV8 {
 			applyV8CapabilityResolution(&tc, argValue, i)

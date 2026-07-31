@@ -192,17 +192,17 @@ func buildStories(seed int64, scale int, w World) ([]StoryArc, []Story) {
 		// hidden owner identity into a second, unintended lookup path.
 		originalContact := uniqueEmail("Review Team", project.Name, 7000+i*2, true, seenEmails)
 		currentContact := uniqueEmail("Review Team", project.Name, 7001+i*2, true, seenEmails)
-		base := uniqueStoryAmount(r, seenAmounts, 1_200_000, 4_800_000, 12_500)
-		deltaMagnitude := uniqueStoryAmount(r, seenAmounts, 50_000, 450_000, 12_500)
+		base := uniqueStoryAmount(r, seenAmounts, 1_200_000, 4_800_000, 137)
+		deltaMagnitude := uniqueStoryAmount(r, seenAmounts, 50_000, 450_000, 137)
 		delta := deltaMagnitude
 		if i%3 == 1 {
 			delta = -deltaMagnitude
 		}
-		paid := uniqueStoryAmount(r, seenAmounts, 175_000, 900_000, 12_500)
-		cost := uniqueStoryAmount(r, seenAmounts, 50_000, 375_000, 12_500)
-		credit := uniqueStoryAmount(r, seenAmounts, 25_000, 250_000, 12_500)
+		paid := uniqueStoryAmount(r, seenAmounts, 175_000, 900_000, 137)
+		cost := uniqueStoryAmount(r, seenAmounts, 50_000, 375_000, 137)
+		credit := uniqueStoryAmount(r, seenAmounts, 25_000, 250_000, 137)
 		if delta-cost+credit == 0 {
-			credit = uniqueStoryAmount(r, seenAmounts, credit+12_500, 250_000, 12_500)
+			credit = uniqueStoryAmount(r, seenAmounts, credit+137, 250_000, 137)
 		}
 		balance := base + delta - paid - cost + credit
 		if balance <= 250_000 {

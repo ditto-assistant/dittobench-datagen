@@ -131,9 +131,9 @@ func (w World) questionCandidates() []QuestionPlan {
 
 		previous := []string{
 			fmt.Sprintf("Before %s changed addresses, which email had I saved for my %s in %s from the %s?", p.Nickname, p.Relation, p.City, p.Context),
-			fmt.Sprintf("What was the earlier address for my %s in %s I call %s from the %s, before the contact correction?", p.Relation, p.City, p.Nickname, p.Context),
+			fmt.Sprintf("What was the earlier email for my %s in %s I call %s from the %s, before the contact correction?", p.Relation, p.City, p.Nickname, p.Context),
 			fmt.Sprintf("I need the pre-correction email for %s — my %s who handled the %s in %s. What was it?", p.Nickname, p.Relation, p.Context, p.City),
-			fmt.Sprintf("Looking back before the update, which address did I first have for %s, my %s from the %s who lives in %s?", p.Nickname, p.Relation, p.Context, p.City),
+			fmt.Sprintf("Looking back before the update, which email did I first have for %s, my %s from the %s who lives in %s?", p.Nickname, p.Relation, p.Context, p.City),
 		}[i%4]
 		out = append(out, w.personPlan(oracleContactPrevious, i, previous, p.PreviousEmail, p.Email))
 	}
@@ -157,7 +157,7 @@ func (w World) questionCandidates() []QuestionPlan {
 		current := []string{
 			fmt.Sprintf("Who should get the %q handoff internally, and what current email should I use? I mean the %s work for %s, not an outside recipient.", p.Alias, p.Purpose, p.Client),
 			fmt.Sprintf("For %s's %s project that we call %q, give me the corrected email for its internal owner.", p.Client, p.Purpose, p.Alias),
-			fmt.Sprintf("What up-to-date address belongs to the person running %q on our side — %s's %s engagement?", p.Alias, p.Client, p.Purpose),
+			fmt.Sprintf("What up-to-date email belongs to the person running %q on our side — %s's %s engagement?", p.Alias, p.Client, p.Purpose),
 			fmt.Sprintf("I am sending the %q update. Resolve the internal owner from the %s work for %s, then use their current rather than original email.", p.Alias, p.Purpose, p.Client),
 		}[i%4]
 		out = append(out, w.projectLeadPlan(oracleProjectLeadCurrent, i, current, lead.Email, lead.PreviousEmail))
@@ -165,7 +165,7 @@ func (w World) questionCandidates() []QuestionPlan {
 		previous := []string{
 			fmt.Sprintf("Before the address correction, what email did I have for the internal lead on %q, the %s work for %s?", p.Alias, p.Purpose, p.Client),
 			fmt.Sprintf("Find the earlier email for whoever owns %q, our %s project for %s — not their current one.", p.Alias, p.Purpose, p.Client),
-			fmt.Sprintf("What was the original address for the internal owner of the %s project for %s that we call %q?", p.Purpose, p.Client, p.Alias),
+			fmt.Sprintf("What was the original email for the internal owner of the %s project for %s that we call %q?", p.Purpose, p.Client, p.Alias),
 			fmt.Sprintf("Looking back before the update, which email was saved for %q's internal owner on the %s work for %s?", p.Alias, p.Purpose, p.Client),
 		}[i%4]
 		out = append(out, w.projectLeadPlan(oracleProjectLeadPrevious, i, previous, lead.PreviousEmail, lead.Email))
@@ -173,14 +173,15 @@ func (w World) questionCandidates() []QuestionPlan {
 
 	for i, trip := range w.Trips {
 		changed := changedLeg(trip)
+		changedCountry := strings.TrimPrefix(trip.Countries[changed], "the ")
 		commonEvidence := []string{trip.ContextPairID, trip.PlanPairID, trip.CorrectionPairID}
-		constraints := []string{trip.Alias, trip.Purpose, trip.When, trip.Countries[changed]}
+		constraints := []string{trip.Alias, trip.Purpose, trip.When, changedCountry}
 
 		current := []string{
 			fmt.Sprintf("How many days is %s now — the %s trip we took in %s through %s, %s, and %s — after the change?", trip.Alias, trip.Purpose, trip.When, trip.Countries[0], trip.Countries[1], trip.Countries[2]),
-			fmt.Sprintf("We changed the %s part of %s, our %s trip from %s. How many days is the whole trip now?", trip.Countries[changed], trip.Alias, trip.Purpose, trip.When),
+			fmt.Sprintf("We changed the %s part of %s, our %s trip from %s. How many days is the whole trip now?", changedCountry, trip.Alias, trip.Purpose, trip.When),
 			fmt.Sprintf("Can you piece together the updated stays for %s, our %s trip from %s? How long is the trip altogether now?", trip.Alias, trip.Purpose, trip.When),
-			fmt.Sprintf("Remind me how long %s is now — the %s trip from %s — after we changed the %s stay.", trip.Alias, trip.Purpose, trip.When, trip.Countries[changed]),
+			fmt.Sprintf("Remind me how long %s is now — the %s trip from %s — after we changed the %s stay.", trip.Alias, trip.Purpose, trip.When, changedCountry),
 		}[i%4]
 		out = append(out, tripPlan(w, oracleTripCurrent, i, current, trip.CurrentDays, commonEvidence, constraints))
 
@@ -195,8 +196,8 @@ func (w World) questionCandidates() []QuestionPlan {
 		leg := []string{
 			fmt.Sprintf("On %s, the %s trip from %s, how many days are we spending in %s after the change?", trip.Alias, trip.Purpose, trip.When, trip.Countries[changed]),
 			fmt.Sprintf("How long is the updated stay in %s for %s, the %s trip from %s?", trip.Countries[changed], trip.Alias, trip.Purpose, trip.When),
-			fmt.Sprintf("For %s, our %s trip, how many days is the changed %s stay now?", trip.Alias, trip.Purpose, trip.Countries[changed]),
-			fmt.Sprintf("After changing the %s part of %s, our trip from %s, how many days are we spending there?", trip.Countries[changed], trip.Alias, trip.When),
+			fmt.Sprintf("For %s, our %s trip, how many days is the changed %s stay now?", trip.Alias, trip.Purpose, changedCountry),
+			fmt.Sprintf("After changing the %s part of %s, our trip from %s, how many days are we spending there?", changedCountry, trip.Alias, trip.When),
 		}[i%4]
 		out = append(out, tripPlan(w, oracleTripChangedLegCurrent, i, leg, trip.LegDays[changed], commonEvidence, constraints))
 
@@ -207,10 +208,10 @@ func (w World) questionCandidates() []QuestionPlan {
 			}
 		}
 		change := []string{
-			fmt.Sprintf("After changing the %s stay, what is the longest amount of time we spend in any one country on %s, our %s trip from %s?", trip.Countries[changed], trip.Alias, trip.Purpose, trip.When),
+			fmt.Sprintf("After changing the %s stay, what is the longest amount of time we spend in any one country on %s, our %s trip from %s?", changedCountry, trip.Alias, trip.Purpose, trip.When),
 			fmt.Sprintf("Looking across the updated plan for %s, the %s trip from %s, how many days is our longest stay?", trip.Alias, trip.Purpose, trip.When),
-			fmt.Sprintf("Once the %s change is included, what is the longest stay on %s, our %s trip from %s?", trip.Countries[changed], trip.Alias, trip.Purpose, trip.When),
-			fmt.Sprintf("For %s in %s, our %s trip with the changed %s stay, how many days is the longest stop?", trip.Alias, trip.When, trip.Purpose, trip.Countries[changed]),
+			fmt.Sprintf("Once the %s change is included, what is the longest stay on %s, our %s trip from %s?", changedCountry, trip.Alias, trip.Purpose, trip.When),
+			fmt.Sprintf("For %s in %s, our %s trip with the changed %s stay, how many days is the longest stop?", trip.Alias, trip.When, trip.Purpose, changedCountry),
 		}[i%4]
 		out = append(out, tripPlan(w, oracleTripLongestCurrent, i, change, longest, commonEvidence, constraints))
 	}
@@ -219,12 +220,11 @@ func (w World) questionCandidates() []QuestionPlan {
 }
 
 func contactCurrentQuestion(p Person, index int) string {
-	givenName := strings.Fields(p.Name)[0]
 	return []string{
-		fmt.Sprintf("What address should I actually use now for %s, my %s in %s from the %s?", givenName, p.Relation, p.City, p.Context),
-		fmt.Sprintf("I need to reach %s, my %s in %s from the %s. Which email is current?", givenName, p.Relation, p.City, p.Context),
-		fmt.Sprintf("Which up-to-date email belongs to %s, my %s in %s who handled the %s?", givenName, p.Relation, p.City, p.Context),
-		fmt.Sprintf("For the %s follow-up, what is the corrected address for %s, my %s in %s?", p.Context, givenName, p.Relation, p.City),
+		fmt.Sprintf("For the %s follow-up, what email should I actually use now for %s at %s? I want to avoid sending the note to an inbox nobody checks anymore, so please double-check before I hit send.", p.Context, p.Name, p.Employer),
+		fmt.Sprintf("I need to reach %s at %s about the %s. Which email is current? I remember we had to replace an older one, and I would rather verify than have this disappear.", p.Name, p.Employer, p.Context),
+		fmt.Sprintf("Which up-to-date email belongs to %s at %s, the person from the %s? I am pulling together the final details before I send anything and want to make sure it reaches them.", p.Name, p.Employer, p.Context),
+		fmt.Sprintf("What is the corrected email for %s at %s? This is for the %s follow-up, and I do not want the message disappearing into their old workplace. Please check the latest one.", p.Name, p.Employer, p.Context),
 	}[index%4]
 }
 
@@ -254,7 +254,7 @@ func (w World) personPlan(kind string, index int, question, answer, extraDistrac
 		evidence = []string{p.IdentityPairID, p.WorkPairID, p.CorrectionPairID}
 		facts = []string{"full identity", "nickname and relationship", "event context", "current employer", "current address"}
 		operations = []string{"resolve the relationship and event to a person", "join the person to their current employer", "follow the nickname-and-employer correction to the current address"}
-		constraints = []string{strings.Fields(p.Name)[0], p.Relation, p.City, p.Context}
+		constraints = []string{p.Name, p.Employer, p.Context}
 	}
 	return QuestionPlan{
 		Case:            memoryCase(w.Seed, kind, index, question, answer, protocol.AnswerValue, w.emailDistractors(index, extraDistractor)),
@@ -365,9 +365,9 @@ func (w World) storyQuestionCandidates() []QuestionPlan {
 
 		contactTask := []string{
 			"What email should I use now?",
-			"Which address is the right one now?",
+			"Which email is the right one now?",
 			"Where should I send the note?",
-			"What address did we end up using?",
+			"What email did we end up using?",
 		}[r.Intn(4)]
 		out = append(out, w.storyPlan(oracleStoryContactCurrent, i, composeStoryQuestion(r, anchor, contactTask), constraints,
 			arc.CurrentContact, protocol.AnswerValue, w.storyContactDistractors(i), nil,
@@ -387,7 +387,7 @@ func (w World) storyQuestionCandidates() []QuestionPlan {
 
 		summaryTask := []string{
 			"Can you give me the current reviewer email, final available balance, and the advice I wrote down?",
-			"Remind me of the final reviewer address, the balance we landed on, and the lesson from it.",
+			"Remind me of the final reviewer email, the balance we landed on, and the lesson from it.",
 			"Where did this leave us: which email, how much money, and what rule for next time?",
 			"Pull together the current contact, the final amount, and what I learned from the experience.",
 		}[r.Intn(4)]
