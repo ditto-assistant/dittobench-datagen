@@ -178,6 +178,7 @@ func IsCold(response string) bool {
 }
 
 func rewriteTransactional(seed int64, pairID, response string) (string, bool) {
+	response = humanizeThirdPartyAttribution(response)
 	type rewrite struct {
 		prefix string
 		keep   string
@@ -217,6 +218,16 @@ func rewriteTransactional(seed int64, pairID, response string) (string, bool) {
 		return fmt.Sprintf("%s — %s%s", lead, pattern.keep, tail), true
 	}
 	return "", false
+}
+
+func humanizeThirdPartyAttribution(response string) string {
+	// Attribution is useful; explaining Ditto's internal ownership boundary to
+	// the user is not. Keep every named person, label, and exact value while
+	// removing the robotic "not yours / not about you" commentary.
+	response = strings.ReplaceAll(response, ", not yours.", ".")
+	response = strings.ReplaceAll(response, ", not something about you.", ".")
+	response = strings.ReplaceAll(response, ", kept separate from yours.", "; I’ll keep it with their details.")
+	return response
 }
 
 func warmAcknowledgement(seed int64, pairID, sessionID, prompt string) string {

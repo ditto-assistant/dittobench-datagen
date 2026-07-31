@@ -40,6 +40,32 @@ func TestRenderPreservesSubstantiveFactsWhileWarmingPrefix(t *testing.T) {
 	}
 }
 
+func TestRenderKeepsThirdPartyAttributionWithoutExplainingScope(t *testing.T) {
+	tests := []struct {
+		response string
+		values   []string
+	}{
+		{"Noted — that city is Tariq's, not yours.", []string{"city", "Tariq"}},
+		{"Got it, Tariq's city, not something about you.", []string{"city", "Tariq"}},
+		{"Understood — QP-7M4K2 is Tariq's code, not yours.", []string{"QP-7M4K2", "Tariq", "code"}},
+		{"Noted — ZN-8P2C4 is Mina's code, kept separate from yours.", []string{"ZN-8P2C4", "Mina", "code"}},
+	}
+	for i, tt := range tests {
+		got := Render(42, fmt.Sprintf("third-party-%d", i), "general", "", "Tariq told me this.", tt.response)
+		lower := strings.ToLower(got)
+		for _, banned := range []string{"not yours", "not something about you", "separate from yours"} {
+			if strings.Contains(lower, banned) {
+				t.Fatalf("rendered response exposes scope commentary: %q", got)
+			}
+		}
+		for _, value := range tt.values {
+			if !strings.Contains(got, value) {
+				t.Fatalf("rendered response %q lost %q", got, value)
+			}
+		}
+	}
+}
+
 func TestRenderVariesGenericAcknowledgementsByPair(t *testing.T) {
 	seen := map[string]bool{}
 	for i := 0; i < 80; i++ {

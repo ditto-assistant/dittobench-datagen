@@ -129,7 +129,7 @@ func Generate(seed int64, scale int) World {
 	for i := 0; i < peopleN; i++ {
 		name := uniquePersonName(r, seenNames, w.People, i)
 		given := strings.Fields(name)[0]
-		nick := humandata.PreferredName(given, r)
+		nick := humandata.DistinctPreferredName(given, r, i)
 		previousEmployer := uniqueString(r, seenCompanies, coinedCompany)
 		employer := uniqueString(r, seenCompanies, coinedCompany)
 		previous := uniqueEmail(name, previousEmployer, 2*i, true, seenEmails)
@@ -215,7 +215,7 @@ func (w World) renderPairs(r *rand.Rand) []protocol.MemoryPair {
 		pairs = append(pairs, protocol.MemoryPair{PairID: id, SessionID: session, Timestamp: base.Add(time.Duration(len(pairs)*137) * time.Hour).Format(time.RFC3339), Prompt: prompt, Response: response})
 	}
 	for i, p := range w.People {
-		add(p.IdentityPairID, fmt.Sprintf("people-%02d-a", i), shortLead(r)+p.Name+" is my "+p.Relation+". Everyone around "+p.Context+" calls "+p.Name+" “"+p.Nickname+".”", warmResponse(w.Seed, p.IdentityPairID,
+		add(p.IdentityPairID, fmt.Sprintf("people-%02d-a", i), shortLead(r)+p.Name+" is my "+p.Relation+". Everyone there calls them “"+p.Nickname+".”", warmResponse(w.Seed, p.IdentityPairID,
 			"Aw, I love that nickname. I’ll remember them.",
 			"That history helps — I know who you mean.",
 			"I’ve got the person and nickname together."))
@@ -230,7 +230,7 @@ func (w World) renderPairs(r *rand.Rand) []protocol.MemoryPair {
 			"I’ll keep this as their first address.",
 			"I’ll remember this as the original address, not necessarily the current one.",
 			"I’ve got the earlier contact point."))
-		add(p.CorrectionPairID, fmt.Sprintf("people-%02d-d", i), fmt.Sprintf("Since the move to %s, %s is stale. Their current work email is %s.", p.Employer, p.PreviousEmail, p.Email), warmResponse(w.Seed, p.CorrectionPairID,
+		add(p.CorrectionPairID, fmt.Sprintf("people-%02d-d", i), fmt.Sprintf("After %s moved to %s, the new work email is %s.", p.Nickname, p.Employer, p.Email), warmResponse(w.Seed, p.CorrectionPairID,
 			"Good catch — I’ll use the new address.",
 			"Thanks — switched, with the old one kept.",
 			"I’ve got the new one now; the old one stays in history."))
