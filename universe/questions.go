@@ -291,7 +291,7 @@ func (w World) storyQuestionCandidates() []QuestionPlan {
 		}[r.Intn(4)]
 		balancePlan := w.storyPlan(oracleStoryBalanceCurrent, i, composeStoryQuestion(r, anchor, balanceTask), constraints,
 			fmt.Sprintf("%d", arc.CurrentBalanceCents), protocol.AnswerMoney, w.storyBalanceDistractors(i), nil,
-			[]string{"personal relationship and event", "personal-to-work bridge", "decision identity", "original budget", "budget correction", "prior payment", "later cost", "credit"},
+			[]string{"personal relationship and event", "support case", "purchase order", "original budget", "budget correction", "prior payment", "later cost", "credit"},
 			storyBalanceOperations(arc))
 
 		deltaTask := []string{
@@ -302,8 +302,8 @@ func (w World) storyQuestionCandidates() []QuestionPlan {
 		}[r.Intn(4)]
 		deltaPlan := w.storyPlan(oracleStoryBudgetDelta, i, composeStoryQuestion(r, anchor, deltaTask), constraints,
 			fmt.Sprintf("%d", absInt(arc.BudgetDeltaCents)), protocol.AnswerMoney, w.storyDeltaDistractors(i), nil,
-			[]string{"personal relationship and event", "personal-to-work bridge", "decision identity", "original budget", "budget correction", "separate payment", "separate later cost and credit"},
-			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "isolate the budget correction", "convert the correction magnitude to cents"})
+			[]string{"personal relationship and event", "support case", "purchase order", "original budget", "budget correction", "separate payment", "separate later cost and credit"},
+			[]string{"resolve the interpersonal anchor", "follow the support case into the work story", "follow the purchase order into the outcome", "isolate the budget correction", "convert the correction magnitude to cents"})
 
 		postTask := []string{
 			"What balance did we have after the corrected approval and first payment, before the later charges?",
@@ -314,8 +314,8 @@ func (w World) storyQuestionCandidates() []QuestionPlan {
 		postAnswer := arc.BaseBudgetCents + arc.BudgetDeltaCents - arc.PaidCents
 		postPlan := w.storyPlan(oracleStoryPostApproval, i, composeStoryQuestion(r, anchor, postTask), constraints,
 			fmt.Sprintf("%d", postAnswer), protocol.AnswerMoney, w.storyPostApprovalDistractors(i), nil,
-			[]string{"personal relationship and event", "personal-to-work bridge", "decision identity", "original budget", "budget correction", "prior payment", "later cost boundary", "later credit boundary"},
-			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "apply the budget correction", "subtract the prior payment", "exclude later cost and credit", "convert the intermediate result to cents"})
+			[]string{"personal relationship and event", "support case", "purchase order", "original budget", "budget correction", "prior payment", "later cost boundary", "later credit boundary"},
+			[]string{"resolve the interpersonal anchor", "follow the support case into the work story", "follow the purchase order into the outcome", "apply the budget correction", "subtract the prior payment", "exclude later cost and credit", "convert the intermediate result to cents"})
 
 		net := arc.BudgetDeltaCents - arc.UnexpectedCostCents + arc.CreditCents
 		direction := "increase"
@@ -332,8 +332,8 @@ func (w World) storyQuestionCandidates() []QuestionPlan {
 		netItems := []string{direction, fmt.Sprintf("%d", absInt(net))}
 		netPlan := w.storyPlan(oracleStoryLaterNetChange, i, composeStoryQuestion(r, anchor, netTask), constraints,
 			strings.Join(netItems, "; "), protocol.AnswerList, storyNetDistractors(arc, net, wrongDirection), nil,
-			[]string{"personal relationship and event", "personal-to-work bridge", "decision identity", "budget correction", "later cost", "credit"},
-			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "combine the later budget change cost and credit", "classify the net direction", "convert the net magnitude to cents"})
+			[]string{"personal relationship and event", "support case", "purchase order", "budget correction", "later cost", "credit"},
+			[]string{"resolve the interpersonal anchor", "follow the support case into the work story", "follow the purchase order into the outcome", "combine the later budget change cost and credit", "classify the net direction", "convert the net magnitude to cents"})
 		netPlan.Case.AnswerItems = netItems
 		netPlan.Case.AnswerItemKinds = []string{protocol.AnswerDirection, protocol.AnswerMoney}
 
@@ -351,8 +351,8 @@ func (w World) storyQuestionCandidates() []QuestionPlan {
 		}[r.Intn(4)]
 		out = append(out, w.storyPlan(oracleStoryContactCurrent, i, composeStoryQuestion(r, anchor, contactTask), constraints,
 			arc.CurrentContact, protocol.AnswerValue, w.storyContactDistractors(i), nil,
-			[]string{"personal relationship and event", "requested working name", "personal-to-work bridge", "decision identity", "original work channel", "channel correction"},
-			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "replace the stale work-only contact"}))
+			[]string{"personal relationship and event", "requested working name", "support case", "purchase order", "original work channel", "channel correction"},
+			[]string{"resolve the interpersonal anchor", "follow the support case into the work story", "follow the purchase order into the outcome", "replace the stale work-only contact"}))
 
 		lessonTask := []string{
 			"What advice did I take from the whole mess?",
@@ -362,8 +362,8 @@ func (w World) storyQuestionCandidates() []QuestionPlan {
 		}[r.Intn(4)]
 		out = append(out, w.storyPlan(oracleStoryLesson, i, composeStoryQuestion(r, anchor, lessonTask), constraints,
 			arc.Lesson, protocol.AnswerValue, w.storyLessonDistractors(i), arc.LessonAcceptAny,
-			[]string{"personal relationship and event", "personal-to-work bridge", "governed business decision", "corrected outcome", "explicit lesson"},
-			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "select the outcome lesson"}))
+			[]string{"personal relationship and event", "support case", "purchase order", "corrected outcome", "explicit lesson"},
+			[]string{"resolve the interpersonal anchor", "follow the support case into the work story", "follow the purchase order into the outcome", "select the outcome lesson"}))
 
 		summaryTask := []string{
 			"Can you give me the current reviewer email, final available balance, and the advice I wrote down?",
@@ -375,8 +375,8 @@ func (w World) storyQuestionCandidates() []QuestionPlan {
 		summaryAnswer := strings.Join(summaryItems, "; ")
 		summary := w.storyPlan(oracleStoryOutcomeSummary, i, composeStoryQuestion(r, anchor, summaryTask), constraints,
 			summaryAnswer, protocol.AnswerList, w.storyOutcomeDistractors(i), nil,
-			[]string{"personal relationship and event", "personal-to-work bridge", "decision identity", "original budget and payment", "budget correction", "later cost and credit", "contact correction", "explicit lesson"},
-			[]string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "reconcile the current balance", "replace the stale work-only contact", "select the outcome lesson"})
+			[]string{"personal relationship and event", "support case", "purchase order", "original budget and payment", "budget correction", "later cost and credit", "contact correction", "explicit lesson"},
+			[]string{"resolve the interpersonal anchor", "follow the support case into the work story", "follow the purchase order into the outcome", "reconcile the current balance", "replace the stale work-only contact", "select the outcome lesson"})
 		summary.Case.AnswerItems = summaryItems
 		summary.Case.AnswerItemKinds = []string{protocol.AnswerValue, protocol.AnswerMoney, protocol.AnswerValue}
 		summary.Case.AnswerItemAcceptAny = [][]string{nil, nil, append([]string(nil), arc.LessonAcceptAny...)}
@@ -422,7 +422,7 @@ func storyBalanceOperations(arc StoryArc) []string {
 	if arc.BudgetDeltaCents < 0 {
 		direction = "apply the budget reduction"
 	}
-	return []string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", direction, "subtract the prior payment", "subtract the later cost", "add the separate credit", "convert the result to cents"}
+	return []string{"resolve the interpersonal anchor", "follow the support case into the work story", "follow the purchase order into the outcome", direction, "subtract the prior payment", "subtract the later cost", "add the separate credit", "convert the result to cents"}
 }
 
 func (w World) storyBalanceDistractors(index int) []string {
@@ -724,17 +724,17 @@ func (w World) oracleOperations(plan QuestionPlan) []string {
 	case oracleStoryBalanceCurrent:
 		return storyBalanceOperations(w.StoryArcs[plan.oracleIndex])
 	case oracleStoryBudgetDelta:
-		return []string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "isolate the budget correction", "convert the correction magnitude to cents"}
+		return []string{"resolve the interpersonal anchor", "follow the support case into the work story", "follow the purchase order into the outcome", "isolate the budget correction", "convert the correction magnitude to cents"}
 	case oracleStoryPostApproval:
-		return []string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "apply the budget correction", "subtract the prior payment", "exclude later cost and credit", "convert the intermediate result to cents"}
+		return []string{"resolve the interpersonal anchor", "follow the support case into the work story", "follow the purchase order into the outcome", "apply the budget correction", "subtract the prior payment", "exclude later cost and credit", "convert the intermediate result to cents"}
 	case oracleStoryLaterNetChange:
-		return []string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "combine the later budget change cost and credit", "classify the net direction", "convert the net magnitude to cents"}
+		return []string{"resolve the interpersonal anchor", "follow the support case into the work story", "follow the purchase order into the outcome", "combine the later budget change cost and credit", "classify the net direction", "convert the net magnitude to cents"}
 	case oracleStoryContactCurrent:
-		return []string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "replace the stale work-only contact"}
+		return []string{"resolve the interpersonal anchor", "follow the support case into the work story", "follow the purchase order into the outcome", "replace the stale work-only contact"}
 	case oracleStoryLesson:
-		return []string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "select the outcome lesson"}
+		return []string{"resolve the interpersonal anchor", "follow the support case into the work story", "follow the purchase order into the outcome", "select the outcome lesson"}
 	case oracleStoryOutcomeSummary:
-		return []string{"resolve the interpersonal anchor", "follow the personal-to-work bridge", "follow the governed decision reference", "reconcile the current balance", "replace the stale work-only contact", "select the outcome lesson"}
+		return []string{"resolve the interpersonal anchor", "follow the support case into the work story", "follow the purchase order into the outcome", "reconcile the current balance", "replace the stale work-only contact", "select the outcome lesson"}
 	default:
 		return nil
 	}

@@ -38,23 +38,50 @@ type StoryFact struct {
 	AfterEvent int      `json:"after_event"`
 }
 
+// StoryCharacter keeps the people in a long memory explicit before prose is
+// compiled. Role describes their place in this story, while Relationship keeps
+// the user's own connection to them separate from a business title.
+type StoryCharacter struct {
+	Name         string `json:"name"`
+	Role         string `json:"role"`
+	Relationship string `json:"relationship,omitempty"`
+}
+
+// StoryProblem and StoryResolution model causal state, not prose templates.
+// Each problem key is resolved exactly once so a story can be audited as a
+// beginning-to-end sequence before any sentence variation is applied.
+type StoryProblem struct {
+	Key         string `json:"key"`
+	Description string `json:"description"`
+	RaisedIn    string `json:"raised_in"`
+}
+
+type StoryResolution struct {
+	ProblemKey string `json:"problem_key"`
+	Action     string `json:"action"`
+	Outcome    string `json:"outcome"`
+}
+
 // Story is a deterministic story-to-prose program. A story compiles to one
 // realistic user/agent MemoryPair, while the structured object keeps its state,
 // themes, lessons, and planted facts auditable before prose exists.
 type Story struct {
-	ID             string       `json:"id"`
-	PairID         string       `json:"pair_id"`
-	SessionID      string       `json:"session_id"`
-	Kind           StoryKind    `json:"kind"`
-	Domain         string       `json:"domain"`
-	Title          string       `json:"title"`
-	Beginning      StorySection `json:"beginning"`
-	Middle         StorySection `json:"middle"`
-	End            StorySection `json:"end"`
-	Themes         []string     `json:"themes"`
-	LessonsLearned []string     `json:"lessons_learned"`
-	Facts          []StoryFact  `json:"facts"`
-	TargetBytes    int          `json:"target_bytes"`
+	ID             string            `json:"id"`
+	PairID         string            `json:"pair_id"`
+	SessionID      string            `json:"session_id"`
+	Kind           StoryKind         `json:"kind"`
+	Domain         string            `json:"domain"`
+	Title          string            `json:"title"`
+	Beginning      StorySection      `json:"beginning"`
+	Middle         StorySection      `json:"middle"`
+	End            StorySection      `json:"end"`
+	Characters     []StoryCharacter  `json:"characters"`
+	Problems       []StoryProblem    `json:"problems"`
+	Resolutions    []StoryResolution `json:"resolutions"`
+	Themes         []string          `json:"themes"`
+	LessonsLearned []string          `json:"lessons_learned"`
+	Facts          []StoryFact       `json:"facts"`
+	TargetBytes    int               `json:"target_bytes"`
 }
 
 // StoryArc joins a personal origin, a business decision, and a later outcome.
@@ -67,8 +94,8 @@ type StoryArc struct {
 	ProjectIndex        int
 	TripIndex           int
 	OriginDetail        string
-	BridgeCode          string
-	DecisionCode        string
+	CaseID              string
+	PurchaseOrder       string
 	OriginalContact     string
 	CurrentContact      string
 	BaseBudgetCents     int
@@ -183,8 +210,8 @@ func buildStories(seed int64, scale int, w World) ([]StoryArc, []Story) {
 			balance += 1_000_000
 		}
 
-		bridge := "REF-" + strings.ToUpper(protocol.OpaqueCaseID(seed, "world-story-bridge", i)[:7])
-		decision := "DEC-" + strings.ToUpper(protocol.OpaqueCaseID(seed, "world-story-decision", i)[:7])
+		caseID := fmt.Sprintf("CASE-%d-%s", 2025+i%2, strings.ToUpper(protocol.OpaqueCaseID(seed, "world-story-case", i)[:6]))
+		purchaseOrder := "PO-" + strings.ToUpper(protocol.OpaqueCaseID(seed, "world-story-purchase-order", i)[:8])
 		lesson := storyLessons[(lessonOffset+i)%len(storyLessons)]
 		arc := StoryArc{
 			ID:                  protocol.OpaqueCaseID(seed, "world-story-arc", i),
@@ -192,8 +219,8 @@ func buildStories(seed int64, scale int, w World) ([]StoryArc, []Story) {
 			ProjectIndex:        projectIndex,
 			TripIndex:           tripIndex,
 			OriginDetail:        originDetails[(detailOffset+i)%len(originDetails)],
-			BridgeCode:          bridge,
-			DecisionCode:        decision,
+			CaseID:              caseID,
+			PurchaseOrder:       purchaseOrder,
 			OriginalContact:     originalContact,
 			CurrentContact:      currentContact,
 			BaseBudgetCents:     base,
@@ -228,12 +255,12 @@ func storiesForArc(seed int64, index int, arc StoryArc, person Person, project P
 			Summary: fmt.Sprintf("I ran into %s, my %s, during the %s. We had not properly caught up since the %s, so we found a quiet corner and stayed there much longer than either of us expected.", person.Name, person.Relation, person.Context, trip.Alias),
 			Events: []string{
 				fmt.Sprintf("We started with ordinary life in %s, then laughed about the %s trip and the slightly chaotic %s planning behind it.", person.City, trip.Alias, trip.Purpose),
-				fmt.Sprintf("Everyone from that part of my life calls %s %s, so that is what I called them too. Hearing the nickname brought back a dozen small memories at once.", person.Name, person.Nickname),
+				fmt.Sprintf("Everyone calls them %s. I do too, and hearing it brought back a dozen small memories at once.", person.Nickname),
 				"We traded stories for a while without talking about work at all. It felt good to be somewhere neither of us had an agenda or a calendar open.",
 			},
 		},
 		Middle: StorySection{
-			Summary: "Halfway through the conversation, a practical problem slipped into the story. I asked what had happened, and the answer slowly turned into an introduction I might actually be able to help with.",
+			Summary: fmt.Sprintf("Eventually %s showed me a message they had been stuck on for days. As we talked it through, I realized I might know somebody who could help.", person.Nickname),
 			Events: []string{
 				"At first I thought they were only venting, because two other half-finished ideas came up in the same breath. Then they stopped, scrolled back through a message, and said this one was genuinely blocking them.",
 				fmt.Sprintf("%s handed me their phone and we read the exchange together. The details were buried between travel photos, an apology for a late reply, and a long update about mutual friends.", person.Nickname),
@@ -251,17 +278,29 @@ func storiesForArc(seed int64, index int, arc StoryArc, person Person, project P
 				"Everyone said yes the following morning. Only then did I move the practical details into my work notes and set up the first proper call.",
 			},
 		},
+		Characters: []StoryCharacter{
+			{Name: person.Name, Role: "the person who brought up the problem", Relationship: person.Relation},
+			{Name: "the narrator", Role: "friend considering an introduction"},
+		},
+		Problems: []StoryProblem{
+			{Key: "blocked-request", Description: arc.OriginDetail, RaisedIn: "middle"},
+			{Key: "consent-before-introduction", Description: "the introduction could expose personal contact details before everybody agreed", RaisedIn: "middle"},
+		},
+		Resolutions: []StoryResolution{
+			{ProblemKey: "blocked-request", Action: "restate the request clearly and identify a possible introduction", Outcome: "the request became specific enough to carry into a work conversation"},
+			{ProblemKey: "consent-before-introduction", Action: "ask every participant before sharing names or contact details", Outcome: "the introduction moved forward only after everyone agreed"},
+		},
 		Themes:         []string{"identity across contexts", "personal trust", "careful handoffs"},
 		LessonsLearned: []string{"preserve why an introduction mattered"},
 		Facts: []StoryFact{
 			storyFactAt("middle", 1, "origin-detail", arc.OriginDetail,
 				"The message was really about %s, which was the first detail that made the problem concrete.",
 				"What we kept circling back to was %s; that was the part they actually needed help untangling.",
-				"The practical problem underneath the long exchange was %s."),
-			storyFactAt("middle", 3, "bridge-code", arc.BridgeCode,
-				"When I made the note, I gave the introduction the reference %s so I could find it again after checking with everyone.",
-				"I saved the possible introduction as %s in my notes before I sent the follow-up.",
-				"The little reference beside my draft message was %s."),
+				"Underneath the long exchange, the thing they needed help with was %s."),
+			storyFactAt("middle", 3, "support-case", arc.CaseID,
+				"The forwarded support thread was already filed as case %s, so I copied that case number into my note.",
+				"Their message included support case %s, which I added to the note for the introduction.",
+				"The issue had already been logged as support case %s, and I kept that number with my follow-up."),
 		},
 		TargetBytes: storyTargetBytes(r),
 	}
@@ -281,8 +320,8 @@ func storiesForArc(seed int64, index int, arc StoryArc, person Person, project P
 		Middle: StorySection{
 			Summary: "Once everyone understood the roles, we worked through the actual setup: where the introduction came from, which decision finance was approving, how much we could spend, and where the first review should go.",
 			Events: []string{
-				"I started by pasting the reference from my original note into the agenda. That reminded me to tell the room how the introduction had happened before we treated it like an ordinary sales lead.",
-				"Finance created a tracking number while we were on the call. I copied it next to the project name because the shorthand in chat was already causing confusion.",
+				"I started by adding the original support case to the agenda. That reminded me to tell the room how the introduction had happened before we treated it like an ordinary sales lead.",
+				"Finance opened a purchase order while we were on the call. I copied it next to the project name because the shorthand in chat was already causing confusion.",
 				"The client asked for a shared review inbox rather than anyone's personal address. I added the first address to the invite while they were still deciding who would monitor it.",
 				fmt.Sprintf("We then settled the first working budget for the %s. People had mentioned three rough numbers, so I waited until the client and finance both said yes before writing one down.", project.Purpose),
 				fmt.Sprintf("Someone called the project %q again while the invoice screen showed %s. We laughed about the names, then checked the payment that had already gone out.", project.Alias, project.Name),
@@ -297,17 +336,33 @@ func storiesForArc(seed int64, index int, arc StoryArc, person Person, project P
 				"I sent the notes just after the call and closed my laptop. For the first time that week, the introduction felt like a real project rather than a favor I was still trying to explain.",
 			},
 		},
+		Characters: []StoryCharacter{
+			{Name: person.Name, Role: "source of the original introduction", Relationship: person.Relation},
+			{Name: project.Client, Role: "client"},
+			{Name: project.Vendor, Role: "vendor"},
+			{Name: "the narrator", Role: "project coordinator"},
+		},
+		Problems: []StoryProblem{
+			{Key: "ambiguous-project-name", Description: "two projects had similar shorthand names", RaisedIn: "beginning"},
+			{Key: "unapproved-estimate", Description: "several draft figures circulated before finance approved a budget", RaisedIn: "beginning"},
+			{Key: "review-routing", Description: "the client needed a shared review route instead of a personal mailbox", RaisedIn: "middle"},
+		},
+		Resolutions: []StoryResolution{
+			{ProblemKey: "ambiguous-project-name", Action: "tie the shorthand to the formal project and client", Outcome: "the recap kept the project, client, and vendor on separate lines"},
+			{ProblemKey: "unapproved-estimate", Action: "wait for finance and the client to approve one amount", Outcome: "the starting budget was recorded only after approval"},
+			{ProblemKey: "review-routing", Action: "record the shared review mailbox", Outcome: "the first review route was added to the engagement"},
+		},
 		Themes:         []string{"governed decisions", "financial state", "contextual identity"},
 		LessonsLearned: []string{"keep draft and approved state distinguishable"},
 		Facts: []StoryFact{
-			storyFactAt("middle", 0, "bridge-code", arc.BridgeCode,
-				"The reference from my original note was %s.",
-				"I had saved the introduction under %s, and that was the reference I put in the agenda.",
-				"My old notes linked the introduction to %s."),
-			storyFactAt("middle", 1, "decision-code", arc.DecisionCode,
-				"Finance assigned the decision number %s.",
-				"The tracking number finance created was %s.",
-				"The approval went into the system as %s."),
+			storyFactAt("middle", 0, "support-case", arc.CaseID,
+				"The support case from the original message was %s, and I put it in the agenda.",
+				"I added support case %s to the agenda so the client could connect the call to the original issue.",
+				"The agenda linked the introduction to support case %s."),
+			storyFactAt("middle", 1, "purchase-order", arc.PurchaseOrder,
+				"Finance opened purchase order %s for the approved work.",
+				"The purchase order finance created was %s.",
+				"The approved work went into procurement as purchase order %s."),
 			storyFactAt("middle", 2, "original-contact", arc.OriginalContact,
 				"The reviewer route originally written into the decision was %s.",
 				"At that point the work-only contact channel on file was %s.",
@@ -348,7 +403,7 @@ func storiesForArc(seed int64, index int, arc StoryArc, person Person, project P
 		Middle: StorySection{
 			Summary: "I opened the notes from the original call and worked down the updates one by one. That was slower than editing the headline figure, but it stopped me from counting the old payment twice or losing the separate credit.",
 			Events: []string{
-				"The first thing I checked was the decision number in the subject line. It matched the approval from the meeting, so I knew I had the right project despite the familiar shorthand.",
+				"The first thing I checked was the purchase order in the subject line. It matched the approved work from the meeting, so I knew I had the right project despite the familiar shorthand.",
 				"Finance's note changed the approved envelope, but said nothing about the invoice that had already been paid. I left the payment where it was and changed only the budget.",
 				"The vendor's email added a cost that had not been known during the meeting. It was tempting to fold it into the correction, but the explanation made clear that it was a separate charge.",
 				"The client had also issued a credit after a cancelled piece of work. I put it on its own line so nobody would mistake money coming back for another expense.",
@@ -364,13 +419,28 @@ func storiesForArc(seed int64, index int, arc StoryArc, person Person, project P
 				"That evening I cleared the receipt scraps out of my bag. I kept the sticky note, though; I knew I would need the reminder the next time a simple update arrived in five separate pieces.",
 			},
 		},
+		Characters: []StoryCharacter{
+			{Name: person.Name, Role: "person who made the original introduction", Relationship: person.Relation},
+			{Name: "the project coordinator", Role: "source of the correction"},
+			{Name: "the narrator's boss", Role: "reviewer of the reconciliation"},
+		},
+		Problems: []StoryProblem{
+			{Key: "compound-financial-update", Description: "a budget correction, paid amount, new cost, and credit arrived separately", RaisedIn: "beginning"},
+			{Key: "stale-review-route", Description: "the first review inbox was no longer current", RaisedIn: "middle"},
+			{Key: "near-miss-client-update", Description: "the draft almost combined the changes incorrectly", RaisedIn: "middle"},
+		},
+		Resolutions: []StoryResolution{
+			{ProblemKey: "compound-financial-update", Action: "reconcile every change against the approved purchase order", Outcome: "the current balance was calculated without double-counting the payment"},
+			{ProblemKey: "stale-review-route", Action: "replace the original review inbox with the coordinator's corrected address", Outcome: "the update went to the current review route"},
+			{ProblemKey: "near-miss-client-update", Action: "ask a second person to check the sequence", Outcome: "the client received the corrected figure"},
+		},
 		Themes:         []string{"correction over time", "cross-domain reasoning", "accountable follow-through"},
 		LessonsLearned: append([]string{arc.Lesson}, arc.LessonAcceptAny...),
 		Facts: []StoryFact{
-			storyFactAt("middle", 0, "decision-code", arc.DecisionCode,
-				"The subject line referred to decision %s.",
-				"The number in the email was %s.",
-				"I matched the updates to approval %s."),
+			storyFactAt("middle", 0, "purchase-order", arc.PurchaseOrder,
+				"The subject line named purchase order %s.",
+				"The purchase order in the email was %s.",
+				"I matched every update to purchase order %s."),
 			storyFactAt("middle", 1, "budget-delta", deltaValue,
 				fmt.Sprintf("The approved envelope was %s by %%s; this was a delta, not a replacement total.", deltaDirection),
 				fmt.Sprintf("Finance %s the existing budget by %%s rather than issuing a new standalone amount.", deltaDirection),
@@ -457,7 +527,7 @@ func (w World) validateStoryPlan(plan QuestionPlan) error {
 	}
 	arc := w.StoryArcs[plan.oracleIndex]
 	question := strings.ToLower(plan.Case.Question)
-	for _, hidden := range []string{arc.BridgeCode, arc.DecisionCode, arc.OriginalContact, arc.CurrentContact} {
+	for _, hidden := range []string{arc.CaseID, arc.PurchaseOrder, arc.OriginalContact, arc.CurrentContact} {
 		if strings.Contains(question, strings.ToLower(hidden)) {
 			return fmt.Errorf("story question leaks hidden join/state value %q", hidden)
 		}
@@ -486,6 +556,9 @@ func (w World) validateStoryPlan(plan QuestionPlan) error {
 		if len(story.Facts) < 2 {
 			return fmt.Errorf("story evidence %s has only %d planted facts", pairID, len(story.Facts))
 		}
+		if err := validateStoryStructure(story); err != nil {
+			return fmt.Errorf("story evidence %s: %w", pairID, err)
+		}
 		for _, fact := range story.Facts {
 			pos := strings.Index(pair.Prompt, fact.Value)
 			if pos < 0 {
@@ -510,6 +583,43 @@ func (w World) validateStoryPlan(plan QuestionPlan) error {
 	}
 	if !kinds[StoryPersonal] || !kinds[StoryBusiness] {
 		return fmt.Errorf("story plan does not cross personal and business memories")
+	}
+	return nil
+}
+
+func validateStoryStructure(story Story) error {
+	if len(story.Characters) < 2 || len(story.Problems) < 2 || len(story.Resolutions) < 2 {
+		return fmt.Errorf("incomplete story object: characters=%d problems=%d resolutions=%d", len(story.Characters), len(story.Problems), len(story.Resolutions))
+	}
+	for _, character := range story.Characters {
+		if strings.TrimSpace(character.Name) == "" || strings.TrimSpace(character.Role) == "" {
+			return fmt.Errorf("story has an unnamed or roleless character")
+		}
+	}
+	problems := make(map[string]bool, len(story.Problems))
+	for _, problem := range story.Problems {
+		if problem.Key == "" || problem.Description == "" || (problem.RaisedIn != "beginning" && problem.RaisedIn != "middle" && problem.RaisedIn != "end") {
+			return fmt.Errorf("invalid story problem %+v", problem)
+		}
+		if problems[problem.Key] {
+			return fmt.Errorf("duplicate story problem %q", problem.Key)
+		}
+		problems[problem.Key] = true
+	}
+	resolved := make(map[string]bool, len(story.Resolutions))
+	for _, resolution := range story.Resolutions {
+		if !problems[resolution.ProblemKey] || resolution.Action == "" || resolution.Outcome == "" {
+			return fmt.Errorf("invalid story resolution %+v", resolution)
+		}
+		if resolved[resolution.ProblemKey] {
+			return fmt.Errorf("story problem %q is resolved more than once", resolution.ProblemKey)
+		}
+		resolved[resolution.ProblemKey] = true
+	}
+	for problem := range problems {
+		if !resolved[problem] {
+			return fmt.Errorf("story problem %q has no resolution", problem)
+		}
 	}
 	return nil
 }
