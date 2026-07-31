@@ -61,6 +61,23 @@ generate -bench-version 3 -run-size small
 re-derives. If it matches the one published for a submission, you are looking at
 the identical dataset that submission was scored against.
 
+### Review a generated dataset
+
+Use the local dataset viewer to read the benchmark as a person rather than as a
+JSON document:
+
+```bash
+go run ./cmd/datasetviewer -bench-version 8 -run-size full -seed 123456789
+# open http://127.0.0.1:8787
+```
+
+The viewer serves the canonical artifact and its SHA-256, distinguishes
+agent-visible text from reviewer-only oracle fields, and shows the exact planted
+records for V8 shared-world questions. Cases and memory records can be flagged
+with local notes and exported as JSON for generator follow-up. It binds only to
+loopback; it is not a hosted benchmark or a source of harness-visible answer
+metadata. V7 remains available for side-by-side historical inspection.
+
 Run sizes: `small` (smoke), `medium`, `full` (the scored profile).
 
 `-bench-version` is required. Use the version published with the score you are
