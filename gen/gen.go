@@ -97,6 +97,15 @@ var profilesV7 = map[string]Profile{
 	"full":   {Tools: 84, Mem: 185, Waves: 5, RawPairsFrac: 0.5, IsoCases: 10},
 }
 
+// profilesV8 deliberately preserves v7's case counts and runtime envelope.
+// v8 raises difficulty by changing which cases land and what they require, not
+// by buying more tokens or time.
+var profilesV8 = map[string]Profile{
+	"small":  {Tools: 6, Mem: 6, Waves: 1, RawPairsFrac: 0, IsoCases: 0},
+	"medium": {Tools: 40, Mem: 52, Waves: 4, RawPairsFrac: 0.45, IsoCases: 4},
+	"full":   {Tools: 84, Mem: 185, Waves: 5, RawPairsFrac: 0.5, IsoCases: 10},
+}
+
 // ProfileFor returns the Profile for a run_size, defaulting to small. Uses the
 // historical (v2/v3/v4) sizes; canonical versioned callers use ProfileForVersion.
 func ProfileFor(runSize string) (Profile, bool) {
@@ -112,6 +121,12 @@ func ProfileFor(runSize string) (Profile, bool) {
 // their dataset bytes are unchanged. Deterministic, so any third party holding
 // (seed, run_size, bench_version) regenerates the identical dataset.
 func ProfileForVersion(runSize string, benchVersion int) (Profile, bool) {
+	if benchVersion >= protocol.BenchVersionV8 {
+		if p, ok := profilesV8[runSize]; ok {
+			return p, true
+		}
+		return profilesV8["small"], false
+	}
 	if benchVersion >= protocol.BenchVersionV7 {
 		if p, ok := profilesV7[runSize]; ok {
 			return p, true

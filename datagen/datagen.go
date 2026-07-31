@@ -14,6 +14,7 @@ import (
 	"github.com/ditto-assistant/dittobench-datagen/persona"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
 	"github.com/ditto-assistant/dittobench-datagen/toolexec"
+	"github.com/ditto-assistant/dittobench-datagen/universe"
 )
 
 // category describes one kind of tool-calling case and how to render it.
@@ -60,6 +61,34 @@ type category struct {
 type argIntent struct {
 	prompt string
 	value  string
+}
+
+// v8ArgIntents keeps exact argument grading for values that the product itself
+// resolves to a closed enum or identifier. Prompts are ordinary user requests;
+// difficulty must not come from asking a model to assemble artificial token
+// puzzles. Free-form fields are intentionally absent and are tool-scored only,
+// because many paraphrases are equally valid.
+var v8ArgIntents = map[string][]argIntent{
+	"settings": {
+		{"Please match Ditto's light or dark mode to my device.", "system"},
+		{"Make the app dark mode.", "dark"},
+	},
+	"set_model": {
+		{"Use GPT for my main chats; pick the current standard GPT option.", "gpt-5"},
+		{"Switch my chats to Claude; use the available Sonnet option.", "claude-sonnet-5"},
+	},
+	"set_effort": {
+		{"Reason as deeply and carefully as possible from now on.", "high"},
+		{"Keep the reasoning balanced for everyday questions.", "medium"},
+	},
+	"set_accent": {
+		{"Make my accent color teal-ish; check the option if I misspelled it.", "teal"},
+		{"Switch the app accent to INDIGO, whatever capitalization the setting uses.", "indigo"},
+	},
+	"set_font": {
+		{"Use jetbrians mono in chat; check the available font spelling.", "JetBrains Mono"},
+		{"Change my chat font to GEORGIA, case-insensitively.", "Georgia"},
+	},
 }
 
 // word pools used to vary entities/phrasings across seeds.
@@ -914,6 +943,56 @@ func stratifiedCategoryOrderWeighted(r *rand.Rand, n int, weights []int) []int {
 	return order
 }
 
+// sampledCategoryOrderV8 varies the category histogram by seed while retaining
+// the v7 expected weights. When the run can hold the catalog, every family gets
+// one slot; smaller profiles sample without replacement first. Remaining slots
+// are weighted draws. This keeps generation reproducible and prevents any
+// family from being permanently dead across seeds.
+func sampledCategoryOrderV8(r *rand.Rand, n int, weights []int) []int {
+	if n <= 0 || len(weights) == 0 {
+		return nil
+	}
+	counts := make([]int, len(weights))
+	remaining := n
+	perm := r.Perm(len(weights))
+	floor := len(weights)
+	if floor > n {
+		floor = n
+	}
+	for _, ci := range perm[:floor] {
+		counts[ci]++
+		remaining--
+	}
+	totalWeight := 0
+	for _, weight := range weights {
+		if weight < 1 {
+			weight = 1
+		}
+		totalWeight += weight
+	}
+	for ; remaining > 0; remaining-- {
+		draw := r.Intn(totalWeight)
+		for ci, weight := range weights {
+			if weight < 1 {
+				weight = 1
+			}
+			if draw < weight {
+				counts[ci]++
+				break
+			}
+			draw -= weight
+		}
+	}
+	order := make([]int, 0, n)
+	for ci, count := range counts {
+		for range count {
+			order = append(order, ci)
+		}
+	}
+	r.Shuffle(len(order), func(i, j int) { order[i], order[j] = order[j], order[i] })
+	return order
+}
+
 // codeModeCategories are the bench_version 5 Code Mode categories: they exercise
 // run_code (the in-process JavaScript compute/orchestration sandbox) and the
 // discrimination between run_code (a pure in-context calculation, no side effects)
@@ -1067,6 +1146,130 @@ var difficultyCategoriesV7 = []category{
 	},
 }
 
+// applyV8WorldActions replaces 65% of the historical one-card tool prompts with
+// tasks grounded in one shared personal/business world. The correct action or
+// argument is derivable only by reconciling aliases, relationships, corrections,
+// and business context seeded through the ordinary harness memory boundary.
+//
+// ExpectedTools is a capability SET, not a prescribed trace: FuzzyTrajectory
+// and AllowExtraTools make exploratory agent trajectories legitimate, while
+// the validator-observed final action and its seed-derived argument remain
+// deterministic. MaxToolCalls describes the expected envelope; it is not a hard
+// cap and creative agents may legitimately exceed it.
+func applyV8WorldActions(seed int64, cases []protocol.ToolCase) {
+	if len(cases) == 0 {
+		return
+	}
+	scale := 1
+	if len(cases) >= 80 {
+		scale = 3
+	} else if len(cases) >= 30 {
+		scale = 2
+	}
+	world := universe.Generate(seed, scale)
+	target := (65*len(cases) + 99) / 100
+	if target >= len(cases) {
+		target = len(cases) - 1 // retain at least one plain v7-style coverage case
+	}
+	converted := 0
+	attachedWorld := false
+	for i := range cases {
+		if converted >= target {
+			break
+		}
+		// Preserve bespoke prerequisites only when they already prove a composed
+		// outcome; the shared world replaces ordinary/card-like cases first.
+		if len(cases[i].PrerequisitePairs) != 0 {
+			continue
+		}
+		caseID := cases[i].ID
+		var tc protocol.ToolCase
+		switch converted % 8 {
+		case 0, 5: // resolve a vague referent, research a live fact, and email it
+			tc = v8WorldContactEmail(seed, caseID, world, converted+i)
+		case 1: // description -> target pair -> destructive action
+			tc = v8WorldMemoryDelete(caseID, world, converted+2*i+1)
+		case 2: // description -> target pair -> update action
+			tc = v8WorldMemoryUpdate(caseID, world, converted+i)
+		case 3: // capability discovery + fuzzy/case-insensitive setting
+			tc = fuzzyWorldTool(caseID, "world_theme_discover_set", fmt.Sprintf("Make Ditto use my usual %s-ish accent — the personal app preference, not one of the client brand colors. If I mangled the spelling, check the available appearance options first.", misspellAlias(world.Accent, converted)), []protocol.ToolSpec{{Name: "discover_capabilities"}, {Name: "set_accent_color", RequiredArgs: map[string]string{"color": world.Accent}}}, "discover the available appearance setting and apply the user's personal accent")
+		case 4: // messy business context -> reusable workflow outcome
+			p := world.Projects[(converted+i)%len(world.Projects)]
+			lead := world.People[p.Lead]
+			tc = fuzzyWorldTool(caseID, "world_business_workflow", fmt.Sprintf("Check whether I already have a workflow for %q. If not, create one for its recurring reconciliation: compare %s's corrected invoice with payments, have %s review the remainder, and prepare the client update for %s.", p.Alias, p.Vendor, lead.Nickname, p.Client), []protocol.ToolSpec{{Name: "list_workflows"}, {Name: "create_workflow", RequiredArgs: map[string]string{"name": p.Alias, "steps": p.Vendor}}}, "resolve the project, vendor, lead, and client, check existing workflows, and create the requested reusable workflow")
+		case 6: // outcome proves a search -> dynamic-link -> read chain
+			tc = v8WorldLinkRead(seed, caseID)
+		case 7: // dependent execution outcome, order enforced by data not rubric
+			needle := toolexec.NeedleFor(seed, caseID)
+			tc = fuzzyWorldTool(caseID, "world_job_chain_result_usage", fmt.Sprintf("Have Ditto Code work out %s in the background, check the resulting job until it finishes, and give me the exact figure it produced.", needle.Subject), []protocol.ToolSpec{{Name: "execute_agent_job"}, {Name: "get_agent_job_status"}}, "run the job, resolve its returned id, and report the completed result")
+		}
+		if !attachedWorld {
+			tc.PrerequisitePairs = append([]protocol.MemoryPair(nil), world.Pairs...)
+			attachedWorld = true
+		}
+		cases[i] = tc
+		converted++
+	}
+
+	// The remaining legacy-coverage tail must not reintroduce the exact IDs,
+	// example.com recipients, or complete URLs that v8 removed. These categories
+	// are always grounded in the same world even when the 65% replacement quota
+	// happened to leave their original draw outside the dominant slice.
+	for i := range cases {
+		caseID := cases[i].ID
+		switch cases[i].Category {
+		case "email_send":
+			cases[i] = v8WorldContactEmail(seed, caseID, world, i)
+		case "memory_delete":
+			cases[i] = v8WorldMemoryDelete(caseID, world, i)
+		case "memory_update":
+			cases[i] = v8WorldMemoryUpdate(caseID, world, i)
+		case "link_read":
+			cases[i] = v8WorldLinkRead(seed, caseID)
+		}
+	}
+}
+
+func v8WorldContactEmail(seed int64, caseID string, world universe.World, index int) protocol.ToolCase {
+	p := world.People[index%len(world.People)]
+	needle := toolexec.NeedleFor(seed, caseID)
+	return fuzzyWorldTool(caseID, "world_contact_research_email_result_usage", fmt.Sprintf("Look up %s, then email the exact current figure to %s — my %s in %s who handled the %s. Mention the figure in the email and in your confirmation; use their corrected address, not the old one.", needle.Subject, misspellAlias(p.Nickname, index), p.Relation, p.City, p.Context), []protocol.ToolSpec{{Name: "search_web"}, {Name: "gmail_send", RequiredArgs: map[string]string{"to": p.Email, "body": needle.Value}}}, "resolve the person and corrected address, research the live value, and send that value to the right person")
+}
+
+func v8WorldMemoryDelete(caseID string, world universe.World, index int) protocol.ToolCase {
+	p := world.People[index%len(world.People)]
+	return fuzzyWorldTool(caseID, "world_memory_delete", fmt.Sprintf("Delete the memory where I corrected %s's old email after the %s — they're my %s at %s. Don't delete the original relationship note.", p.Nickname, p.Context, p.Relation, p.Employer), []protocol.ToolSpec{{Name: "delete_memory", RequiredArgs: map[string]string{"pair_id": p.CorrectionPairID}}}, "resolve the uniquely described memory and delete that pair")
+}
+
+func v8WorldMemoryUpdate(caseID string, world universe.World, index int) protocol.ToolCase {
+	p := world.Projects[index%len(world.Projects)]
+	lead := world.People[p.Lead]
+	return fuzzyWorldTool(caseID, "world_memory_update", fmt.Sprintf("Update the memory that says who owns %q for %s — the %s project led by %s at %s. Add that the handoff is Friday; leave the invoice correction alone.", p.Alias, p.Client, p.Purpose, lead.Nickname, lead.Employer), []protocol.ToolSpec{{Name: "update_memory", RequiredArgs: map[string]string{"pair_id": p.ContextPairID, "content": "handoff is Friday"}}}, "resolve the project-context memory and update that pair with the Friday handoff")
+}
+
+func v8WorldLinkRead(seed int64, caseID string) protocol.ToolCase {
+	needle := toolexec.NeedleFor(seed, caseID)
+	return fuzzyWorldTool(caseID, "world_link_chain_result_usage", fmt.Sprintf("Search X or Twitter for %s, follow whichever result actually contains the current figure, and tell me the exact value. I did not save the complete URL, so use the live result rather than guessing a link.", needle.Subject), []protocol.ToolSpec{{Name: "search_web"}, {Name: "read_links"}}, "find and read the live source, then report the served value")
+}
+
+func fuzzyWorldTool(id, category, prompt string, expected []protocol.ToolSpec, behavior string) protocol.ToolCase {
+	return protocol.ToolCase{
+		ID: id, Category: category, Prompt: prompt, ExpectedTools: expected,
+		MaxToolCalls: 15, AllowExtraTools: true, FuzzyTrajectory: true,
+		ExpectedBehavior: behavior + "; tool order and harmless exploratory reads are not prescribed",
+	}
+}
+
+func misspellAlias(s string, salt int) string {
+	r := []rune(s)
+	if len(r) < 4 {
+		return s
+	}
+	i := 1 + salt%(len(r)-2)
+	r[i], r[i+1] = r[i+1], r[i]
+	return string(r)
+}
+
 // categoriesForVersion returns the tool category set for a bench version. v5 adds
 // the Code Mode categories and v7 the difficulty categories; earlier versions get
 // exactly the historical set, so their dataset bytes (and the known-vector
@@ -1080,6 +1283,68 @@ func categoriesForVersion(benchVersion int) []category {
 	out = append(out, codeModeCategories...)
 	if benchVersion >= protocol.BenchVersionV7 {
 		out = append(out, difficultyCategoriesV7...)
+	}
+	if benchVersion >= protocol.BenchVersionV8 {
+		// ChatV2 consolidated recipes, automations, and multi-agent creation into
+		// workflows. Keep historical categories intact for v7, but advertise and
+		// grade the current product tools in v8.
+		for i := range out {
+			switch out[i].name {
+			case "workflow_not_job":
+				out[i].tool = "create_workflow"
+				out[i].argKey = ""
+				out[i].templates = []string{
+					"Build a reusable workflow for %s, with the independent parts running in parallel.",
+					"Set up %s as a workflow I can inspect and run again.",
+				}
+			case "agent_workflow":
+				out[i].tool = "create_workflow"
+				out[i].argKey = ""
+				out[i].templates = []string{
+					"Create a workflow for %s.",
+					"Turn %s into a reusable multi-step workflow.",
+				}
+			case "automation_not_job":
+				out[i].tool = "create_workflow"
+				out[i].argKey = ""
+				out[i].templates = []string{
+					"Create a workflow that sends my news digest %s.",
+					"Set up my standup summary to run %s.",
+				}
+			case "recipe_create":
+				out[i].tool = "create_workflow"
+				out[i].argKey = ""
+				out[i].templates = []string{
+					"Make a reusable workflow called %s.",
+					"Create a workflow named %s that I can run again.",
+				}
+			case "automation_list":
+				out[i].tool = "list_schedules"
+				out[i].grammar = nil
+				out[i].templates = []string{
+					"What workflows are scheduled to run?",
+					"Show me my upcoming automatic runs.",
+				}
+			case "recipe_apply":
+				out[i].tool = ""
+				out[i].tools = []string{"list_workflows", "run_workflow"}
+				out[i].argKey = ""
+				out[i].templates = []string{
+					"Run my %s workflow.",
+					"Start the saved workflow called %s.",
+				}
+			case "set_tool_prefs":
+				// Production takes individual boolean toggles, not one magic
+				// preference string. The tool choice is deterministic; multiple
+				// equivalent boolean payloads remain legitimate.
+				out[i].argKey = ""
+			case "agent_job", "feedback", "calendar_create", "calendar_search":
+				// These schemas contain free-form language. Tool choice and the
+				// surrounding deterministic state are scoreable; insisting on one
+				// generated sentence would penalize valid LLM paraphrases.
+				out[i].argKey = ""
+			}
+		}
 	}
 	return out
 }
@@ -1112,7 +1377,13 @@ func GenerateCasesWithFillersForVersion(r *rand.Rand, seed int64, n, benchVersio
 	}
 	cats := categoriesForVersion(benchVersion)
 	var order []int
-	if benchVersion >= protocol.BenchVersionV7 {
+	if benchVersion >= protocol.BenchVersionV8 {
+		weights := make([]int, len(cats))
+		for i, c := range cats {
+			weights[i] = toolCategoryWeightV7(c.name)
+		}
+		order = sampledCategoryOrderV8(r, n, weights)
+	} else if benchVersion >= protocol.BenchVersionV7 {
 		weights := make([]int, len(cats))
 		for i, c := range cats {
 			weights[i] = toolCategoryWeightV7(c.name)
@@ -1155,10 +1426,15 @@ func GenerateCasesWithFillersForVersion(r *rand.Rand, seed int64, n, benchVersio
 		// prompt is about ("" = the prompt has no such entity).
 		argValue := filler
 		usedFiller := ""
-		useIntent := len(cat.intents) > 0 && r.Intn(2) == 0
+		intents := cat.intents
+		useIntent := len(intents) > 0 && r.Intn(2) == 0
+		if benchVersion >= protocol.BenchVersionV8 && cat.argKey != "" {
+			intents = v8ArgIntents[cat.name]
+			useIntent = len(intents) > 0
+		}
 		switch {
 		case useIntent:
-			it := cat.intents[r.Intn(len(cat.intents))]
+			it := intents[r.Intn(len(intents))]
 			prompt = it.prompt
 			argValue = it.value
 			// Only a near-miss intent (value appears literally) records the token; a
@@ -1225,8 +1501,80 @@ func GenerateCasesWithFillersForVersion(r *rand.Rand, seed int64, n, benchVersio
 			}
 		}
 
+		if benchVersion >= protocol.BenchVersionV8 && cat.name == "memory_fetch" {
+			pairID := protocol.OpaqueCaseID(seed, "tool-memory-fetch", i)
+			phone := fmt.Sprintf("+1-212-555-%04d", r.Intn(10000))
+			questions := []string{
+				"What is the phone number of my accountant for 2024?",
+				"Can you find the number for the accountant who handled my 2024 taxes?",
+				"I need to call my 2024 accountant — what number do I have saved?",
+			}
+			tc.Prompt = questions[r.Intn(len(questions))]
+			tc.ExpectedTools = []protocol.ToolSpec{
+				{Name: "search_memories"},
+				{Name: "fetch_memories", RequiredArgs: map[string]string{"pairIds": pairID}},
+			}
+			tc.MaxToolCalls = 2
+			tc.ExpectedBehavior = "search for the relevant memory, then fetch the selected memory in full"
+			tc.PrerequisitePairs = []protocol.MemoryPair{{
+				PairID:    pairID,
+				SessionID: fmt.Sprintf("accountant-%d", i),
+				Timestamp: "2025-04-15T14:00:00Z",
+				Prompt:    "Please remember that Morgan Lee handled my 2024 taxes.",
+				Response:  "Morgan Lee's office number is " + phone + ".",
+			}}
+			usedFiller = ""
+		}
+		if benchVersion >= protocol.BenchVersionV8 {
+			applyV8CapabilityResolution(&tc, argValue, i)
+		}
+
 		cases = append(cases, tc)
 		fillers = append(fillers, usedFiller)
 	}
+	if benchVersion >= protocol.BenchVersionV8 {
+		applyV8WorldActions(seed, cases)
+	}
 	return cases, fillers
+}
+
+// applyV8CapabilityResolution makes closed product choices behave like smart
+// tools: users name a model family or an approximate appearance choice, then the
+// agent may inspect the current catalog before applying the canonical value.
+// The wire tool names remain the production ChatV2 names so v7 harnesses stay
+// compatible; only v8's case semantics become outcome-driven.
+func applyV8CapabilityResolution(tc *protocol.ToolCase, value string, salt int) {
+	if len(tc.ExpectedTools) != 1 {
+		return
+	}
+	var prompt string
+	switch tc.Category {
+	case "set_model":
+		family := "GPT"
+		if strings.Contains(strings.ToLower(value), "gemini") {
+			family = "Gemini"
+		} else if strings.Contains(strings.ToLower(value), "claude") {
+			family = "Claude"
+		}
+		prompt = fmt.Sprintf("Use %s for my main chats. I don't know its exact model id, so resolve the current available option instead of making me type a slug.", family)
+	case "settings":
+		if value == "system" {
+			prompt = "Match Ditto's color mode to my device. Check the available appearance settings if you need the canonical option."
+		} else {
+			prompt = fmt.Sprintf("Switch Ditto to %s-ish mode; check the available appearance options rather than guessing the setting name.", misspellAlias(value, salt))
+		}
+	case "set_accent":
+		prompt = fmt.Sprintf("Make the app accent %s-ish. I may have mangled the spelling, so inspect the available appearance options first.", misspellAlias(value, salt))
+	case "set_font":
+		prompt = fmt.Sprintf("Use %s in chat. Treat that case-insensitively and check the available font options if the name is slightly off.", misspellAlias(value, salt))
+	default:
+		return
+	}
+	tc.Prompt = prompt
+	tc.ExpectedTools = append([]protocol.ToolSpec{{Name: "discover_capabilities"}}, tc.ExpectedTools...)
+	tc.MaxToolCalls = 15
+	tc.AllowExtraTools = true
+	tc.Unordered = false
+	tc.FuzzyTrajectory = true
+	tc.ExpectedBehavior = "resolve the user's approximate choice against current capabilities and apply the canonical setting; exploratory order is not prescribed"
 }

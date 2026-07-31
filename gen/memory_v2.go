@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"fmt"
 	"math/rand"
 	"sort"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"github.com/ditto-assistant/dittobench-datagen/grade"
 	"github.com/ditto-assistant/dittobench-datagen/persona"
 	"github.com/ditto-assistant/dittobench-datagen/protocol"
+	"github.com/ditto-assistant/dittobench-datagen/universe"
 )
 
 // StagedCase pairs a memory case with the seeding wave after which it becomes
@@ -64,6 +66,10 @@ type MemorySuite struct {
 	TempCalcCases          int
 	ComposedInjectionCases int
 	SubscriptionCases      int
+	// WorldCases counts v8 questions derived from the shared seeded personal and
+	// business universe. They replace simpler main-pool cases inside the fixed
+	// case budget; zero for v7 and earlier.
+	WorldCases int
 	// LexicalGap is the query↔needle overlap telemetry (NoLiMa): how much
 	// content wording the emitted questions share with their evidence, before and
 	// after the low-overlap rewrite.
@@ -268,6 +274,21 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		sub = buildSubscription(r, seed, plan, n, nWaves)
 	}
 	suite.SubscriptionCases = len(sub.Cases)
+	// V8's shared world adds realistic personal/business joins, corrections,
+	// aliases, variable-length messages, and computed outcomes. Generate it from
+	// an independent seed stream so adding it cannot perturb the frozen v7 RNG.
+	var worldCases []protocol.MemoryCase
+	var worldReserve []protocol.MemoryCase
+	var worldPairs []protocol.MemoryPair
+	if benchVersion >= protocol.BenchVersionV8 {
+		scale, count := v8WorldProfile(n)
+		world := universe.Generate(seed, scale)
+		worldCases = world.MemoryCases(count)
+		allWorldCases := world.MemoryCases(count + 64)
+		worldReserve = allWorldCases[len(worldCases):]
+		worldPairs = world.Pairs
+	}
+	suite.WorldCases = len(worldCases)
 	// v7 retains only a small representative floor of the saturated recall
 	// categories (empty for pre-v7, where recallFloorPool is empty and every
 	// recall case is already in mainPool). Selected before mainQuota so its slots
@@ -275,7 +296,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	recallFloor := stratifyByType(r, recallFloorPool, v7RecallFloorFor(benchVersion), benchVersion)
 	// Reserve room for the always-included canary, twin, lifecycle, and
 	// conversational cases so the total case count stays at n.
-	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(recallFloor) - len(lc.Cases) - len(conv.Cases) - len(mh.Cases) - len(td.Cases) - len(si.Cases) - len(mq.Cases) - len(nv.Cases) - len(cons.Cases) -
+	mainQuota := n - nAbs - len(canaryPool) - len(twinPool) - len(injTwinPool) - len(recallFloor) - len(worldCases) - len(lc.Cases) - len(conv.Cases) - len(mh.Cases) - len(td.Cases) - len(si.Cases) - len(mq.Cases) - len(nv.Cases) - len(cons.Cases) -
 		len(dc.Cases) - len(dj.Cases) - len(nm.Cases) - len(tcalc.Cases) - len(ci.Cases) - len(sub.Cases)
 	if mainQuota < 0 {
 		mainQuota = 0
@@ -430,6 +451,7 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 		}
 		staged = append(staged, StagedCase{
 			Case: protocol.MemoryCase{
+				BenchVersion:      memoryCaseVersion(benchVersion),
 				ID:                protocol.OpaqueCaseID(seed, "mem", i),
 				QuestionID:        q.ID,
 				QuestionType:      q.Type,
@@ -464,6 +486,28 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	staged = append(staged, tcalc.Cases...)
 	staged = append(staged, ci.Cases...)
 	staged = append(staged, sub.Cases...)
+	for _, c := range worldCases {
+		staged = append(staged, StagedCase{Case: c, RunAfterWave: 0})
+	}
+	if benchVersion >= protocol.BenchVersionV8 {
+		for i := range staged {
+			staged[i].Case.BenchVersion = benchVersion
+		}
+		budget := v8PrimaryCaseBudget(n)
+		if len(staged) < budget {
+			need := budget - len(staged)
+			if need > len(worldReserve) {
+				return MemorySuite{}, fmt.Errorf("v8 memory budget is short by %d case(s)", need-len(worldReserve))
+			}
+			for _, c := range worldReserve[:need] {
+				staged = append(staged, StagedCase{Case: c, RunAfterWave: 0})
+			}
+		}
+		staged, err = trimV8ToExistingBudget(staged, budget)
+		if err != nil {
+			return MemorySuite{}, err
+		}
+	}
 	r.Shuffle(len(staged), func(i, j int) { staged[i], staged[j] = staged[j], staged[i] })
 	suite.Cases = staged
 
@@ -521,7 +565,97 @@ func GenerateMemorySuiteForVersion(r *rand.Rand, seed int64, n int, nWaves int, 
 	if len(dc.Pairs) > 0 {
 		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, dc.Pairs...)
 	}
+	if len(worldPairs) > 0 {
+		suite.Waves[0].Pairs = append(suite.Waves[0].Pairs, worldPairs...)
+	}
 	return suite, nil
+}
+
+// v8PrimaryCaseBudget preserves the effective v7 primary-graph runtime. Those
+// totals are slightly above Profile.Mem because integrity families are always
+// included; v8 replaces easy coverage inside that real envelope instead of
+// pretending the profile knob is the observed case count.
+func v8PrimaryCaseBudget(n int) int {
+	switch {
+	case n == 185:
+		// Full retains 198 memory cases total: 189 primary-world cases plus
+		// four scalar-isolation and five cross-user lifecycle cases. The fixed
+		// isolation quota never evicts a composed or integrity case.
+		return 189
+	case n == 52:
+		// Medium retains 70 memory cases total: 65 primary-world cases plus
+		// the five cross-user lifecycle cases.
+		return 65
+	case n == 6:
+		return 11
+	default:
+		// Analysis tools may request synthetic sizes outside the three public
+		// profiles. They are not part of the scored runtime envelope.
+		return 0
+	}
+}
+
+// trimV8ToExistingBudget removes only saturated, single-fact persona questions
+// when fixed integrity and composed suites overfill v7's effective envelope.
+// It never breaks a twin family or removes a shared-world/integrity case.
+func trimV8ToExistingBudget(cases []StagedCase, budget int) ([]StagedCase, error) {
+	if budget <= 0 || len(cases) <= budget {
+		return cases, nil
+	}
+	drop := len(cases) - budget
+	trimmable := map[string]bool{
+		persona.QTAssistantRecall: true,
+		persona.QTPreference:      true,
+		persona.QTSingleSession:   true,
+		persona.QTComputed:        true,
+	}
+	keep := make([]bool, len(cases))
+	for i := range keep {
+		keep[i] = true
+	}
+	for i := len(cases) - 1; i >= 0 && drop > 0; i-- {
+		c := cases[i].Case
+		if c.TwinGroup == "" && trimmable[c.QuestionType] {
+			keep[i] = false
+			drop--
+		}
+	}
+	if drop != 0 {
+		// All current profiles have enough saturated cases. Failing closed here
+		// makes a future suite expansion visible instead of silently deleting an
+		// integrity or composed case.
+		return nil, fmt.Errorf("v8 memory budget overfilled by %d non-trimmable case(s)", drop)
+	}
+	out := make([]StagedCase, 0, budget)
+	for i, c := range cases {
+		if keep[i] {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+func v8WorldProfile(n int) (scale, cases int) {
+	switch {
+	case n >= 100:
+		return 3, 24
+	case n >= 40:
+		// One representative shared-world question plus the world-backed tool
+		// slice preserves medium's existing 110-case runtime exactly.
+		return 2, 1
+	default:
+		// Small is the compatibility smoke path. Its six memory slots are
+		// already oversubscribed by integrity cases; the tool slice still uses
+		// the same generated world without increasing this path's runtime.
+		return 1, 0
+	}
+}
+
+func memoryCaseVersion(benchVersion int) int {
+	if benchVersion >= protocol.BenchVersionV8 {
+		return benchVersion
+	}
+	return 0
 }
 
 // GenerateMemoryV2 is the single-wave, all-Tier-A view of the suite, retained

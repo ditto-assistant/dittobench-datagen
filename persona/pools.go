@@ -176,6 +176,16 @@ var colors = []string{
 	"lavender",
 }
 
+// v8Colors are deliberately multi-word canonical values. Single-token color
+// names such as "sage", "coral", "amber", and "slate" occur incidentally in
+// ordinary prose and therefore create deterministic-grader false positives.
+var v8Colors = []string{
+	"deep teal", "burnt ochre", "wine burgundy", "soft sage green",
+	"cobalt blue", "warm amber gold", "dark plum", "red terracotta",
+	"electric chartreuse", "deep indigo", "coral pink", "slate gray",
+	"mustard yellow", "pale lavender",
+}
+
 // hobbies feeds the reversible-opinion (contradiction) facts: the persona once
 // loved a hobby, then changed their mind.
 var hobbies = []string{
@@ -234,6 +244,16 @@ var softwareLanguages = []string{
 	"Rust", "Go", "TypeScript", "Python", "Kotlin", "Elixir", "Scala",
 	"Swift", "Zig", "Haskell", "Clojure", "Ruby", "OCaml", "Erlang",
 	"F#", "Julia", "Nim", "Crystal",
+}
+
+// v8SoftwareLanguages include a release qualifier so language names that are
+// also ordinary words or names (Go, Rust, Swift, Ruby, Crystal, Julia, Nim) can
+// never be credited by an incidental single-word mention.
+var v8SoftwareLanguages = []string{
+	"Rust 2024", "Go 1.24", "TypeScript 5", "Python 3.13", "Kotlin 2",
+	"Elixir 1.18", "Scala 3", "Swift 6", "Zig 0.14", "Haskell 2021",
+	"Clojure 1.12", "Ruby 3.4", "OCaml 5", "Erlang OTP 28", "F# 9",
+	"Julia 1.11", "Nim 2", "Crystal 1.15",
 }
 
 var softwareEditors = []string{

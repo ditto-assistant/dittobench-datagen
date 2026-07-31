@@ -19,9 +19,13 @@ type ToolSpec struct {
 // ToolCase is one tool-calling benchmark case.
 //
 // Unordered marks a case whose ExpectedTools are INDEPENDENT calls (a parallel
-// request), so the trajectory is scored on the set of names/args only and the
-// relative call order is not graded. Default false: a multi-hop sequence is
-// order-scored (the second call depends on the first).
+// request). FuzzyTrajectory marks an outcome-driven agent task where the named
+// capabilities are expected but the agent may inspect/retry/reorder as needed;
+// data dependencies and the final observed outcome enforce correctness instead
+// of one prescribed trace. Both score names/args without relative-order credit.
+// For a fuzzy case MaxToolCalls describes the expected task envelope, not a hard
+// cap; AllowExtraTools permits longer creative trajectories without a call-count
+// penalty. Run-level token efficiency remains a separate scoring signal.
 type ToolCase struct {
 	ID               string     `json:"id"`
 	Category         string     `json:"category"`
@@ -30,7 +34,13 @@ type ToolCase struct {
 	MaxToolCalls     int        `json:"max_tool_calls"`
 	AllowExtraTools  bool       `json:"allow_extra_tools"`
 	Unordered        bool       `json:"unordered,omitempty"`
+	FuzzyTrajectory  bool       `json:"fuzzy_trajectory,omitempty"`
 	ExpectedBehavior string     `json:"expected_behavior,omitempty"`
+	// PrerequisitePairs are validator-internal, seed-bound routing facts that
+	// must be loaded before this tool case runs. They are emitted only by v8+;
+	// v7 and earlier artifacts therefore retain their exact bytes. The harness
+	// sees the pairs through the ordinary /seed contract, never in /run.
+	PrerequisitePairs []MemoryPair `json:"prerequisite_pairs,omitempty"`
 }
 
 // AnswerKind values: how a memory case is graded deterministically. Grading is
@@ -90,6 +100,10 @@ const (
 // answer from its seeded memory. ExpectedAnswer is the oracle answer, graded
 // deterministically per AnswerKind.
 type MemoryCase struct {
+	// BenchVersion selects version-gated deterministic grading behavior. It is
+	// validator-internal and is set only for v8+ so frozen v7 artifacts retain
+	// their exact JSON bytes.
+	BenchVersion   int    `json:"bench_version,omitempty"`
 	ID             string `json:"id"`
 	QuestionID     string `json:"question_id"`
 	QuestionType   string `json:"question_type"`

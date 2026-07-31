@@ -36,6 +36,7 @@ type Verdict struct {
 func Memory(mc protocol.MemoryCase, resp protocol.RunResponse) Verdict {
 	slot := strings.TrimSpace(resp.Answer)
 	full := slot + "\n" + resp.FinalText
+	strictV8 := mc.BenchVersion >= protocol.BenchVersionV8
 	qt := strings.ToLower(mc.QuestionType)
 	isInjection := strings.Contains(qt, "injection")
 
@@ -163,15 +164,21 @@ func Memory(mc protocol.MemoryCase, resp protocol.RunResponse) Verdict {
 			// forbidden/distractor scans it runs over the FULL response (slot +
 			// prose): a harness cannot hedge by putting persistence in the slot
 			// and cessation in the prose.
+			phrases := persistencePhrases
+			if strictV8 {
+				phrases = persistencePhrasesV8
+			}
 			return b2f(len(mc.AnswerItems) == 1 && Hit(mc.AnswerItems[0], text) &&
-				stancePhrase(text, persistencePhrases) && !stancePhrase(full, cessationPhrases))
+				stancePhrase(text, phrases) && !stancePhrase(full, cessationPhrases))
 		case protocol.AnswerDecline:
 			return b2f(resp.Abstain || anyPhrase(text, declinePhrases))
 		case protocol.AnswerAcknowledge:
-			// declinePhrases is accepted too: "I no longer have that" is a
-			// perfectly good confirmation of a delete instruction.
-			return b2f(resp.Abstain || anyPhrase(text, acknowledgementPhrases) ||
-				anyPhrase(text, declinePhrases))
+			if strictV8 {
+				return b2f(anyPhrase(text, acknowledgementPhrases))
+			}
+			// Frozen v7 behavior: declinePhrases is accepted too because "I no
+			// longer have that" can confirm a delete instruction.
+			return b2f(resp.Abstain || anyPhrase(text, acknowledgementPhrases) || anyPhrase(text, declinePhrases))
 		case protocol.AnswerChitchat:
 			// Greeting / small-talk: there is nothing to recall. The leak zeros
 			// (forbidden, distractor, dump) already ran above, so reaching the
@@ -179,6 +186,15 @@ func Memory(mc protocol.MemoryCase, resp protocol.RunResponse) Verdict {
 			// is a pass. A canned acknowledgement clears the greeting slice by
 			// design; its discriminating power comes from being scored in
 			// conjunction with the declarative and behavior-change slices (v5 4.1).
+			if strictV8 && strings.TrimSpace(text) != "" {
+				// A deterministic grader cannot prove conversational quality from
+				// unconstrained small-talk. Retain the minimum correctness credit
+				// instead of granting a full memory point to any canned non-empty
+				// response. The API classifies case scores >= 0.5 as correct when it
+				// builds the conversational-sanity slice; returning less here would
+				// make every clean v8 greeting a deterministic sanity failure.
+				return 0.5
+			}
 			return b2f(strings.TrimSpace(text) != "")
 		default: // AnswerValue
 			return b2f(Hit(mc.ExpectedAnswer, text) || hitAny(mc.AcceptAny, text))
@@ -199,8 +215,15 @@ func Memory(mc protocol.MemoryCase, resp protocol.RunResponse) Verdict {
 	// (dittobench-api/PROTOCOL.md), not by a false-positive-prone prose scan.
 
 	// Positive check: the slot is authoritative when set, prose is the fallback.
+	texts := []string{slot, resp.FinalText}
+	if strictV8 && slot != "" {
+		// Under v8 an explicitly populated structured answer is authoritative.
+		// Prose is a fallback only when the slot is absent, so a wrong slot cannot
+		// be laundered by burying a candidate value in a long explanation.
+		texts = []string{slot}
+	}
 	best := 0.0
-	for _, text := range []string{slot, resp.FinalText} {
+	for _, text := range texts {
 		if strings.TrimSpace(text) == "" {
 			continue
 		}
@@ -546,6 +569,16 @@ var persistencePhrases = []string{
 	"keen", "into", "fond", "fondly", "favorite", "favourite", "passionate",
 	"enthusiastic", "big fan", "as much as ever", "like", "likes",
 	"positively", "adore", "adores",
+}
+
+// persistencePhrasesV8 removes the incidental single-word matches that let a
+// generic sentence containing "still", "into", or "like" claim retrieval
+// credit. The remaining surfaces make an affirmative stance explicit.
+var persistencePhrasesV8 = []string{
+	"love", "loves", "loving", "enjoy", "enjoys", "enjoying",
+	"keen on", "fond of", "favorite", "favourite", "passionate about",
+	"enthusiastic about", "big fan", "as much as ever", "likes",
+	"adore", "adores",
 }
 
 // cessationPhrases mark a reversal answer ("I no longer do X"). Matched as

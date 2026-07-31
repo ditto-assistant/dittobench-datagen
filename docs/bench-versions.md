@@ -19,6 +19,50 @@ applied to an existing version. It ships as a new one.
 | 5 | `2026-09-01` | Conversational grounding, broader capability coverage, and token-efficiency scoring. |
 | 6 | `2026-10-01` | Memory-as-data and the complexity suite; retains the v5 scoring contract. |
 | 7 | `2026-11-01` | Platform-owned OpenRouter inference with locked `openai/gpt-oss-20b`, and the difficulty release: a version-gated hard-case suite roughly an order of magnitude harder for a non-reasoning harness while a correct trajectory still scores full marks. |
+| 8 | `2026-12-01` | The answering-machine-proof release: natural requests whose route depends on seeded prior context, semantic enum/identifier resolution without magic free-form strings, a larger computed-memory share, and stricter deterministic answer grading. |
+
+## What v8 is
+
+V8 keeps v7's locked model, run sizes, timeouts, deterministic scorer, and real
+runtime envelope (the public full reference remains 282 cases). It changes
+derivability. One seed now builds a shared procedural world: the fake user has
+people, nicknames, relationships, employers, projects, vendors, trips, original
+facts, later corrections, and both terse notes and messy business data pasted as
+a wall of text. Tool and memory cases ask about that same world instead of
+drawing unrelated cards.
+
+At least 65% of tool cases are composed, seed-bound tasks. They combine four or
+more facts, several constraints, and an outcome such as contacting the right
+person at their corrected address, mutating the uniquely described memory,
+reconciling a corrected invoice, or threading a served result into the next
+action. Expected tools are a capability set, not one ordained trace: a fuzzy
+trajectory may inspect, retry, reorder, and make harmless extra calls. Correct
+seed-bound arguments and outcomes remain hard deterministic gates, as do served
+result values. `MaxToolCalls=15` describes the expected task shape; it is not a
+hard ceiling and a creative agent is not punished for exceeding it. Run-level
+token efficiency remains separate.
+
+The memory mix similarly spends at least 65% on composition, indirection,
+temporal state, corrections, calculations, graph joins, and outcome verification.
+Every shared-world answer has three plausible near misses. The fixed 282-case
+budget is preserved by replacing saturated single-fact and repetitive scalar
+coverage, not by adding cases. Current ChatV2 wire tool names remain unchanged,
+so a v7 harness can run v8; v8 changes what competence is required, not the
+transport contract. Free-form tasks remain free-form, and no LLM judge is added.
+Every change is gated on `bench_version >= 8`; the v7 known vector stays frozen.
+
+The release gate includes a public model-free 1-nearest-neighbor prompt prober:
+
+```sh
+go run ./cmd/toolprobe -bench-version 8 -run-size full -train-seeds 30 -held-out-seeds 10
+```
+
+The prober predicts the complete scored outcome signature: capability set,
+seed-bound required arguments, and the served result where applicable. This is
+deliberately not merely a tool-name classifier—guessing `gmail_send` from the
+word “email” does not solve a case. The candidate must remain below 50% complete
+tool-outcome accuracy on ten held-out seeds. The pinned candidate measures
+26.55%; its deterministic oracle remains 100% scoreable.
 
 ## What v7 is
 

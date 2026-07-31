@@ -256,3 +256,58 @@ func Catalog() []protocol.ToolDefinition {
 		},
 	}
 }
+
+// CatalogForVersion returns the product tool surface frozen into a benchmark
+// version. V7 retains the historical automation/recipe/workflow names. ChatV2
+// consolidated those concepts for v8: workflows own reusable steps and their
+// schedules, while the old names remain dispatch-only compatibility shims in
+// the backend and must not be advertised to a new benchmark.
+func CatalogForVersion(benchVersion int) []protocol.ToolDefinition {
+	legacy := Catalog()
+	if benchVersion < protocol.BenchVersionV8 {
+		return legacy
+	}
+	retired := map[string]bool{
+		"execute_agent_workflow": true,
+		"create_automation":      true,
+		"list_automations":       true,
+		"create_recipe":          true,
+		"apply_recipe":           true,
+	}
+	out := make([]protocol.ToolDefinition, 0, len(legacy)+4)
+	for _, tool := range legacy {
+		if !retired[tool.Name] {
+			out = append(out, tool)
+		}
+	}
+	out = append(out,
+		protocol.ToolDefinition{
+			Name:        "create_workflow",
+			Description: "Propose a reusable workflow made of one or more inspectable steps. A schedule, when requested, is part of this same proposal.",
+			Parameters: schema([]string{"name", "steps"},
+				prop{"name", "string", "Short workflow name"},
+				prop{"steps", "array", "Workflow steps"},
+				prop{"schedule", "string", "Optional JSON schedule for the workflow"},
+			),
+		},
+		protocol.ToolDefinition{
+			Name:        "list_workflows",
+			Description: "List saved workflows with their schedules.",
+			Parameters:  schema(nil),
+		},
+		protocol.ToolDefinition{
+			Name:        "list_schedules",
+			Description: "List schedules attached to the user's workflows.",
+			Parameters:  schema(nil),
+		},
+		protocol.ToolDefinition{
+			Name:        "run_workflow",
+			Description: "Propose running one saved workflow now.",
+			Parameters: schema(nil,
+				prop{"recipe_id", "string", "Workflow id from list_workflows"},
+				prop{"name", "string", "Workflow name when its id is unknown"},
+			),
+		},
+	)
+	return out
+}

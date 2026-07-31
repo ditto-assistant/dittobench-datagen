@@ -583,6 +583,11 @@ func BuildPlanForVersion(seed int64, opts Opts, benchVersion int) (*Plan, error)
 	scalars := make([]scalarSpec, 0, len(scalarSpecs)+len(domain.scalars))
 	scalars = append(scalars, scalarSpecs...)
 	scalars = append(scalars, domain.scalars...)
+	if benchVersion >= protocol.BenchVersionV8 {
+		for i := range scalars {
+			scalars[i].pool = answerPoolForVersion(scalars[i].attr, scalars[i].pool, benchVersion)
+		}
+	}
 
 	seq := 0
 	nextSeq := func() int { s := seq; seq++; return s }
@@ -846,7 +851,7 @@ func BuildPlanForVersion(seed int64, opts Opts, benchVersion int) (*Plan, error)
 
 	// --- preference facts ---
 	for _, s := range prefSpecs {
-		v := pick(r, s.pool)
+		v := pick(r, answerPoolForVersion(s.attr, s.pool, benchVersion))
 		p.Facts = append(p.Facts, Fact{
 			ID:        "f-" + s.attr,
 			Kind:      KindPreference,
@@ -1206,7 +1211,7 @@ func addNegatedDistractor(p *Plan, seed int64, opts Opts) {
 	var cands []cand
 	specByAttr := map[string][]string{}
 	for _, s := range allScalarSpecs() {
-		specByAttr[s.attr] = s.pool
+		specByAttr[s.attr] = answerPoolForVersion(s.attr, s.pool, p.BenchVersion)
 	}
 	present := map[string]string{} // attr -> current self value
 	for _, f := range p.Facts {
@@ -1247,6 +1252,20 @@ func addNegatedDistractor(p *Plan, seed int64, opts Opts) {
 		UserText:  fill(stmt, rejected),
 		AsstText:  ack,
 	})
+}
+
+func answerPoolForVersion(attr string, pool []string, benchVersion int) []string {
+	if benchVersion < protocol.BenchVersionV8 {
+		return pool
+	}
+	switch attr {
+	case "favorite_color":
+		return v8Colors
+	case "primary_language":
+		return v8SoftwareLanguages
+	default:
+		return pool
+	}
 }
 
 // nextSeqFor returns a Seq after every existing fact's Seq (the negated
