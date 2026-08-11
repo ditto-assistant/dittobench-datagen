@@ -1,5 +1,12 @@
 # dittobench-datagen
 
+> [!IMPORTANT]
+> This repository is archived. Development has moved to
+> [`ditto-assistant/ditto-subnet`](https://github.com/ditto-assistant/ditto-subnet),
+> with the maintained generator in
+> [`research/dittobench-datagen`](https://github.com/ditto-assistant/ditto-subnet/tree/main/research/dittobench-datagen).
+> Use the monorepo for current documentation, issues, and pull requests.
+
 The deterministic dataset generator for [DittoBench](https://github.com/ditto-assistant/dittobench-starter-kit),
 the benchmark for Bittensor Subnet 118. This is the exact code the validators use
 to build the dataset every submission is scored against. It is published so the
