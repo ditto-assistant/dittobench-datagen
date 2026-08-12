@@ -12,6 +12,18 @@ the benchmark for Bittensor Subnet 118. This is the exact code the validators us
 to build the dataset every submission is scored against. It is published so the
 benchmark is fully auditable.
 
+## Ditto SN118 repositories
+
+| Repository | Purpose |
+| --- | --- |
+| [`ditto-subnet`](https://github.com/ditto-assistant/ditto-subnet) | Miner CLI, validator worker, and on-chain integration |
+| [`ditto-platform`](https://github.com/ditto-assistant/ditto-platform) | Public API, dashboard, submission coordination, and score ledger |
+| [`ditto-screener`](https://github.com/ditto-assistant/ditto-screener) | Platform-operated submission build and health gate |
+| [`ditto-harness`](https://github.com/ditto-assistant/ditto-harness) | Reference memory and agent harness library |
+| [`dittobench-starter-kit`](https://github.com/ditto-assistant/dittobench-starter-kit) | Miner starter project and local practice loop |
+| [`dittobench-api`](https://github.com/ditto-assistant/dittobench-api) | Validator scoring engine and hosted practice API |
+| [`dittobench-datagen`](https://github.com/ditto-assistant/dittobench-datagen) | Deterministic dataset generator and judge-free grader |
+
 ## Why this is public
 
 DittoBench grades AI-agent submissions against a freshly generated dataset. The
